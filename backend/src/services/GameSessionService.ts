@@ -63,9 +63,9 @@ export class GameSessionService {
   private simulationInterval: NodeJS.Timeout | null = null;
   private readonly TICK_RATE = 30;
   private readonly WORLD_SIZE = 3200;
-  private readonly BASE_SPEED = 200;
+  private readonly BASE_SPEED = 240; // Faster, smooth, responsive movement
   private readonly BOOST_MULT = 1.7;
-  private readonly MAX_LENGTH = 220;   // hard cap so Titans never break the world
+  private readonly MAX_LENGTH = 220;
 
   private eventTimer = 180;
   private currentEventIndex = 0;
@@ -93,6 +93,21 @@ export class GameSessionService {
         shrinkRate: this.config.shrinkingZone ? 6 : 0,
         damagePerSecond: 15,
       },
+      // Peaceful Sanctuary Zone — No PvP / No Damage / Hide Safely Inside!
+      sanctuaryZone: {
+        centerX: 1600,
+        centerY: 1600,
+        radius: 340,
+        label: '🛡️ Safe Sanctuary',
+        icon: '🛡️',
+      },
+      // Pothole Shortcut Tunnel Portals
+      portals: [
+        { id: 'portal_1_a', targetId: 'portal_1_b', x: 600, y: 600, label: 'Shortcut A', color: '#8B5CF6' },
+        { id: 'portal_1_b', targetId: 'portal_1_a', x: 2600, y: 2600, label: 'Shortcut A Exit', color: '#8B5CF6' },
+        { id: 'portal_2_a', targetId: 'portal_2_b', x: 600, y: 2600, label: 'Shortcut B', color: '#EC4899' },
+        { id: 'portal_2_b', targetId: 'portal_2_a', x: 2600, y: 600, label: 'Shortcut B Exit', color: '#EC4899' },
+      ],
       snakes: {},
       food: {},
       leaderboard: [],
@@ -100,7 +115,7 @@ export class GameSessionService {
       currentEvent: this.config.worldEvents ? this.availableEvents[0] : undefined,
     };
 
-    this.spawnInitialCollectibles(300);
+    this.spawnInitialCollectibles(60); // Clean, lesser food count
     this.spawnBotSnakes(this.config.botCount);
     this.startLoop();
   }
@@ -313,6 +328,33 @@ export class GameSessionService {
     snake.head.x = clampedX;
     snake.head.y = clampedY;
 
+    // Pothole Shortcut Teleport Check
+    if (this.state.portals) {
+      if ((snake as any).teleportCooldown > 0) {
+        (snake as any).teleportCooldown -= dt;
+      } else {
+        for (const portal of this.state.portals) {
+          const dx = snake.head.x - portal.x;
+          const dy = snake.head.y - portal.y;
+          if (dx * dx + dy * dy < 38 * 38) {
+            const targetPortal = this.state.portals.find(p => p.id === portal.targetId);
+            if (targetPortal) {
+              // Instantly teleport head and body to shortcut exit!
+              const offsetX = targetPortal.x - snake.head.x;
+              const offsetY = targetPortal.y - snake.head.y;
+              snake.head.x = targetPortal.x;
+              snake.head.y = targetPortal.y;
+              snake.body.forEach(seg => {
+                seg.x += offsetX;
+                seg.y += offsetY;
+              });
+              (snake as any).teleportCooldown = 3.0; // 3s cooldown
+              break;
+            }
+          }
+        }
+      }
+    }
     // Body follows head
     let prev = { ...snake.head };
     const spacing = 14;
@@ -337,9 +379,18 @@ export class GameSessionService {
     }
   }
 
-  // Defense-aware damage. Shield fully negates.
+  // Check if snake is inside Safe Sanctuary Zone
+  private isInsideSanctuary(snake: SnakeState): boolean {
+    if (!this.state.sanctuaryZone) return false;
+    const s = this.state.sanctuaryZone;
+    const dx = snake.head.x - s.centerX;
+    const dy = snake.head.y - s.centerY;
+    return (dx * dx + dy * dy) < (s.radius * s.radius);
+  }
+
+  // Defense-aware damage. Shield or Safe Sanctuary fully negates.
   private damageSnake(snake: SnakeState, amount: number, reason: string) {
-    if (snake.shieldTimer > 0) return;
+    if (snake.shieldTimer > 0 || this.isInsideSanctuary(snake)) return;
     const reduced = amount * (1 - snake.defense / 100);
     snake.hp = Math.max(0, snake.hp - reduced);
     if (snake.hp <= 0) this.killSnake(snake, reason);
@@ -354,9 +405,21 @@ export class GameSessionService {
         const food = this.state.food[foodId];
         const dx = snake.head.x - food.x;
         const dy = snake.head.y - food.y;
-        if (dx * dx + dy * dy < (snake.radius + 12) * (snake.radius + 12)) {
+        const distSq = dx * dx + dy * dy;
+
+        // Pickup collision check (radius + 20)
+        const pickupRadius = snake.radius + 20;
+        if (distSq < pickupRadius * pickupRadius) {
           delete this.state.food[foodId];
           this.applyFood(snake, food);
+          continue;
+        }
+
+        // Magnet Catch Effect: If food is nearby (within 55px), vacuum/pull food towards head!
+        const magnetRadius = snake.radius + 55;
+        if (distSq < magnetRadius * magnetRadius) {
+          food.x += (snake.head.x - food.x) * 0.22;
+          food.y += (snake.head.y - food.y) * 0.22;
         }
       }
     }
@@ -440,7 +503,9 @@ export class GameSessionService {
         // Whoever has the LOWER score takes the hit.
         const loser = a.score >= b.score ? b : a;
         const winner = loser === a ? b : a;
-        if (loser.shieldTimer > 0) continue;
+
+        // Immune inside Safe Sanctuary or with active shield buff
+        if (loser.shieldTimer > 0 || this.isInsideSanctuary(loser) || this.isInsideSanctuary(winner)) continue;
 
         const bite = 24 + winner.score / 400;
         this.damageSnake(loser, bite, `Bitten by ${winner.displayName}`);
@@ -566,7 +631,7 @@ export class GameSessionService {
   }
 
   private maintainCollectibles() {
-    if (Object.keys(this.state.food).length < 260) this.spawnInitialCollectibles(30);
+    if (Object.keys(this.state.food).length < 50) this.spawnInitialCollectibles(6);
   }
 
   private spawnInitialCollectibles(count: number) {

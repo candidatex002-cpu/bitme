@@ -141,6 +141,8 @@ export class Renderer {
 
     this.renderTerrain(3200);
     this.renderSafeZone(state.safeZone);
+    if ((state as any).sanctuaryZone) this.renderSanctuaryZone((state as any).sanctuaryZone);
+    if ((state as any).portals) this.renderPortals((state as any).portals);
 
     // Render Food (Crystal Clear Discs)
     for (let i = 0; i < state.food.length; i++) {
@@ -229,6 +231,64 @@ export class Renderer {
     ctx.strokeStyle = '#FFB7B2'; ctx.lineWidth = 5;
     ctx.stroke();
     ctx.restore();
+  }
+
+  /** Render Peaceful Safe Sanctuary Zone (No PvP / Hide Safely Inside) */
+  private renderSanctuaryZone(s: { centerX: number; centerY: number; radius: number; label: string; icon: string }) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(s.centerX, s.centerY, s.radius, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(167, 243, 208, 0.28)';
+    ctx.fill();
+    ctx.strokeStyle = '#34D399';
+    ctx.lineWidth = 4;
+    ctx.setLineDash([12, 8]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Sanctuary Label
+    ctx.font = 'bold 16px Outfit, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#065F46';
+    ctx.fillText(`${s.icon} ${s.label} (NO PVP / SAFE HIDE)`, s.centerX, s.centerY - s.radius + 28);
+    ctx.restore();
+  }
+
+  /** Render Wormhole Pothole Shortcut Portals */
+  private renderPortals(portals: Array<{ id: string; targetId: string; x: number; y: number; label: string; color: string }>) {
+    const ctx = this.ctx;
+    const pulse = Math.sin(this.animFrame * 0.1) * 3;
+    const spin = this.animFrame * 0.05;
+
+    for (const p of portals) {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+
+      // Swirling Portal Ring
+      ctx.rotate(spin);
+      ctx.beginPath();
+      ctx.arc(0, 0, 26 + pulse, 0, Math.PI * 2);
+      ctx.fillStyle = p.color + '33';
+      ctx.fill();
+
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = 3.5;
+      ctx.setLineDash([8, 6]);
+      ctx.stroke();
+
+      ctx.rotate(-spin);
+      ctx.font = '24px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🌀', 0, 0);
+
+      ctx.font = 'bold 11px Outfit, sans-serif';
+      ctx.fillStyle = p.color;
+      ctx.fillText(p.label, 0, 36);
+
+      ctx.restore();
+    }
   }
 
   /**

@@ -216,6 +216,23 @@ export interface GameModeConfig {
   botCount: number;
 }
 
+export interface SanctuaryZone {
+  centerX: number;
+  centerY: number;
+  radius: number;
+  label: string;
+  icon: string;
+}
+
+export interface PortalShortcut {
+  id: string;
+  targetId: string;
+  x: number;
+  y: number;
+  label: string;
+  color: string;
+}
+
 export interface GameWorldState {
   matchId: string;
   mode: GameMode;
@@ -224,6 +241,8 @@ export interface GameWorldState {
   tick: number;
   worldSize: number;
   safeZone: SafeZone;
+  sanctuaryZone?: SanctuaryZone;
+  portals?: PortalShortcut[];
   snakes: Record<string, SnakeState>;
   food: Record<string, FoodItem>;
   leaderboard: Array<{ id: string; name: string; score: number; kills: number; team?: 'red' | 'blue' }>;
