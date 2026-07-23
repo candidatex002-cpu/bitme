@@ -443,12 +443,14 @@ class GameSessionService {
             snake.evolution = stage;
         snake.length = snake.body.length;
     }
-    // Score-based combat — the board rule: higher score eats lower score.
+    // Classic Head Collision Rules:
+    // 1. Head-to-Body: If Snake A's HEAD hits Snake B's BODY, Snake A (the hitting head) dies/takes damage!
+    // 2. Head-to-Head: If Snake A's HEAD hits Snake B's HEAD, the smaller snake dies!
     resolveCombat() {
         const ids = Object.keys(this.state.snakes);
         for (const idA of ids) {
             const a = this.state.snakes[idA];
-            if (!a.isAlive)
+            if (!a.isAlive || a.shieldTimer > 0 || this.isInsideSanctuary(a))
                 continue;
             for (const idB of ids) {
                 if (idA === idB)
@@ -458,38 +460,57 @@ class GameSessionService {
                     continue;
                 if (this.config.teamsEnabled && a.team && a.team === b.team)
                     continue; // no friendly fire
-                // a's head vs b's body
-                let hit = false;
+                // Check A: Head-to-Head Collision
+                const headDx = a.head.x - b.head.x;
+                const headDy = a.head.y - b.head.y;
+                const headDistSq = headDx * headDx + headDy * headDy;
+                const headCollisionDist = a.radius + b.radius;
+                if (headDistSq < headCollisionDist * headCollisionDist) {
+                    if (this.isInsideSanctuary(b) || b.shieldTimer > 0)
+                        continue;
+                    // Head-to-Head Clash: Lower score snake takes damage/dies
+                    const loser = a.score >= b.score ? b : a;
+                    const winner = loser === a ? b : a;
+                    this.damageSnake(loser, 60, `Head-on clash with ${winner.displayName}`);
+                    if (!loser.isAlive) {
+                        winner.kills++;
+                        winner.score += 200 + Math.floor(loser.score * 0.25);
+                        this.applyGrowth(winner, 0);
+                        if (this.config.teamsEnabled && winner.team && this.state.teamScores) {
+                            this.state.teamScores[winner.team] += 1;
+                        }
+                        if (!winner.isBot)
+                            Database_1.db.incrementCollectible(winner.userId, 'kill');
+                    }
+                    break;
+                }
+                // Check B: Head-to-Body Collision (Snake A's HEAD hits Snake B's BODY)
+                let hitBody = false;
                 for (let i = 2; i < b.body.length; i += 2) {
                     const seg = b.body[i];
                     const dx = a.head.x - seg.x;
                     const dy = a.head.y - seg.y;
-                    if (dx * dx + dy * dy < (a.radius + 8) * (a.radius + 8)) {
-                        hit = true;
+                    const bodyCollisionDist = a.radius + 6;
+                    if (dx * dx + dy * dy < bodyCollisionDist * bodyCollisionDist) {
+                        hitBody = true;
                         break;
                     }
                 }
-                if (!hit)
-                    continue;
-                // Whoever has the LOWER score takes the hit.
-                const loser = a.score >= b.score ? b : a;
-                const winner = loser === a ? b : a;
-                // Immune inside Safe Sanctuary or with active shield buff
-                if (loser.shieldTimer > 0 || this.isInsideSanctuary(loser) || this.isInsideSanctuary(winner))
-                    continue;
-                const bite = 24 + winner.score / 400;
-                this.damageSnake(loser, bite, `Bitten by ${winner.displayName}`);
-                if (!loser.isAlive) {
-                    winner.kills++;
-                    winner.score += 200 + Math.floor(loser.score * 0.25);
-                    this.applyGrowth(winner, 0);
-                    if (this.config.teamsEnabled && winner.team && this.state.teamScores) {
-                        this.state.teamScores[winner.team] += 1;
+                if (hitBody) {
+                    // Snake A crashed its head into Snake B's body -> Snake A dies!
+                    this.damageSnake(a, 100, `Crashed head into ${b.displayName}'s body`);
+                    if (!a.isAlive) {
+                        b.kills++;
+                        b.score += 150 + Math.floor(a.score * 0.2);
+                        this.applyGrowth(b, 0);
+                        if (this.config.teamsEnabled && b.team && this.state.teamScores) {
+                            this.state.teamScores[b.team] += 1;
+                        }
+                        if (!b.isBot)
+                            Database_1.db.incrementCollectible(b.userId, 'kill');
                     }
-                    if (!winner.isBot)
-                        Database_1.db.incrementCollectible(winner.userId, 'kill');
+                    break;
                 }
-                break;
             }
         }
     }
