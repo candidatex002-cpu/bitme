@@ -243,6 +243,7 @@ class AnacondaPark {
   private startMatch() {
     this.matchStart = Date.now(); this.lastAlive = true; this.visitedAreas.clear(); this.summary = null;
     this.setScreen('play');
+    audio.startMusic();
     const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
     if (canvas) this.renderer = new Renderer(canvas);
     this.client.onStateUpdate = (s) => this.onTick(s);

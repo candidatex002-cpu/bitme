@@ -1,6 +1,15 @@
 export class AudioSystem {
   private ctx: AudioContext | null = null;
   private isMuted: boolean = false;
+  private musicEnabled: boolean = true;
+  private musicTimer: any = null;
+  private musicStep: number = 0;
+
+  // Upbeat, calm copyright-free pentatonic melody sequence
+  private melodyNotes: number[] = [
+    523.25, 587.33, 659.25, 783.99, 880.00, 1046.50, 880.00, 783.99,
+    659.25, 587.33, 523.25, 440.00, 523.25, 659.25, 783.99, 659.25
+  ];
 
   constructor() {
     // AudioContext initialized on user interaction
@@ -20,14 +29,56 @@ export class AudioSystem {
 
   public toggleMute(): boolean {
     this.isMuted = !this.isMuted;
-    if (!this.isMuted) {
+    if (this.isMuted) {
+      this.stopMusic();
+    } else {
       this.playChime();
+      this.startMusic();
     }
     return this.isMuted;
   }
 
   public getMuted(): boolean {
     return this.isMuted;
+  }
+
+  // --- Additive 100% Copyright-Free Web Audio Background Music Loop ---
+  public startMusic() {
+    if (this.isMuted || this.musicTimer) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    // Play a gentle, soothing pentatonic note every 320ms
+    this.musicTimer = setInterval(() => {
+      if (this.isMuted || !this.ctx) return;
+      const freq = this.melodyNotes[this.musicStep % this.melodyNotes.length];
+      this.musicStep++;
+
+      try {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        // Soft sine wave for a dreamy kawaii vibe
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq * 0.5, this.ctx.currentTime); // Soft octave
+
+        gain.gain.setValueAtTime(0.04, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.3);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.3);
+      } catch { /* */ }
+    }, 320);
+  }
+
+  public stopMusic() {
+    if (this.musicTimer) {
+      clearInterval(this.musicTimer);
+      this.musicTimer = null;
+    }
   }
 
   public playChime() {
@@ -37,8 +88,8 @@ export class AudioSystem {
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(659.25, this.ctx.currentTime); // E5
-    osc.frequency.exponentialRampToValueAtTime(987.77, this.ctx.currentTime + 0.12); // B5
+    osc.frequency.setValueAtTime(659.25, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(987.77, this.ctx.currentTime + 0.12);
 
     gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.12);

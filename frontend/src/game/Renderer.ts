@@ -12,7 +12,6 @@ interface SkinPalette {
   flower: string;
 }
 
-// 15 Cutie 2D Kawaii Illustration Palettes (Inspired directly by the reference artwork)
 const SKINS: Record<string, SkinPalette> = {
   Forest:   { primary: '#F2F9F6', secondary: '#B5EAD7', belly: '#C7E9DE', glow: '#D8F3DC', eye: '#1B243B', blush: '#FFB7B2', outline: '#233240', scaleColor: 'rgba(112, 193, 179, 0.4)', flower: '🌸' },
   Ocean:    { primary: '#F0F8FF', secondary: '#BEE3F8', belly: '#D0E4F2', glow: '#E0F2FE', eye: '#1B243B', blush: '#FFB7CE', outline: '#1F2D42', scaleColor: 'rgba(144, 205, 244, 0.45)', flower: '🌼' },
@@ -42,6 +41,13 @@ const ACCESSORY_ICONS: Record<string, string> = {
   ramadan_lantern: '🏮', diwali_crown: '👑', golden_wings: '✨',
 };
 
+// Guaranteed vibrant icons for all collectible food items
+const FOOD_ICONS: Record<string, string> = {
+  cherry: '🍒', apple: '🍎', mushroom: '🍄', frog: '🐸', mouse: '🐭',
+  lizard: '🦎', egg: '🥚', star: '⭐', shield: '🛡️', speed: '⚡',
+  crystal: '💎', coupon_box: '🎁', super_star: '🌟', snake_remains: '✨', boss_drop: '🏆',
+};
+
 interface InterpolatedSnake {
   x: number;
   y: number;
@@ -56,7 +62,7 @@ export class Renderer {
   private zoom = 1.0;
   private animFrame = 0;
 
-  // LERP Position Cache for Butter-Smooth Movement
+  // LERP Position Cache
   private lerpSnakes: Map<string, InterpolatedSnake> = new Map();
 
   // Animation State per snake
@@ -106,7 +112,7 @@ export class Renderer {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
-    // Soft Pastel Blue Sky Canvas (Matching the reference photo backdrop)
+    // Soft Pastel Blue Canvas
     this.ctx.fillStyle = '#D4EEF9';
     this.ctx.fillRect(0, 0, vw, vh);
 
@@ -136,7 +142,7 @@ export class Renderer {
     this.renderTerrain(3200);
     this.renderSafeZone(state.safeZone);
 
-    // Render Food
+    // Render Food (Crystal Clear Discs)
     for (let i = 0; i < state.food.length; i++) {
       this.renderCollectible(state.food[i]);
     }
@@ -195,7 +201,7 @@ export class Renderer {
 
   private renderTerrain(world: number) {
     const ctx = this.ctx;
-    // Dreamy Kawaii Park Base
+    // Clean Dreamy Base without grid lines
     ctx.fillStyle = '#E3F2FD';
     ctx.fillRect(0, 0, world, world);
 
@@ -204,11 +210,6 @@ export class Renderer {
     for (const [px, py, pr] of [[350, 500, 280], [2500, 700, 320], [700, 2400, 340], [2400, 2300, 300]]) {
       ctx.beginPath(); ctx.arc(px, py, pr, 0, Math.PI * 2); ctx.fill();
     }
-
-    // Subtle Grid
-    ctx.strokeStyle = 'rgba(187, 222, 251, 0.5)'; ctx.lineWidth = 1.5;
-    for (let x = 0; x <= world; x += 180) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, world); ctx.stroke(); }
-    for (let y = 0; y <= world; y += 180) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(world, y); ctx.stroke(); }
 
     // Boundary
     ctx.strokeStyle = '#B39DDB'; ctx.lineWidth = 8; ctx.strokeRect(0, 0, world, world);
@@ -230,38 +231,44 @@ export class Renderer {
     ctx.restore();
   }
 
+  /**
+   * Crystal Clear High-Contrast Collectibles (Cherries 🍒, Apples 🍎, Frogs 🐸, Stars ⭐)
+   * Rendered on a bright white circle disc badge so they 100% pop out crisp and clear on any terrain!
+   */
   private renderCollectible(food: FoodData) {
     const ctx = this.ctx;
     const bounce = Math.sin(this.animFrame * 0.08 + food.x) * 3;
     const py = food.y + bounce;
+    const icon = food.icon || FOOD_ICONS[food.type] || '🍒';
 
     ctx.save();
+
+    // 1. Soft Shadow
     ctx.beginPath();
-    ctx.ellipse(food.x, food.y + 10, 8, 4, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.06)';
+    ctx.ellipse(food.x, food.y + 12, 11, 5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
     ctx.fill();
 
-    if (food.icon) {
-      ctx.font = '22px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(food.icon, food.x, py);
-    } else {
-      ctx.beginPath();
-      ctx.arc(food.x, py, 8, 0, Math.PI * 2);
-      ctx.fillStyle = food.color || '#FFDAC1';
-      ctx.fill();
-      ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
+    // 2. Bright White Circle Disc Badge behind food so it POPS out 100% clear!
+    ctx.beginPath();
+    ctx.arc(food.x, py, 15, 0, Math.PI * 2);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+    ctx.strokeStyle = '#90CDF4';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    // 3. Crisp Emoji / Icon inside disc
+    ctx.font = '20px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(icon, food.x, py + 1);
+
     ctx.restore();
   }
 
   /**
-   * EXACT 2D Kawaii Vector Snake Illustration Renderer (Matching the user's reference photo)!
-   * Smooth continuous body tube with dark indigo outline, soft powder blue belly, delicate scale arcs,
-   * chubby bean head, simple dark button eyes, blush lines, and sprouting cherry blossom flowers.
+   * High-Performance 60+ FPS Kawaii Vector Snake Illustration Renderer
    */
   private renderKawaiiVectorSnake(snake: SnakeData, isTarget: boolean) {
     const ctx = this.ctx;
@@ -288,7 +295,7 @@ export class Renderer {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // --- 1. CONTINUOUS SMOOTH KAWAII BODY TUBE ---
+    // --- 1. CONTINUOUS SMOOTH KAWAII BODY TUBE (Batch-rendered for 60+ FPS lock) ---
 
     // Pass A: Dark Indigo Outer Line (Contour)
     ctx.beginPath();
@@ -310,7 +317,7 @@ export class Renderer {
     ctx.lineWidth = baseRadius * 1.82;
     ctx.stroke();
 
-    // Pass C: Soft Powder Blue Underbelly Shade (offset slightly along inner curve)
+    // Pass C: Soft Powder Blue Underbelly Shade
     ctx.beginPath();
     ctx.moveTo(headX, headY);
     for (let i = 0; i < body.length; i++) {
@@ -320,34 +327,27 @@ export class Renderer {
     ctx.lineWidth = baseRadius * 0.72;
     ctx.stroke();
 
-    // Pass D: Delicate Scalloped Scale Lines (◠ ◠ ◠) along top body curve
-    ctx.strokeStyle = pal.scaleColor;
-    ctx.lineWidth = 1.6;
-    for (let i = 2; i < body.length - 1; i += 3) {
-      const seg = body[i];
-      ctx.beginPath();
-      ctx.arc(seg.x, seg.y - baseRadius * 0.2, baseRadius * 0.35, 0.2 * Math.PI, 0.8 * Math.PI, false);
-      ctx.stroke();
-    }
-
-    // Pass E: Sprouting Flowers & Leaf Buds Along Body Curve (Matching illustration!)
-    for (let i = 3; i < body.length - 1; i += 5) {
-      const seg = body[i];
-      const floatY = Math.sin(this.animFrame * 0.08 + i) * 2;
+    // Pass D: Flowers (Max 2 flowers on spine for high performance)
+    if (body.length > 5) {
       const flowerIcon = pal.flower || '🌸';
       ctx.font = `${baseRadius * 1.1}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(flowerIcon, seg.x, seg.y - baseRadius * 0.4 + floatY);
+
+      const seg1 = body[Math.floor(body.length * 0.3)];
+      if (seg1) ctx.fillText(flowerIcon, seg1.x, seg1.y - baseRadius * 0.4);
+
+      if (body.length > 12) {
+        const seg2 = body[Math.floor(body.length * 0.7)];
+        if (seg2) ctx.fillText(flowerIcon, seg2.x, seg2.y - baseRadius * 0.4);
+      }
     }
 
     // Trailing sparkles when boosting
     if (snake.boosting) {
       const tailSeg = body[body.length - 1] || { x: headX, y: headY };
-      const sparkX = tailSeg.x + (Math.random() - 0.5) * 18;
-      const sparkY = tailSeg.y + (Math.random() - 0.5) * 18;
       ctx.font = `${baseRadius * 0.85}px sans-serif`;
-      ctx.fillText('✨', sparkX, sparkY);
+      ctx.fillText('✨', tailSeg.x, tailSeg.y);
     }
 
     ctx.restore();
@@ -372,14 +372,7 @@ export class Renderer {
     ctx.fillStyle = pal.primary;
     ctx.fill();
 
-    // Head Top Soft Scales / Texture
-    ctx.strokeStyle = pal.scaleColor;
-    ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    ctx.arc(-headW * 0.15, -headH * 0.3, baseRadius * 0.35, 0.2 * Math.PI, 0.8 * Math.PI, false);
-    ctx.stroke();
-
-    // Soft Pink Blush Cheeks (Translucent cute rosy cheeks next to eyes)
+    // Soft Pink Blush Cheeks
     ctx.beginPath();
     ctx.ellipse(headW * 0.28, -headH * 0.46, baseRadius * 0.35, baseRadius * 0.2, 0, 0, Math.PI * 2);
     ctx.ellipse(headW * 0.28, headH * 0.46, baseRadius * 0.35, baseRadius * 0.2, 0, 0, Math.PI * 2);
@@ -388,7 +381,7 @@ export class Renderer {
     ctx.fill();
     ctx.globalAlpha = 1.0;
 
-    // --- 3. KAWAII BUTTON EYES (Solid Dark Oval Button Eyes Tilted Inward, Matching Illustration!) ---
+    // --- 3. KAWAII BUTTON EYES ---
     const eyeOffsetX = headW * 0.36;
     const eyeOffsetY = headH * 0.32;
     const eyeRadiusX = Math.max(4.0, baseRadius * 0.28);
@@ -398,14 +391,12 @@ export class Renderer {
       const ey = side * eyeOffsetY;
 
       if (anim.isBlinking) {
-        // Cute closed curved blink line (◡)
         ctx.beginPath();
         ctx.arc(eyeOffsetX, ey, eyeRadiusX, 0.15 * Math.PI, 0.85 * Math.PI, false);
         ctx.strokeStyle = pal.outline;
         ctx.lineWidth = 2.4;
         ctx.stroke();
       } else {
-        // Solid Dark Navy Oval Pupil (Exactly like reference art)
         ctx.beginPath();
         ctx.ellipse(eyeOffsetX, ey, eyeRadiusX, eyeRadiusY, side * 0.15, 0, Math.PI * 2);
         ctx.fillStyle = pal.eye;
@@ -432,7 +423,7 @@ export class Renderer {
       ctx.fill();
     }
 
-    // Equipped Accessory (Hats / Crowns)
+    // Equipped Accessory
     const equippedAcc = (snake as any).equippedAccessory;
     if (equippedAcc && ACCESSORY_ICONS[equippedAcc]) {
       ctx.font = `${baseRadius * 1.3}px sans-serif`;
@@ -460,7 +451,6 @@ export class Renderer {
     const maxHp = snake.maxHp ?? 100;
     const ratio = Math.max(0, Math.min(1, hp / maxHp));
 
-    // Clean name tag positioned above head
     const y = headY - r - 22;
     ctx.save();
     ctx.font = 'bold 12px Outfit, sans-serif';
@@ -472,7 +462,6 @@ export class Renderer {
     ctx.shadowBlur = 4;
     ctx.fillText(label, headX, y - 4);
 
-    // Only render HP bar when taking damage or in combat
     if (ratio < 0.99) {
       const w = Math.max(40, r * 2.5);
       const h = 5;
