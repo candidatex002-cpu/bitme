@@ -11,9 +11,9 @@ interface SkinPalette {
   flower?: string;
 }
 
-// 15 Cutie Pastel Skin Palettes inspired by high-quality kawaii illustration art
+// 15 Cutie Bubble Pastel Skin Palettes
 const SKINS: Record<string, SkinPalette> = {
-  Forest:   { primary: '#B5EAD7', secondary: '#70C1B3', belly: '#E2F0CB', glow: '#C7F9CC', eye: '#1E293B', blush: '#FFB7B2', outline: '#3E5C59', flower: '🌸' },
+  Forest:   { primary: '#A8E6CF', secondary: '#70C1B3', belly: '#DCEDC8', glow: '#C7F9CC', eye: '#1E293B', blush: '#FFB7B2', outline: '#2D5045', flower: '🌸' },
   Ocean:    { primary: '#BEE3F8', secondary: '#90CDF4', belly: '#EBF8FF', glow: '#E0F2FE', eye: '#1A202C', blush: '#FBB6CE', outline: '#2B6CB0', flower: '🌼' },
   Fire:     { primary: '#FFDAC1', secondary: '#FFB7B2', belly: '#FFF5EB', glow: '#FFE5D9', eye: '#2D3748', blush: '#FF9AA2', outline: '#9B2C2C', flower: '🌺' },
   Ice:      { primary: '#E2F1FF', secondary: '#BEE3F8', belly: '#F7FAFC', glow: '#EDF2F7', eye: '#1A202C', blush: '#FEB2B2', outline: '#3182CE', flower: '❄️' },
@@ -55,10 +55,10 @@ export class Renderer {
   private zoom = 1.0;
   private animFrame = 0;
 
-  // LERP Position Cache for Butter-Smooth 60+ FPS Rendering
+  // LERP Position Cache for Smooth Motion
   private lerpSnakes: Map<string, InterpolatedSnake> = new Map();
 
-  // Animation State per snake
+  // Animation State
   private snakeAnimState: Map<string, {
     blinkTimer: number;
     isBlinking: boolean;
@@ -261,7 +261,7 @@ export class Renderer {
   }
 
   /**
-   * Ultra-Enhanced Cute Kawaii Snake Character Drawing!
+   * Overlapping Shiny Bubble Circle Segments (Matching the user's preferred design)!
    */
   private renderCuteSnake(snake: SnakeData, isTarget: boolean) {
     const ctx = this.ctx;
@@ -273,175 +273,164 @@ export class Renderer {
     const body = lerp ? lerp.body : snake.body;
     const anim = this.getAnimState(snake.id);
 
-    // Anim Timers
+    // Timers
     anim.blinkTimer += 0.02;
     if (anim.blinkTimer > 3.5) anim.blinkTimer = 0;
     anim.isBlinking = anim.blinkTimer < 0.15;
-    if (anim.happyTimer > 0) anim.happyTimer -= 0.02;
 
     anim.tongueTimer += 0.02;
     if (anim.tongueTimer > 2.5) anim.tongueTimer = 0;
-    anim.tongueOut = anim.tongueTimer < 0.45;
+    anim.tongueOut = anim.tongueTimer < 0.4;
 
-    const baseRadius = Math.max(14, snake.radius);
+    const baseRadius = Math.max(15, snake.radius);
 
-    // --- 1. DRAW TAPERED SOFT PLUMP BODY SEGMENTS ---
+    // --- 1. OVERLAPPING SHINY BUBBLE CIRCLE SEGMENTS (Tail to Neck) ---
     ctx.save();
-
-    // Draw body from tail tip to neck so head sits on top smoothly
     const totalSegs = body.length;
+
     for (let i = totalSegs - 1; i >= 0; i--) {
       const seg = body[i];
-      // Taper radius smoothly towards tail end (e.g. 100% at neck down to 40% at tail tip)
+      // Taper radius smoothly from head down to tail tip
       const taperRatio = i / Math.max(1, totalSegs);
-      const segRadius = Math.max(5, baseRadius * (1.0 - taperRatio * 0.58));
+      const r = Math.max(6, baseRadius * (1.0 - taperRatio * 0.52));
 
-      // Segment Outline (Clean pastel dark outline)
+      // A. Dark Outer Border Circle
       ctx.beginPath();
-      ctx.arc(seg.x, seg.y, segRadius + 2.2, 0, Math.PI * 2);
+      ctx.arc(seg.x, seg.y, r + 2.5, 0, Math.PI * 2);
       ctx.fillStyle = pal.outline;
       ctx.fill();
 
-      // Segment Primary Pastel Fill
+      // B. Soft Pastel Primary Body Fill
       ctx.beginPath();
-      ctx.arc(seg.x, seg.y, segRadius, 0, Math.PI * 2);
+      ctx.arc(seg.x, seg.y, r, 0, Math.PI * 2);
       ctx.fillStyle = pal.primary;
       ctx.fill();
 
-      // Segment Underbelly Shade (soft curve along bottom)
+      // C. Soft Glossy Oval Highlight on Top Right of Bubble
       ctx.beginPath();
-      ctx.arc(seg.x, seg.y + segRadius * 0.22, segRadius * 0.72, 0, Math.PI * 2);
-      ctx.fillStyle = pal.belly;
+      ctx.ellipse(seg.x - r * 0.22, seg.y - r * 0.25, r * 0.38, r * 0.25, -0.3, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
       ctx.fill();
 
-      // Segment Top Glossy Gloss Dot
-      ctx.beginPath();
-      ctx.arc(seg.x - segRadius * 0.3, seg.y - segRadius * 0.3, segRadius * 0.28, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
-      ctx.fill();
-
-      // Floating spine decorations (e.g. cute 🌸 flowers bobbing on back every 5 segments)
-      if (i > 2 && i < totalSegs - 1 && i % 5 === 0) {
-        const floatY = Math.sin(this.animFrame * 0.08 + i) * 2;
+      // D. Occasional Cherry Blossom Flower Icon inside bubble
+      if (i > 1 && i < totalSegs - 1 && i % 5 === 0) {
         const flowerIcon = pal.flower || '🌸';
-        ctx.font = `${segRadius * 0.95}px sans-serif`;
+        ctx.font = `${r * 0.95}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(flowerIcon, seg.x, seg.y - segRadius * 0.1 + floatY);
+        ctx.fillText(flowerIcon, seg.x, seg.y);
       }
     }
 
-    // Trailing boost sparkles when boosting
+    // Trailing sparkles when boosting
     if (snake.boosting) {
       const tailSeg = body[body.length - 1] || { x: headX, y: headY };
-      const sparkX = tailSeg.x + (Math.random() - 0.5) * 20;
-      const sparkY = tailSeg.y + (Math.random() - 0.5) * 20;
+      const sparkX = tailSeg.x + (Math.random() - 0.5) * 16;
+      const sparkY = tailSeg.y + (Math.random() - 0.5) * 16;
       ctx.font = `${baseRadius * 0.8}px sans-serif`;
       ctx.fillText('✨', sparkX, sparkY);
     }
-
     ctx.restore();
 
-    // --- 2. DRAW PLUMP KAWAII HEAD & CUTE FACE ---
+    // --- 2. CUTE BUBBLE HEAD & FACE ---
     ctx.save();
     ctx.translate(headX, headY);
     ctx.rotate(angle);
 
-    const headW = baseRadius * 1.45;
-    const headH = baseRadius * 1.25;
+    const headR = baseRadius * 1.32;
 
-    // Head Dark Contour Outline
+    // Head Outer Border Circle
     ctx.beginPath();
-    ctx.ellipse(0, 0, headW + 2.5, headH + 2.5, 0, 0, Math.PI * 2);
+    ctx.arc(0, 0, headR + 2.8, 0, Math.PI * 2);
     ctx.fillStyle = pal.outline;
     ctx.fill();
 
-    // Head Pastel Soft Fill
+    // Head Primary Soft Fill
     ctx.beginPath();
-    ctx.ellipse(0, 0, headW, headH, 0, 0, Math.PI * 2);
+    ctx.arc(0, 0, headR, 0, Math.PI * 2);
     ctx.fillStyle = pal.primary;
     ctx.fill();
 
-    // Head Top Gloss Highlight
+    // Head Glossy Top-Right Highlight
     ctx.beginPath();
-    ctx.ellipse(-headW * 0.2, -headH * 0.25, headW * 0.35, headH * 0.25, -0.2, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+    ctx.ellipse(-headR * 0.2, -headR * 0.25, headR * 0.42, headR * 0.28, -0.3, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
     ctx.fill();
 
-    // Soft Blush Cheeks (Cute glowing pink translucent circles under eyes)
+    // Soft Pink Blush Cheeks
     ctx.beginPath();
-    ctx.ellipse(headW * 0.28, -headH * 0.45, baseRadius * 0.38, baseRadius * 0.24, 0, 0, Math.PI * 2);
-    ctx.ellipse(headW * 0.28, headH * 0.45, baseRadius * 0.38, baseRadius * 0.24, 0, 0, Math.PI * 2);
-    ctx.fillStyle = pal.blush;
-    ctx.globalAlpha = 0.7;
+    ctx.ellipse(headR * 0.25, -headR * 0.38, headR * 0.32, headR * 0.22, 0, 0, Math.PI * 2);
+    ctx.ellipse(headR * 0.25, headR * 0.38, headR * 0.32, headR * 0.22, 0, 0, Math.PI * 2);
+    ctx.fillStyle = pal.blush || '#FFB7B2';
+    ctx.globalAlpha = 0.75;
     ctx.fill();
     ctx.globalAlpha = 1.0;
 
-    // --- 3. ADORABLE ANIME EYES (Dual Gloss Sparkle Dots) ---
-    const eyeOffsetX = headW * 0.4;
-    const eyeOffsetY = headH * 0.32;
-    const eyeRadius = Math.max(4.0, baseRadius * 0.28);
+    // Shiny Anime Button Eyes
+    const eyeX = headR * 0.35;
+    const eyeY = headR * 0.28;
+    const eyeR = Math.max(4.0, headR * 0.26);
 
     for (const side of [-1, 1]) {
-      const ey = side * eyeOffsetY;
+      const ey = side * eyeY;
 
       if (anim.isBlinking) {
-        // Cute closed blink line (◡)
+        // Cute closed blink curve (◡)
         ctx.beginPath();
-        ctx.arc(eyeOffsetX, ey, eyeRadius, 0.15 * Math.PI, 0.85 * Math.PI, false);
+        ctx.arc(eyeX, ey, eyeR, 0.15 * Math.PI, 0.85 * Math.PI, false);
         ctx.strokeStyle = pal.outline;
         ctx.lineWidth = 2.4;
         ctx.stroke();
       } else {
-        // Dark shiny pupil
+        // Dark Pupil
         ctx.beginPath();
-        ctx.arc(eyeOffsetX, ey, eyeRadius, 0, Math.PI * 2);
-        ctx.fillStyle = pal.eye;
+        ctx.arc(eyeX, ey, eyeR, 0, Math.PI * 2);
+        ctx.fillStyle = pal.eye || '#1E293B';
         ctx.fill();
 
-        // Primary Glossy Sparkle Dot (Top Left)
+        // Big Top Gloss Sparkle
         ctx.beginPath();
-        ctx.arc(eyeOffsetX + eyeRadius * 0.28, ey - eyeRadius * 0.28, eyeRadius * 0.45, 0, Math.PI * 2);
+        ctx.arc(eyeX + eyeR * 0.26, ey - eyeR * 0.26, eyeR * 0.44, 0, Math.PI * 2);
         ctx.fillStyle = '#FFFFFF';
         ctx.fill();
 
-        // Secondary Tiny Sparkle Dot (Bottom Right)
+        // Small Bottom Gloss Sparkle
         ctx.beginPath();
-        ctx.arc(eyeOffsetX - eyeRadius * 0.3, ey + eyeRadius * 0.32, eyeRadius * 0.22, 0, Math.PI * 2);
+        ctx.arc(eyeX - eyeR * 0.28, ey + eyeR * 0.3, eyeR * 0.22, 0, Math.PI * 2);
         ctx.fillStyle = '#FFFFFF';
         ctx.fill();
       }
     }
 
-    // --- 4. SWEET SMILE MOUTH & TONGUE FLICK ---
+    // Sweet Curved Smile Mouth
     ctx.beginPath();
-    ctx.arc(headW * 0.62, 0, baseRadius * 0.2, -0.2 * Math.PI, 0.7 * Math.PI, false);
+    ctx.arc(headR * 0.58, 0, headR * 0.18, -0.2 * Math.PI, 0.7 * Math.PI, false);
     ctx.strokeStyle = pal.outline;
     ctx.lineWidth = 2.2;
     ctx.lineCap = 'round';
     ctx.stroke();
 
-    // Cute Pink Tongue popping out
+    // Cute Tongue
     if (anim.tongueOut) {
       ctx.beginPath();
-      ctx.ellipse(headW * 0.82, 0, baseRadius * 0.22, baseRadius * 0.1, 0, 0, Math.PI * 2);
+      ctx.ellipse(headR * 0.78, 0, headR * 0.22, headR * 0.1, 0, 0, Math.PI * 2);
       ctx.fillStyle = '#FF70A6';
       ctx.fill();
     }
 
-    // --- 5. EQUIPPED ACCESSORY (Hats / Crowns on head) ---
+    // Equipped Accessory (Hats / Crowns)
     const equippedAcc = (snake as any).equippedAccessory;
     if (equippedAcc && ACCESSORY_ICONS[equippedAcc]) {
-      ctx.font = `${baseRadius * 1.3}px sans-serif`;
+      ctx.font = `${headR * 1.2}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(ACCESSORY_ICONS[equippedAcc], 0, -headH * 0.7);
+      ctx.fillText(ACCESSORY_ICONS[equippedAcc], 0, -headR * 0.75);
     }
 
     ctx.restore();
 
-    // --- 6. HEALTH BAR & NAME TAG ---
-    this.renderNameHp(snake, isTarget, anim, headX, headY, baseRadius);
+    // Name Tag & HP Bar positioned neatly ABOVE head
+    this.renderNameHp(snake, isTarget, anim, headX, headY, headR);
   }
 
   private renderNameHp(
@@ -457,15 +446,16 @@ export class Renderer {
     const maxHp = snake.maxHp ?? 100;
     const ratio = Math.max(0, Math.min(1, hp / maxHp));
 
-    // Clean name tag without clutter
-    const y = headY - r - 16;
+    // Clean name tag positioned nicely above head
+    const y = headY - r - 22;
     ctx.save();
-    ctx.font = 'bold 11px Outfit, sans-serif';
+    ctx.font = 'bold 12px Outfit, sans-serif';
     ctx.textAlign = 'center';
 
-    // Cute crown / star tag for target player instead of yellow dashed ring
     const label = isTarget ? `👑 ${snake.displayName}` : `${snake.displayName}`;
     ctx.fillStyle = isTarget ? '#2B6CB0' : '#4A5568';
+    ctx.shadowColor = 'rgba(255,255,255,0.9)';
+    ctx.shadowBlur = 4;
     ctx.fillText(label, headX, y - 4);
 
     // Only render HP bar when taking damage or in combat
