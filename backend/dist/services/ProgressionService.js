@@ -1,11 +1,20 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ProgressionService = exports.EVOLUTION_REQS = exports.MAX_LEVEL = void 0;
+exports.ProgressionService = exports.EVOLUTION_REQS = exports.MISSION_EVO_XP = exports.MAX_LEVEL = void 0;
+const types_1 = require("../types");
 exports.MAX_LEVEL = 1000;
-// Evolution ladder — gated by BOTH account level and Evolution XP (never by score).
+// Evolution XP awarded per mission category on claim
+exports.MISSION_EVO_XP = {
+    daily: 5,
+    weekly: 25,
+    event: 50,
+};
+// Evolution ladder — gated by BOTH account level and Evolution XP (never by score alone).
+// Score milestones are for the in-match visual stage only (see SCORE_EVOLUTION_THRESHOLDS).
 exports.EVOLUTION_REQS = [
     { evolution: 'Baby', level: 1, evoXp: 0 },
     { evolution: 'Young', level: 51, evoXp: 500 },
+    { evolution: 'Teen', level: 101, evoXp: 1000 },
     { evolution: 'Adult', level: 201, evoXp: 2500 },
     { evolution: 'Elite', level: 501, evoXp: 8000 },
     { evolution: 'Titan', level: 801, evoXp: 20000 },
@@ -62,6 +71,24 @@ class ProgressionService {
         const within = level - band.min;
         const div = within < span ? 'III' : within < span * 2 ? 'II' : 'I';
         return { tier: band.tier, division: div, label: `${band.tier} ${div}`, color: band.color };
+    }
+    /**
+     * Maps a match score to the in-match visual evolution stage.
+     * This is purely cosmetic / display — the permanent evolution ladder is separate.
+     */
+    static scoreToEvolution(score) {
+        let stage = 'Baby';
+        for (const t of types_1.SCORE_EVOLUTION_THRESHOLDS) {
+            if (score >= t.scoreMin)
+                stage = t.stage;
+        }
+        return stage;
+    }
+    /**
+     * Evo XP to grant when a mission of the given category is claimed.
+     */
+    static missionEvoXp(category) {
+        return exports.MISSION_EVO_XP[category] ?? 5;
     }
 }
 exports.ProgressionService = ProgressionService;

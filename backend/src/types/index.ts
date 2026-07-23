@@ -8,7 +8,28 @@ export interface UserAccount {
   mfaEnabled?: boolean;
 }
 
-export type Evolution = 'Baby' | 'Young' | 'Adult' | 'Elite' | 'Titan' | 'Legend';
+export type Evolution = 'Baby' | 'Young' | 'Teen' | 'Adult' | 'Elite' | 'Titan' | 'Legend';
+
+// Score thresholds that drive in-match visual stage (separate from permanent Evolution XP ladder)
+export const SCORE_EVOLUTION_THRESHOLDS: Array<{ stage: Evolution; scoreMin: number }> = [
+  { stage: 'Baby',   scoreMin: 0 },
+  { stage: 'Young',  scoreMin: 500 },
+  { stage: 'Teen',   scoreMin: 1000 },
+  { stage: 'Adult',  scoreMin: 1500 },
+  { stage: 'Elite',  scoreMin: 2000 },
+  { stage: 'Titan',  scoreMin: 2500 },
+];
+
+export type AccessorySlot = 'hat' | 'neck' | 'back';
+
+export interface Accessory {
+  id: string;
+  name: string;
+  icon: string;
+  slot: AccessorySlot;
+  rarity: 'common' | 'rare' | 'epic' | 'legendary';
+  seasonal?: boolean;
+}
 
 export interface PlayerProfile {
   userId: string;
@@ -25,6 +46,8 @@ export interface PlayerProfile {
   equippedEvolution: Evolution;
   unlockedEvolutions: Evolution[];
   equippedTrail: string;
+  equippedAccessory?: string;    // cosmetic accessory id
+  unlockedAccessories: string[]; // list of owned accessory ids
   stats: PlayerStats;
   coupons?: CouponReward[];
 }
@@ -52,7 +75,7 @@ export interface SnakeSegment {
 
 export type GameMode = 'classic' | 'battle_royale' | 'team' | 'event';
 
-export type GrowthStage = 'Baby' | 'Young' | 'Adult' | 'Elite' | 'Titan';
+export type GrowthStage = 'Baby' | 'Young' | 'Teen' | 'Adult' | 'Elite' | 'Titan';
 
 export interface SnakeState {
   id: string;

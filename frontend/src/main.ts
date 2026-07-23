@@ -7,14 +7,68 @@ const API = serverBase();
 type Screen = 'app' | 'matchmaking' | 'play' | 'pause' | 'respawn' | 'gameover' | 'ad-reward';
 type Page = 'home' | 'play' | 'missions' | 'inventory' | 'profile' | 'events' | 'social' | 'settings';
 
-interface SkinDef { id: string; name: string; grad: string; premium?: boolean; }
-const SKINS: SkinDef[] = [
-  { id: 'Forest', name: 'Forest', grad: 'linear-gradient(90deg,#1B5E20,#8BC34A)' },
-  { id: 'Ocean', name: 'Ocean', grad: 'linear-gradient(90deg,#0D47A1,#64B5F6)' },
-  { id: 'Fire', name: 'Fire', grad: 'linear-gradient(90deg,#C62828,#FFB74D)' },
-  { id: 'Shadow', name: 'Shadow', grad: 'linear-gradient(90deg,#311B92,#9575CD)' },
-  { id: 'Golden', name: 'Golden', grad: 'linear-gradient(90deg,#FF8F00,#FFE082)', premium: true },
+interface SkinDef { id: string; name: string; grad: string; premium?: boolean; family?: string; }
+// 15 skin families — each belongs to a themed group
+const SKIN_FAMILIES: Array<{ family: string; icon: string; skins: SkinDef[] }> = [
+  { family: 'Forest',    icon: '🌳', skins: [
+    { id: 'Forest',    name: 'Forest',    grad: 'linear-gradient(90deg,#1B5E20,#8BC34A)' },
+    { id: 'Jungle',    name: 'Jungle',    grad: 'linear-gradient(90deg,#2E7D32,#81C784)' },
+  ]},
+  { family: 'Ocean',     icon: '🌊', skins: [
+    { id: 'Ocean',     name: 'Ocean',     grad: 'linear-gradient(90deg,#0D47A1,#64B5F6)' },
+    { id: 'Ice',       name: 'Ice',       grad: 'linear-gradient(90deg,#0097A7,#E0F7FA)' },
+  ]},
+  { family: 'Fire',      icon: '🔥', skins: [
+    { id: 'Fire',      name: 'Fire',      grad: 'linear-gradient(90deg,#C62828,#FFB74D)' },
+    { id: 'Electric',  name: 'Electric',  grad: 'linear-gradient(90deg,#F57F17,#FFF9C4)' },
+  ]},
+  { family: 'Mystical',  icon: '🌌', skins: [
+    { id: 'Galaxy',    name: 'Galaxy',    grad: 'linear-gradient(90deg,#0D0221,#E040FB)' },
+    { id: 'Shadow',    name: 'Shadow',    grad: 'linear-gradient(90deg,#311B92,#9575CD)' },
+    { id: 'Mythical',  name: 'Mythical',  grad: 'linear-gradient(90deg,#4A0072,#EA80FC)', premium: true },
+  ]},
+  { family: 'Elegant',   icon: '👑', skins: [
+    { id: 'Golden',    name: 'Golden',    grad: 'linear-gradient(90deg,#FF8F00,#FFE082)', premium: true },
+    { id: 'Royal',     name: 'Royal',     grad: 'linear-gradient(90deg,#311B92,#D1C4E9)', premium: true },
+  ]},
+  { family: 'Nature',    icon: '🌸', skins: [
+    { id: 'Sakura',    name: 'Sakura',    grad: 'linear-gradient(90deg,#AD1457,#FCE4EC)' },
+    { id: 'Desert',    name: 'Desert',    grad: 'linear-gradient(90deg,#8B5E0A,#F0D060)' },
+  ]},
+  { family: 'Seasonal',  icon: '🎄', skins: [
+    { id: 'Christmas', name: 'Christmas', grad: 'linear-gradient(90deg,#C62828,#1B5E20)' },
+    { id: 'Halloween', name: 'Halloween', grad: 'linear-gradient(90deg,#212121,#FF6D00)' },
+  ]},
 ];
+// Flat list for quick lookup
+const SKINS: SkinDef[] = SKIN_FAMILIES.flatMap(f => f.skins);
+
+interface AccessoryDef { id: string; name: string; icon: string; slot: string; rarity: string; seasonal?: boolean; }
+const ACCESSORIES: AccessoryDef[] = [
+  { id: 'flower_crown',    name: 'Flower Crown',     icon: '🌸', slot: 'hat', rarity: 'common' },
+  { id: 'pirate_hat',      name: 'Pirate Hat',        icon: '🏴‍☠️', slot: 'hat', rarity: 'rare' },
+  { id: 'wizard_hat',      name: 'Wizard Hat',        icon: '🎩', slot: 'hat', rarity: 'rare' },
+  { id: 'headphones',      name: 'Headphones',        icon: '🎧', slot: 'hat', rarity: 'common' },
+  { id: 'scarf',           name: 'Scarf',             icon: '🧣', slot: 'neck', rarity: 'common' },
+  { id: 'backpack',        name: 'Tiny Backpack',     icon: '🎒', slot: 'back', rarity: 'rare' },
+  { id: 'explorer_hat',    name: 'Explorer Hat',      icon: '🤠', slot: 'hat', rarity: 'common' },
+  { id: 'christmas_hat',   name: 'Christmas Hat',     icon: '🎅', slot: 'hat', rarity: 'rare', seasonal: true },
+  { id: 'ramadan_lantern', name: 'Ramadan Lantern',   icon: '🏮', slot: 'hat', rarity: 'epic', seasonal: true },
+  { id: 'diwali_crown',    name: 'Diwali Crown',      icon: '👑', slot: 'hat', rarity: 'epic', seasonal: true },
+  { id: 'golden_wings',    name: 'Golden Wings',      icon: '✨', slot: 'back', rarity: 'legendary' },
+];
+
+// 7-stage evolution ladder — driven by score milestones + Evo XP (not physical length)
+const EVO_LADDER: Array<{ name: string; scoreReq: number; evoXpReq: number; desc: string }> = [
+  { name: 'Baby',   scoreReq: 0,    evoXpReq: 0,     desc: 'Hatchling' },
+  { name: 'Young',  scoreReq: 500,  evoXpReq: 500,   desc: 'Growing fast' },
+  { name: 'Teen',   scoreReq: 1000, evoXpReq: 1000,  desc: 'Finding strength' },
+  { name: 'Adult',  scoreReq: 1500, evoXpReq: 2500,  desc: 'Formidable force' },
+  { name: 'Elite',  scoreReq: 2000, evoXpReq: 8000,  desc: 'Apex predator' },
+  { name: 'Titan',  scoreReq: 2500, evoXpReq: 20000, desc: 'Legend of the park' },
+  { name: 'Legend', scoreReq: 2500, evoXpReq: 40000, desc: '✨ Prestige required' },
+];
+
 
 const POWERUPS = [
   { icon: '🍒', name: 'Cherry', sub: 'Restores a little health', val: '+10' },
@@ -25,15 +79,6 @@ const POWERUPS = [
   { icon: '🥚', name: 'Egg', sub: 'Rare mystery prize', val: 'Prize' },
   { icon: '🛡️', name: 'Shield', sub: 'Blocks all damage 8s', val: 'Guard' },
   { icon: '⚡', name: 'Speed', sub: 'Faster for 6s', val: 'Boost' },
-];
-
-const EVO_LADDER: Array<{ name: string; size: number; req: string }> = [
-  { name: 'Baby', size: 20, req: 'Lv 1' },
-  { name: 'Young', size: 26, req: 'Lv 51' },
-  { name: 'Adult', size: 32, req: 'Lv 201' },
-  { name: 'Elite', size: 40, req: 'Lv 501' },
-  { name: 'Titan', size: 48, req: 'Lv 801' },
-  { name: 'Legend', size: 56, req: 'Prestige' },
 ];
 
 const MODE_META: Record<GameMode, { icon: string; name: string; tag: string; mood?: boolean }> = {
@@ -67,10 +112,11 @@ class AnacondaPark {
   private screen: Screen = 'app';
   private page: Page = 'home';
   private missionCat: 'daily' | 'weekly' | 'event' | 'achievements' = 'daily';
-  private invTab: 'skins' | 'powerups' | 'coupons' = 'skins';
+  private invTab: 'skins' | 'accessories' | 'powerups' | 'coupons' = 'skins';
 
   private selectedMode: GameMode = 'classic';
   private selectedSkin = 'Forest';
+  private equippedAccessory = '';
   private matchType: 'global' | 'local' = 'global';
   private selectedRegion = '🌍 Quick Match';
 
@@ -166,6 +212,24 @@ class AnacondaPark {
       const data = await res.json();
       if (data.success) { this.profile = data.profile; this.showToast(`👑 ${data.message}`); audio.playFanfare(); } else this.showToast(data.message);
     } catch { /* */ }
+    this.render();
+  }
+
+  private async equipAccessory(id: string) {
+    audio.playClick();
+    // Tap again to unequip
+    const newId = this.equippedAccessory === id ? '' : id;
+    this.equippedAccessory = newId;
+    if (this.profile) this.profile.equippedAccessory = newId || undefined;
+    try {
+      await fetch(API + '/api/player/equip-accessory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
+        body: JSON.stringify({ accessoryId: newId || null }),
+      });
+    } catch { /* */ }
+    const acc = ACCESSORIES.find(a => a.id === newId);
+    this.showToast(newId ? `${acc?.icon ?? '✨'} Equipped ${acc?.name ?? newId}` : '🎒 Accessory removed');
     this.render();
   }
 
@@ -501,10 +565,35 @@ class AnacondaPark {
 
   // ---------- INVENTORY ----------
   private pageInventory() {
-    const tabs: Array<[typeof this.invTab, string]> = [['skins', '🐍 Skins'], ['powerups', '⚡ Power-Ups'], ['coupons', '🎟️ Coupons']];
+    const tabs: Array<[typeof this.invTab, string]> = [
+      ['skins', '🐍 Skins'], ['accessories', '👑 Accessories'], ['powerups', '⚡ Power-Ups'], ['coupons', '🎟️ Coupons'],
+    ];
     let content = '';
     if (this.invTab === 'skins') {
-      content = `<div class="grid-auto">${SKINS.map(s => `<div class="skin-card ${this.selectedSkin === s.id ? 'equipped' : ''}" data-skin="${s.id}"><div class="skin-swatch" style="background:${s.grad}"></div><div class="skin-name">${s.name}</div><div class="skin-tag">${s.premium ? '✨ Premium' : this.selectedSkin === s.id ? 'Equipped' : 'Tap to equip'}</div></div>`).join('')}</div>`;
+      // Grouped by family
+      content = SKIN_FAMILIES.map(fam => `
+        <div class="skin-family">
+          <div class="skin-family-title">${fam.icon} ${fam.family}</div>
+          <div class="skin-family-row">${fam.skins.map(s => `
+            <div class="skin-card ${this.selectedSkin === s.id ? 'equipped' : ''}" data-skin="${s.id}">
+              <div class="skin-swatch" style="background:${s.grad}"></div>
+              <div class="skin-name">${s.name}</div>
+              <div class="skin-tag">${s.premium ? '✨ Premium' : this.selectedSkin === s.id ? 'Equipped ✓' : 'Tap to equip'}</div>
+            </div>`).join('')}
+          </div>
+        </div>`).join('');
+    } else if (this.invTab === 'accessories') {
+      const rarityColors: Record<string, string> = { common: '#6b7280', rare: '#3b82f6', epic: '#a855f7', legendary: '#f59e0b' };
+      content = `<div class="accessories-intro muted" style="font-size:0.8rem;margin-bottom:10px;">🎮 Cosmetic-only — never affects gameplay. Earn via missions, events, and the star shop.</div>
+        <div class="accessories-grid">${ACCESSORIES.map(a => {
+          const eq = this.equippedAccessory === a.id;
+          return `<div class="acc-card ${eq ? 'equipped' : ''}" data-acc="${a.id}">
+            <div class="acc-icon">${a.icon}</div>
+            <div class="acc-name">${a.name}</div>
+            <div class="acc-slot" style="color:${rarityColors[a.rarity] ?? '#6b7280'}">${a.rarity}${a.seasonal ? ' · Seasonal' : ''}</div>
+            <div class="acc-equip">${eq ? '✓ Equipped' : 'Tap to equip'}</div>
+          </div>`;
+        }).join('')}</div>`;
     } else if (this.invTab === 'powerups') {
       content = `<div class="list">${POWERUPS.map(p => `<div class="item-card"><div class="i-ico">${p.icon}</div><div><div class="i-name">${p.name}</div><div class="i-sub">${p.sub}</div></div><div class="i-val">${p.val}</div></div>`).join('')}
         <div class="muted" style="font-size:0.78rem;padding:6px 2px;">Boosts, Eggs, Chests & Trails collected in-match will appear here — full inventory storage is coming in a later update.</div></div>`;
@@ -542,16 +631,26 @@ class AnacondaPark {
 
         <div class="card">
           <div class="section-title">🧬 Snake Evolution</div>
-          <div class="evo-track">
-            ${EVO_LADDER.map(e => {
-      const isUnlocked = unlocked.includes(e.name);
-      const isEq = p.equippedEvolution === e.name;
-      return `<div class="evo-node ${isEq ? 'equipped' : ''} ${isUnlocked ? '' : 'locked'}" ${isUnlocked ? `data-evo="${e.name}"` : ''}>
-                <div class="evo-dot" style="width:${e.size}px;height:${e.size}px;"></div>
-                <div class="evo-name">${isUnlocked ? '' : '🔒 '}${e.name}</div><div class="evo-req">${e.req}</div></div>`;
-    }).join('')}
+          <div class="evo-track-v2">
+            ${EVO_LADDER.map((e, idx) => {
+              const isUnlocked = unlocked.includes(e.name);
+              const isEq = p.equippedEvolution === e.name;
+              const evoXpPct = e.evoXpReq > 0 ? Math.min(100, Math.round((p.evolutionXp / e.evoXpReq) * 100)) : 100;
+              return `<div class="evo-node-v2 ${isEq ? 'equipped' : ''} ${isUnlocked ? 'unlocked' : 'locked'}" ${isUnlocked ? `data-evo="${e.name}"` : ''}>
+                <div class="evo-badge ${isEq ? 'active' : ''}">${isUnlocked ? (isEq ? '✓' : String(idx + 1)) : '🔒'}</div>
+                <div class="evo-info">
+                  <div class="evo-name">${e.name}</div>
+                  <div class="evo-desc">${e.desc}</div>
+                  <div class="evo-reqs">
+                    <span class="evo-req-pill">🎯 ${e.scoreReq > 0 ? `${e.scoreReq} score` : 'Start'}</span>
+                    <span class="evo-req-pill">✨ ${e.evoXpReq > 0 ? `${e.evoXpReq} Evo-XP` : 'None'}</span>
+                  </div>
+                  ${!isUnlocked && e.evoXpReq > 0 ? `<div class="progress" style="height:4px;margin-top:4px;"><div style="width:${evoXpPct}%"></div></div>` : ''}
+                </div>
+              </div>`;
+            }).join('<div class="evo-connector"></div>')}
           </div>
-          <div class="muted" style="font-size:0.76rem;margin-top:8px;">Unlock forms with Account Level + Evolution XP (earned from missions & events, never from score). Tap an unlocked form to equip it.</div>
+          <div class="muted" style="font-size:0.76rem;margin-top:8px;">Score milestones unlock stages in-match · Evo-XP (from missions) unlocks permanent evolution forms · Tap an unlocked form to equip it.</div>
         </div>
 
         <div class="card">
@@ -696,6 +795,7 @@ class AnacondaPark {
     document.querySelectorAll('[data-region]').forEach(b => b.addEventListener('click', () => { this.selectedRegion = (b as HTMLElement).dataset.region!; audio.playClick(); this.render(); }));
     document.querySelectorAll('[data-skin]').forEach(b => b.addEventListener('click', () => this.equipSkin((b as HTMLElement).dataset.skin!)));
     document.querySelectorAll('[data-evo]').forEach(b => b.addEventListener('click', () => this.equipEvolution((b as HTMLElement).dataset.evo!)));
+    document.querySelectorAll('[data-acc]').forEach(b => b.addEventListener('click', () => this.equipAccessory((b as HTMLElement).dataset.acc!)));
     document.querySelectorAll('.claim-btn').forEach(b => b.addEventListener('click', () => this.claimMission((b as HTMLElement).dataset.id!)));
     document.querySelectorAll('.copy-btn').forEach(b => b.addEventListener('click', (e) => { const c = (e.currentTarget as HTMLElement).dataset.code!; navigator.clipboard?.writeText(c); this.showToast(`📋 Copied ${c}`); }));
     document.querySelectorAll('[data-set]').forEach(b => b.addEventListener('click', () => this.toggleSetting((b as HTMLElement).dataset.set as keyof Settings)));

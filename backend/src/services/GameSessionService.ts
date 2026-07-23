@@ -35,12 +35,15 @@ const COLLECTIBLE_TABLE: CollectibleTemplate[] = [
   { type: 'egg', icon: '🥚', value: 500, color: '#F4E9CD', weight: 2, hpRestore: 25 },
 ];
 
-const STAGE_THRESHOLDS: Array<{ stage: GrowthStage; min: number; radius: number; defense: number }> = [
-  { stage: 'Baby', min: 0, radius: 12, defense: 0 },
-  { stage: 'Young', min: 100, radius: 16, defense: 8 },
-  { stage: 'Adult', min: 500, radius: 21, defense: 16 },
-  { stage: 'Elite', min: 1500, radius: 27, defense: 25 },
-  { stage: 'Titan', min: 5000, radius: 34, defense: 40 },
+// New 6-stage growth table — score-based thresholds matching SCORE_EVOLUTION_THRESHOLDS.
+// Physical radius is CAPPED at Titan level (34px) — score keeps going, snake stops growing.
+const STAGE_THRESHOLDS: Array<{ stage: GrowthStage; min: number; radius: number; defense: number; growthFactor: number }> = [
+  { stage: 'Baby',  min: 0,    radius: 14, defense: 0,  growthFactor: 0.8  }, // fast early growth
+  { stage: 'Young', min: 500,  radius: 18, defense: 8,  growthFactor: 0.6  }, // medium growth
+  { stage: 'Teen',  min: 1000, radius: 22, defense: 14, growthFactor: 0.45 }, // slowing down
+  { stage: 'Adult', min: 1500, radius: 26, defense: 22, growthFactor: 0.3  }, // slow
+  { stage: 'Elite', min: 2000, radius: 30, defense: 32, growthFactor: 0.15 }, // very slow
+  { stage: 'Titan', min: 2500, radius: 34, defense: 40, growthFactor: 0.05 }, // almost stops — Titan cap
 ];
 
 const MODE_CONFIGS: Record<GameMode, GameModeConfig> = {
@@ -116,20 +119,23 @@ export class GameSessionService {
   }
 
   // ---------------------------------------------------------------- stage math
-  private computeStage(score: number): { stage: GrowthStage; radius: number; defense: number } {
+  private computeStage(score: number): { stage: GrowthStage; radius: number; defense: number; growthFactor: number } {
     let match = STAGE_THRESHOLDS[0];
     for (const t of STAGE_THRESHOLDS) {
       if (score >= t.min) match = t;
     }
-    // Smoothly interpolate radius toward the next stage for a growing feel.
+    // Smoothly interpolate radius between stages for a fluid feel — but never exceed the cap.
     const idx = STAGE_THRESHOLDS.indexOf(match);
     const next = STAGE_THRESHOLDS[idx + 1];
     let radius = match.radius;
     if (next) {
       const t = Math.min(1, (score - match.min) / (next.min - match.min));
-      radius = match.radius + (next.radius - match.radius) * t;
+      radius = match.radius + (next.radius - match.radius) * t * 0.8; // ease out
     }
-    return { stage: match.stage, radius, defense: match.defense };
+    // Hard cap — never exceed Titan radius regardless of score
+    const TITAN_RADIUS = 34;
+    radius = Math.min(TITAN_RADIUS, radius);
+    return { stage: match.stage, radius, defense: match.defense, growthFactor: match.growthFactor };
   }
 
   private assignTeam(): 'red' | 'blue' | undefined {
@@ -387,24 +393,20 @@ export class GameSessionService {
     snake.score += value;
     snake.level = Math.floor(snake.score / 250) + 1;
 
-    // Match-growth SPEED bands — fast early, minimal once huge (design v2).
-    const s = snake.score;
-    let factor = 1.0;                 // 0-500 fast
-    if (s >= 5000) factor = 0.06;     // 5000+ minimal
-    else if (s >= 2000) factor = 0.18;// 2000-5000 very slow
-    else if (s >= 1000) factor = 0.35;// 1000-2000 slow
-    else if (s >= 500) factor = 0.6;  // 500-1000 medium
+    // Use the per-stage growth factor from the threshold table — growth slows dramatically
+    // as the snake progresses. After Titan (2500+) body length barely grows at all.
+    const { stage, radius, defense, growthFactor } = this.computeStage(snake.score);
 
     if (value > 0 && snake.body.length < this.MAX_LENGTH) {
-      const segments = Math.max(1, Math.floor((value / 25) * factor));
+      // Base segments per food scaled by stage factor — Titan factor is 0.05 (almost nothing)
+      const segments = Math.max(0, Math.floor((value / 25) * growthFactor));
       const tail = snake.body[snake.body.length - 1] || snake.head;
       for (let i = 0; i < segments && snake.body.length < this.MAX_LENGTH; i++) {
         snake.body.push({ x: tail.x, y: tail.y });
       }
     }
 
-    // Size tier + defense from score; length is capped above.
-    const { stage, radius, defense } = this.computeStage(snake.score);
+    // Update size tier, radius (hard-capped at Titan), and defense from score.
     snake.stage = stage;
     snake.radius = radius;
     snake.defense = defense;

@@ -317,3 +317,75 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 @media (pointer: coarse) {
   .touch-joystick, .touch-actions { display: flex; }
 }
+
+/* ---------------------------------------------------------------- skin families */
+.skin-family { margin-bottom: 18px; }
+.skin-family-title {
+  font-family: var(--font-title); font-weight: 800; font-size: 0.85rem;
+  color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.06em;
+  margin-bottom: 8px; padding: 0 2px;
+}
+.skin-family-row {
+  display: flex; gap: 10px; flex-wrap: wrap;
+}
+
+/* ---------------------------------------------------------------- accessories */
+.accessories-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px;
+  margin-top: 4px;
+}
+.acc-card {
+  background: var(--card-2); border: 2px solid var(--line); border-radius: var(--r-md);
+  padding: 12px 8px; text-align: center; cursor: pointer;
+  transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.acc-card:hover { border-color: var(--green); transform: translateY(-2px); box-shadow: var(--shadow); }
+.acc-card.equipped { border-color: var(--gold); background: linear-gradient(135deg, #fff9e6, #fffdf5); box-shadow: 0 0 0 3px #f5a62340; }
+.acc-icon { font-size: 2rem; }
+.acc-name { font-weight: 700; font-size: 0.8rem; color: var(--ink); }
+.acc-slot { font-size: 0.72rem; font-weight: 600; text-transform: capitalize; }
+.acc-equip { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+.acc-card.equipped .acc-equip { color: var(--gold-deep); font-weight: 700; }
+
+/* ---------------------------------------------------------------- evolution track v2 */
+.evo-track-v2 {
+  display: flex; flex-direction: column; gap: 0;
+  margin: 8px 0;
+}
+.evo-node-v2 {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 10px 10px; border-radius: var(--r-md);
+  cursor: default; transition: background 0.2s;
+  position: relative;
+}
+.evo-node-v2.unlocked { cursor: pointer; }
+.evo-node-v2.unlocked:hover { background: var(--card-2); }
+.evo-node-v2.equipped { background: linear-gradient(135deg, #f0fef4, #e6fdf0); border: 1.5px solid var(--green); }
+.evo-node-v2.locked { opacity: 0.52; }
+.evo-badge {
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  background: var(--line); display: flex; align-items: center; justify-content: center;
+  font-size: 0.85rem; font-weight: 800; color: var(--muted);
+  border: 2px solid var(--line-strong); margin-top: 2px;
+}
+.evo-badge.active {
+  background: var(--green); color: #fff; border-color: var(--green-deep);
+  box-shadow: 0 0 0 4px rgba(47, 191, 91, 0.22);
+}
+.evo-info { flex: 1; }
+.evo-info .evo-name { font-family: var(--font-title); font-weight: 800; font-size: 1rem; color: var(--ink); }
+.evo-info .evo-desc { font-size: 0.78rem; color: var(--muted); margin-bottom: 4px; }
+.evo-reqs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.evo-req-pill {
+  background: var(--card-2); border: 1px solid var(--line-strong);
+  border-radius: 20px; padding: 2px 8px; font-size: 0.72rem; font-weight: 600;
+  color: var(--ink-soft);
+}
+.evo-connector {
+  width: 2px; height: 14px; background: var(--line-strong);
+  margin-left: 26px; /* align with badge center */
+}
+
+/* ---------------------------------------------------------------- hud HP hidden */
+.hud-hp--hidden { opacity: 0; pointer-events: none; transition: opacity 0.3s; }

@@ -1,25 +1,34 @@
-import { Evolution, EvolutionRequirement, RankInfo } from '../types';
+import { Evolution, EvolutionRequirement, RankInfo, SCORE_EVOLUTION_THRESHOLDS } from '../types';
 
 export const MAX_LEVEL = 1000;
 
-// Evolution ladder — gated by BOTH account level and Evolution XP (never by score).
+// Evolution XP awarded per mission category on claim
+export const MISSION_EVO_XP: Record<string, number> = {
+  daily: 5,
+  weekly: 25,
+  event: 50,
+};
+
+// Evolution ladder — gated by BOTH account level and Evolution XP (never by score alone).
+// Score milestones are for the in-match visual stage only (see SCORE_EVOLUTION_THRESHOLDS).
 export const EVOLUTION_REQS: EvolutionRequirement[] = [
-  { evolution: 'Baby', level: 1, evoXp: 0 },
-  { evolution: 'Young', level: 51, evoXp: 500 },
-  { evolution: 'Adult', level: 201, evoXp: 2500 },
-  { evolution: 'Elite', level: 501, evoXp: 8000 },
-  { evolution: 'Titan', level: 801, evoXp: 20000 },
+  { evolution: 'Baby',   level: 1,    evoXp: 0 },
+  { evolution: 'Young',  level: 51,   evoXp: 500 },
+  { evolution: 'Teen',   level: 101,  evoXp: 1000 },
+  { evolution: 'Adult',  level: 201,  evoXp: 2500 },
+  { evolution: 'Elite',  level: 501,  evoXp: 8000 },
+  { evolution: 'Titan',  level: 801,  evoXp: 20000 },
   { evolution: 'Legend', level: 1000, evoXp: 40000 }, // also requires prestige >= 1
 ];
 
 // Rank ladder by account level band; each band has 3 divisions (III -> I).
 const RANK_TIERS: Array<{ tier: string; min: number; max: number; color: string }> = [
-  { tier: 'Bronze', min: 1, max: 100, color: '#b45309' },
-  { tier: 'Silver', min: 101, max: 250, color: '#94a3b8' },
-  { tier: 'Gold', min: 251, max: 450, color: '#f59e0b' },
-  { tier: 'Platinum', min: 451, max: 650, color: '#14b8a6' },
-  { tier: 'Diamond', min: 651, max: 850, color: '#38bdf8' },
-  { tier: 'Master', min: 851, max: 1000, color: '#a855f7' },
+  { tier: 'Bronze',   min: 1,   max: 100,  color: '#b45309' },
+  { tier: 'Silver',   min: 101, max: 250,  color: '#94a3b8' },
+  { tier: 'Gold',     min: 251, max: 450,  color: '#f59e0b' },
+  { tier: 'Platinum', min: 451, max: 650,  color: '#14b8a6' },
+  { tier: 'Diamond',  min: 651, max: 850,  color: '#38bdf8' },
+  { tier: 'Master',   min: 851, max: 1000, color: '#a855f7' },
 ];
 
 export class ProgressionService {
@@ -65,5 +74,24 @@ export class ProgressionService {
     const within = level - band.min;
     const div = within < span ? 'III' : within < span * 2 ? 'II' : 'I';
     return { tier: band.tier, division: div, label: `${band.tier} ${div}`, color: band.color };
+  }
+
+  /**
+   * Maps a match score to the in-match visual evolution stage.
+   * This is purely cosmetic / display — the permanent evolution ladder is separate.
+   */
+  static scoreToEvolution(score: number): Evolution {
+    let stage: Evolution = 'Baby';
+    for (const t of SCORE_EVOLUTION_THRESHOLDS) {
+      if (score >= t.scoreMin) stage = t.stage;
+    }
+    return stage;
+  }
+
+  /**
+   * Evo XP to grant when a mission of the given category is claimed.
+   */
+  static missionEvoXp(category: string): number {
+    return MISSION_EVO_XP[category] ?? 5;
   }
 }

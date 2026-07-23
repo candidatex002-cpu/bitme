@@ -60,6 +60,7 @@ class Database {
             avatarUrl: 'https://api.dicebear.com/7.x/bottts/svg?seed=AnacondaAlpha',
             level: 176, xp: 3450, evolutionXp: 2100, prestige: 0, rating: 1420, stars: 1250, tickets: 15,
             equippedSkin: 'Forest', equippedEvolution: 'Young', unlockedEvolutions: ['Baby', 'Young'], equippedTrail: 'Jungle Glow',
+            equippedAccessory: undefined, unlockedAccessories: [],
             stats: { matchesPlayed: 42, matchesWon: 11, totalKills: 156, totalFoodEaten: 4200, highestScore: 18500, survivalTimeSeconds: 14200, cherriesCollected: 320 },
         };
         this.users.set(demoUser.id, demoUser);
@@ -82,6 +83,7 @@ class Database {
             avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`,
             level: 1, xp: 0, evolutionXp: 0, prestige: 0, rating: 1000, stars: 500, tickets: 5,
             equippedSkin: 'Forest', equippedEvolution: 'Baby', unlockedEvolutions: ['Baby'], equippedTrail: 'Classic Dust',
+            equippedAccessory: undefined, unlockedAccessories: [],
             stats: { matchesPlayed: 0, matchesWon: 0, totalKills: 0, totalFoodEaten: 0, highestScore: 0, survivalTimeSeconds: 0, cherriesCollected: 0 },
         };
         this.users.set(id, user);

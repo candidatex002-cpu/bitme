@@ -112,6 +112,18 @@ app.post('/api/player/equip', (req, res) => {
     const profile = Database_1.db.updateProfile(a.userId, { equippedSkin: skin });
     res.json({ success: true, profile });
 });
+app.post('/api/player/equip-accessory', (req, res) => {
+    const a = auth(req, res);
+    if (!a)
+        return;
+    const { accessoryId } = req.body;
+    const profile = Database_1.db.getProfile(a.userId);
+    if (!profile)
+        return res.status(404).json({ error: 'Profile not found' });
+    // null/undefined means unequip; otherwise set the accessory
+    const updated = Database_1.db.updateProfile(a.userId, { equippedAccessory: accessoryId || undefined });
+    res.json({ success: true, profile: withRank(updated) });
+});
 app.get('/api/missions', (req, res) => {
     const a = auth(req, res);
     if (!a)
@@ -178,7 +190,8 @@ app.post('/api/match/summary', (req, res) => {
     Database_1.db.updateLeaderboard(a.userId, a.username, Math.round(score), won);
     // Server-authoritative XP / Evolution XP with account level-ups
     const { profile: updated, levelsGained } = Database_1.db.grantRewards(a.userId, { stars: earnedStars, xp: earnedXP, evoXp: earnedEvoXP });
-    res.json({ success: true, earnedStars, earnedXP, earnedEvoXP, levelsGained, placement, kills, score: Math.round(score), profile: withRank(updated) });
+    const scoreEvolution = ProgressionService_1.ProgressionService.scoreToEvolution(Math.round(score));
+    res.json({ success: true, earnedStars, earnedXP, earnedEvoXP, levelsGained, placement, kills, score: Math.round(score), scoreEvolution, profile: withRank(updated) });
 });
 app.post('/api/match/abandon', (req, res) => {
     const a = auth(req, res);
