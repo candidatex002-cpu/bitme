@@ -1,6 +1,6 @@
-# 🐍 Anaconda Park
+# 🐍 Anaconda Park (Bitme) — Live Web App
 
-An open-world, server-authoritative multiplayer snake battle-royale set in a living city park.
+Authoritative Realtime Multiplayer Game built with TypeScript, Vite, Express, and Canvas 2D.
 Grow · Explore · Compete · Survive.
 
 ## Quick start
