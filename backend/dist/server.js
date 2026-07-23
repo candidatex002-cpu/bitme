@@ -300,3 +300,4 @@ server.listen(PORT, () => {
     console.log(` Modes: Classic · Battle Royale · Team · Event  @ 30 Hz`);
     console.log(`=======================================================`);
 });
+exports.default = app;
