@@ -1,0 +1,736 @@
+import { GameClient, GameMode, GameStateTick, SnakeData, serverBase } from './game/GameClient.js';
+import { Renderer } from './game/Renderer.js';
+import { audio } from './game/AudioSystem.js';
+
+const API = serverBase();
+
+type Screen = 'app' | 'matchmaking' | 'play' | 'pause' | 'respawn' | 'gameover' | 'ad-reward';
+type Page = 'home' | 'play' | 'missions' | 'inventory' | 'profile' | 'events' | 'social' | 'settings';
+
+interface SkinDef { id: string; name: string; grad: string; premium?: boolean; }
+const SKINS: SkinDef[] = [
+  { id: 'Forest', name: 'Forest', grad: 'linear-gradient(90deg,#1B5E20,#8BC34A)' },
+  { id: 'Ocean', name: 'Ocean', grad: 'linear-gradient(90deg,#0D47A1,#64B5F6)' },
+  { id: 'Fire', name: 'Fire', grad: 'linear-gradient(90deg,#C62828,#FFB74D)' },
+  { id: 'Shadow', name: 'Shadow', grad: 'linear-gradient(90deg,#311B92,#9575CD)' },
+  { id: 'Golden', name: 'Golden', grad: 'linear-gradient(90deg,#FF8F00,#FFE082)', premium: true },
+];
+
+const POWERUPS = [
+  { icon: '🍒', name: 'Cherry', sub: 'Restores a little health', val: '+10' },
+  { icon: '🍄', name: 'Mushroom', sub: 'Quick snack', val: '+15' },
+  { icon: '🍎', name: 'Apple', sub: 'Solid score + heal', val: '+25' },
+  { icon: '🐸', name: 'Frog', sub: 'Tasty catch', val: '+30' },
+  { icon: '⭐', name: 'Star', sub: 'Big score boost', val: '+50' },
+  { icon: '🥚', name: 'Egg', sub: 'Rare mystery prize', val: 'Prize' },
+  { icon: '🛡️', name: 'Shield', sub: 'Blocks all damage 8s', val: 'Guard' },
+  { icon: '⚡', name: 'Speed', sub: 'Faster for 6s', val: 'Boost' },
+];
+
+const EVO_LADDER: Array<{ name: string; size: number; req: string }> = [
+  { name: 'Baby', size: 20, req: 'Lv 1' },
+  { name: 'Young', size: 26, req: 'Lv 51' },
+  { name: 'Adult', size: 32, req: 'Lv 201' },
+  { name: 'Elite', size: 40, req: 'Lv 501' },
+  { name: 'Titan', size: 48, req: 'Lv 801' },
+  { name: 'Legend', size: 56, req: 'Prestige' },
+];
+
+const MODE_META: Record<GameMode, { icon: string; name: string; tag: string; mood?: boolean }> = {
+  classic: { icon: '👑', name: 'Classic', tag: 'Free For All', mood: true },
+  battle_royale: { icon: '⚔️', name: 'Battle Royale', tag: 'Last Snake Standing' },
+  team: { icon: '🛡️', name: 'Team Battle', tag: '4v4 Team' },
+  event: { icon: '🏆', name: 'Event Mode', tag: 'Special Events' },
+};
+
+const REGIONS = ['🌍 Quick Match', '🇮🇳 India', '🇺🇸 USA', '🇯🇵 Japan', '🇧🇷 Brazil', '🇪🇺 Europe', '🇦🇺 Australia'];
+
+const LANDMARKS = [
+  { name: 'Starbucks', x: 665, y: 1445 }, { name: 'Pizza Hut', x: 2265, y: 1445 },
+  { name: 'Park Cafe', x: 1465, y: 645 }, { name: 'Hospital', x: 565, y: 2345 },
+  { name: 'College', x: 2365, y: 2245 }, { name: 'Bridge', x: 1565, y: 2445 },
+];
+
+interface Settings { sfx: boolean; music: boolean; largeText: boolean; reduceMotion: boolean; highContrast: boolean; controlSide: 'right' | 'left'; }
+
+class AnacondaPark {
+  private root: HTMLElement;
+  private client = new GameClient();
+  private renderer: Renderer | null = null;
+
+  private token = '';
+  private profile: any = null;
+  private missions: any[] = [];
+  private achievements: any[] = [];
+  private leaderboard: any[] = [];
+
+  private screen: Screen = 'app';
+  private page: Page = 'home';
+  private missionCat: 'daily' | 'weekly' | 'event' | 'achievements' = 'daily';
+  private invTab: 'skins' | 'powerups' | 'coupons' = 'skins';
+
+  private selectedMode: GameMode = 'classic';
+  private selectedSkin = 'Forest';
+  private matchType: 'global' | 'local' = 'global';
+  private selectedRegion = '🌍 Quick Match';
+
+  private settings: Settings = { sfx: true, music: false, largeText: false, reduceMotion: false, highContrast: false, controlSide: 'right' };
+
+  // input
+  private angle = 0; private boosting = false; private keys: Record<string, boolean> = {};
+  private sendTimer: any = null; private joyActive = false;
+
+  // match state
+  private matchStart = 0; private lastAlive = true; private lastSnake: SnakeData | null = null;
+  private lastState: GameStateTick | null = null; private visitedAreas = new Set<string>(); private summary: any = null;
+  private adTimer = 5; private adInterval: any = null; private respawnWait = 0; private respawnInterval: any = null;
+
+  constructor() {
+    this.root = document.getElementById('app')!;
+    this.loadSettings();
+    this.render();
+    this.initGuest();
+    window.addEventListener('resize', () => this.renderer?.resize());
+    window.addEventListener('keydown', (e) => { if (e.code === 'Escape' && (this.screen === 'play' || this.screen === 'pause')) this.togglePause(); });
+  }
+
+  // ------------------------------------------------------------- settings
+  private loadSettings() {
+    try { const s = JSON.parse(localStorage.getItem('ap_settings') || '{}'); this.settings = { ...this.settings, ...s }; } catch { /* */ }
+    this.applySettings();
+  }
+  private saveSettings() { localStorage.setItem('ap_settings', JSON.stringify(this.settings)); this.applySettings(); }
+  private applySettings() {
+    document.body.classList.toggle('a11y-large', this.settings.largeText);
+    document.body.classList.toggle('a11y-contrast', this.settings.highContrast);
+    if (audio.getMuted() === this.settings.sfx) audio.toggleMute();
+  }
+
+  // ------------------------------------------------------------- data
+  private async initGuest() {
+    try {
+      const res = await fetch(API + '/api/auth/guest', { method: 'POST' });
+      const data = await res.json();
+      this.token = data.token;
+      this.profile = data.profile;
+      this.selectedSkin = data.profile?.equippedSkin || 'Forest';
+      await this.refreshProfile();
+      await this.fetchAux();
+      this.render();
+    } catch { this.showToast('⚠️ Backend offline — run: npm run dev'); }
+  }
+
+  private async fetchAux() {
+    if (!this.token) return;
+    const h = { Authorization: `Bearer ${this.token}` };
+    try {
+      const [m, a, lb] = await Promise.all([
+        fetch(API + '/api/missions', { headers: h }), fetch(API + '/api/achievements', { headers: h }), fetch(API + '/api/leaderboard'),
+      ]);
+      this.missions = (await m.json()).missions || [];
+      this.achievements = (await a.json()).achievements || [];
+      this.leaderboard = (await lb.json()).leaderboard || [];
+    } catch { /* */ }
+  }
+
+  private async refreshProfile() {
+    try { const res = await fetch(API + '/api/player/profile', { headers: { Authorization: `Bearer ${this.token}` } }); this.profile = (await res.json()).profile; } catch { /* */ }
+  }
+
+  private rank() { return this.profile?.rank || { label: 'Bronze III', color: '#b45309', tier: 'Bronze' }; }
+
+  // ------------------------------------------------------------- navigation
+  private setScreen(s: Screen) { this.screen = s; this.render(); }
+  private go(p: Page) { this.page = p; this.screen = 'app'; audio.playClick(); this.render(); }
+
+  private async equipSkin(id: string) {
+    audio.playClick(); this.selectedSkin = id; if (this.profile) this.profile.equippedSkin = id;
+    try { await fetch(API + '/api/player/equip', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify({ skin: id }) }); } catch { /* */ }
+    this.render();
+  }
+
+  private async equipEvolution(evo: string) {
+    audio.playClick();
+    try {
+      const res = await fetch(API + '/api/player/evolution', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify({ evolution: evo }) });
+      const data = await res.json();
+      if (data.success) { this.profile = data.profile; this.showToast(`🐍 ${data.message}`); audio.playChime(); } else this.showToast(`🔒 ${data.message}`);
+    } catch { /* */ }
+    this.render();
+  }
+
+  private async doPrestige() {
+    audio.playClick();
+    try {
+      const res = await fetch(API + '/api/player/prestige', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } });
+      const data = await res.json();
+      if (data.success) { this.profile = data.profile; this.showToast(`👑 ${data.message}`); audio.playFanfare(); } else this.showToast(data.message);
+    } catch { /* */ }
+    this.render();
+  }
+
+  // ------------------------------------------------------------- match flow
+  private startMatchmaking() {
+    audio.playClick(); this.setScreen('matchmaking');
+    let n = 3;
+    const t = setInterval(() => { n--; const el = document.getElementById('mm-count'); if (el) el.innerText = String(n); if (n <= 0) { clearInterval(t); this.startMatch(); } }, 750);
+  }
+
+  private startMatch() {
+    this.matchStart = Date.now(); this.lastAlive = true; this.visitedAreas.clear(); this.summary = null;
+    this.setScreen('play');
+    const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
+    if (canvas) this.renderer = new Renderer(canvas);
+    this.client.onStateUpdate = (s) => this.onTick(s);
+    this.client.onRespawnResult = (r) => this.onRespawn(r);
+    const region = this.matchType === 'local' ? 'Perambur' : this.selectedRegion.replace(/^[^\w]+/, '').trim() || 'Global';
+    this.client.connect(this.token, this.selectedSkin, this.selectedMode, region, this.matchType);
+    this.setupInput();
+  }
+
+  private onTick(state: GameStateTick) {
+    this.lastState = state;
+    const me = state.snakes.find(s => s.id === this.client.localUserId);
+    if (me) this.lastSnake = me;
+    if (me && me.isAlive) for (const l of LANDMARKS) { const dx = me.head.x - l.x, dy = me.head.y - l.y; if (dx * dx + dy * dy < 240 * 240) this.visitedAreas.add(l.name); }
+    if (me && !me.isAlive && this.lastAlive && this.screen === 'play') { this.lastAlive = false; audio.playDeath(); this.openRespawn(); return; }
+    if (me && me.isAlive) this.lastAlive = true;
+    if (this.renderer && (this.screen === 'play' || this.screen === 'pause' || this.screen === 'respawn')) this.renderer.render(state, this.client.localUserId);
+    if (this.screen === 'play') this.updateHUD(state, me);
+  }
+
+  private onRespawn(r: { success: boolean; message?: string; profile?: any }) {
+    if (r.success) { if (r.profile) this.profile = r.profile; this.lastAlive = true; this.clearRespawnTimers(); audio.playChime(); this.setScreen('play'); this.setupInput(); }
+    else this.showToast(`❌ ${r.message || 'Respawn failed'}`);
+  }
+
+  private openRespawn() {
+    this.clearRespawnTimers(); this.respawnWait = 25; this.setScreen('respawn');
+    this.respawnInterval = setInterval(() => {
+      this.respawnWait--; const el = document.getElementById('respawn-wait'); if (el) el.innerText = `${this.respawnWait}s`;
+      if (this.respawnWait <= 0) { this.clearRespawnTimers(); const btn = document.getElementById('respawn-wait-btn') as HTMLButtonElement; if (btn) { btn.disabled = false; const sub = btn.querySelector('.ro-sub'); if (sub) sub.textContent = 'Ready — free respawn!'; } }
+    }, 1000);
+  }
+  private clearRespawnTimers() { if (this.respawnInterval) { clearInterval(this.respawnInterval); this.respawnInterval = null; } }
+
+  private doRespawn(method: 'stars' | 'ticket' | 'ad' | 'wait') {
+    audio.playClick();
+    if (method === 'ad') { this.triggerAd(() => this.client.requestRespawn('ad')); return; }
+    this.client.requestRespawn(method);
+  }
+
+  private async endMatch() {
+    audio.playClick(); this.clearRespawnTimers(); this.teardownInput();
+    const snake = this.lastSnake; const state = this.lastState;
+    const survival = Math.max(5, Math.floor((Date.now() - this.matchStart) / 1000));
+    const alive = state ? state.snakes.filter(s => s.isAlive).length : 8;
+    const placement = alive + 1;
+    const distanceKm = snake ? +((snake as any).distanceTravelled?.toFixed?.(2) || 0) : 0;
+    try {
+      const res = await fetch(API + '/api/match/summary', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify({ score: snake?.score || 0, kills: snake?.kills || 0, placement, survivalSeconds: survival, distanceKm, areasVisited: this.visitedAreas.size }) });
+      const data = await res.json();
+      this.summary = { score: Math.round(snake?.score || 0), kills: snake?.kills || 0, placement, survival, earnedStars: data.earnedStars || 0, earnedXP: data.earnedXP || 0, earnedEvoXP: data.earnedEvoXP || 0, levelsGained: data.levelsGained || 0 };
+      if (data.profile) this.profile = data.profile;
+      if (data.levelsGained > 0) this.showLevelUp(data.profile.level);
+    } catch { this.summary = { score: Math.round(snake?.score || 0), kills: snake?.kills || 0, placement, survival, earnedStars: 0, earnedXP: 0, earnedEvoXP: 0, levelsGained: 0 }; }
+    await this.fetchAux(); this.client.disconnect(); this.setScreen('gameover');
+  }
+
+  private togglePause() { audio.playClick(); if (this.screen === 'play') this.setScreen('pause'); else if (this.screen === 'pause') { this.setScreen('play'); this.setupInput(); } }
+
+  private async abandon() {
+    audio.playClick(); this.teardownInput(); this.clearRespawnTimers();
+    try { await fetch(API + '/api/match/abandon', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } }); } catch { /* */ }
+    this.client.disconnect(); await this.refreshProfile(); await this.fetchAux(); this.page = 'home'; this.setScreen('app');
+  }
+
+  private triggerAd(after: () => void) {
+    this.setScreen('ad-reward'); this.adTimer = 5;
+    if (this.adInterval) clearInterval(this.adInterval);
+    this.adInterval = setInterval(() => { this.adTimer--; const el = document.getElementById('ad-count'); if (el) el.innerText = String(this.adTimer); if (this.adTimer <= 0) { clearInterval(this.adInterval); after(); } }, 1000);
+  }
+
+  private async claimMission(id: string) {
+    audio.playClick();
+    try {
+      const res = await fetch(API + '/api/missions/claim', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify({ missionId: id }) });
+      const data = await res.json();
+      if (data.success) { audio.playFanfare(); this.missions = data.updatedMissions; if (data.profile) this.profile = data.profile; if (data.evoXp) this.showToast(`Claimed! +${data.stars}⭐ +${data.evoXp} Evo-XP`); this.render(); }
+    } catch { /* */ }
+  }
+
+  // ------------------------------------------------------------- input
+  private setupInput() {
+    this.teardownInput();
+    window.addEventListener('mousemove', this.onMouseMove); window.addEventListener('mousedown', this.onMouseDown); window.addEventListener('mouseup', this.onMouseUp);
+    window.addEventListener('keydown', this.onKeyDown); window.addEventListener('keyup', this.onKeyUp);
+    this.bindTouch();
+    if (!this.sendTimer) this.sendTimer = setInterval(() => this.pumpInput(), 33);
+  }
+  private teardownInput() {
+    window.removeEventListener('mousemove', this.onMouseMove); window.removeEventListener('mousedown', this.onMouseDown); window.removeEventListener('mouseup', this.onMouseUp);
+    window.removeEventListener('keydown', this.onKeyDown); window.removeEventListener('keyup', this.onKeyUp);
+    if (this.sendTimer) { clearInterval(this.sendTimer); this.sendTimer = null; }
+  }
+  private onMouseMove = (e: MouseEvent) => { if (this.screen !== 'play' || this.joyActive || this.isWasd()) return; this.angle = Math.atan2(e.clientY - innerHeight / 2, e.clientX - innerWidth / 2); };
+  private onMouseDown = () => { if (this.screen === 'play') this.boosting = true; };
+  private onMouseUp = () => { this.boosting = false; };
+  private onKeyDown = (e: KeyboardEvent) => {
+    if (this.screen !== 'play') return;
+    const k = e.key.toLowerCase();
+    if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) { this.keys[k] = true; e.preventDefault(); }
+    if (k === 'shift') this.boosting = true;
+    if (e.code === 'Space') { e.preventDefault(); this.client.activateAbility(); audio.playClick(); }
+  };
+  private onKeyUp = (e: KeyboardEvent) => { const k = e.key.toLowerCase(); if (this.keys[k] !== undefined) this.keys[k] = false; if (k === 'shift') this.boosting = false; };
+  private isWasd() { return this.keys['w'] || this.keys['a'] || this.keys['s'] || this.keys['d'] || this.keys['arrowup'] || this.keys['arrowdown'] || this.keys['arrowleft'] || this.keys['arrowright']; }
+  private pumpInput() {
+    if (this.screen !== 'play') return;
+    if (this.isWasd() && !this.joyActive) {
+      let dx = 0, dy = 0;
+      if (this.keys['w'] || this.keys['arrowup']) dy -= 1; if (this.keys['s'] || this.keys['arrowdown']) dy += 1;
+      if (this.keys['a'] || this.keys['arrowleft']) dx -= 1; if (this.keys['d'] || this.keys['arrowright']) dx += 1;
+      if (dx || dy) this.angle = Math.atan2(dy, dx);
+    }
+    this.client.sendInput(this.angle, this.boosting);
+  }
+  private bindTouch() {
+    const joy = document.getElementById('touch-joystick'); const knob = document.getElementById('touch-knob');
+    if (!joy || !knob) return;
+    const move = (t: Touch) => {
+      const r = joy.getBoundingClientRect(); const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const dx = t.clientX - cx, dy = t.clientY - cy; const d = Math.hypot(dx, dy) || 1;
+      this.angle = Math.atan2(dy, dx); const cl = Math.min(1, d / 38);
+      knob.style.left = `${50 + Math.cos(this.angle) * cl * 34}%`; knob.style.top = `${50 + Math.sin(this.angle) * cl * 34}%`;
+    };
+    joy.ontouchstart = (e) => { this.joyActive = true; move(e.touches[0]); };
+    joy.ontouchmove = (e) => { e.preventDefault(); move(e.touches[0]); };
+    joy.ontouchend = () => { this.joyActive = false; knob.style.left = '50%'; knob.style.top = '50%'; };
+    const boost = document.getElementById('touch-boost'); if (boost) { boost.ontouchstart = (e) => { e.preventDefault(); this.boosting = true; }; boost.ontouchend = () => { this.boosting = false; }; }
+    const ab = document.getElementById('touch-ability'); if (ab) ab.ontouchstart = (e) => { e.preventDefault(); this.client.activateAbility(); };
+  }
+
+  // ------------------------------------------------------------- HUD
+  private updateHUD(state: GameStateTick, me?: SnakeData) {
+    if (!me) return;
+    const setW = (id: string, p: number) => { const el = document.getElementById(id); if (el) el.style.width = `${Math.max(0, Math.min(100, p))}%`; };
+    const setT = (id: string, v: string) => { const el = document.getElementById(id); if (el) el.innerText = v; };
+    const hp = Math.round(me.hp ?? 100);
+    setW('hs-health', hp); setT('hv-health', String(hp));
+    const hpFill = document.getElementById('hs-health');
+    if (hpFill) hpFill.style.background = hp < 30 ? '#ef5a45' : hp < 60 ? '#f5a623' : '#22c55e';
+    setT('hv-score', String(Math.round(me.score)));
+    setT('hud-stage', `${me.evolution || me.stage} · Lv ${me.level}`);
+    const cd = me.abilityCooldown ?? 0;
+    const badge = document.getElementById('ability-badge'); const cdEl = document.getElementById('ability-cd');
+    if (badge && cdEl) { badge.classList.toggle('ready', cd <= 0); cdEl.innerText = cd <= 0 ? 'READY' : `${Math.ceil(cd)}s`; }
+    document.getElementById('touch-ability')?.classList.toggle('cooling', cd > 0);
+    const evt = document.getElementById('hud-event');
+    if (evt) { if (state.currentEvent) { evt.style.display = 'block'; evt.innerText = `${state.currentEvent.icon} ${state.currentEvent.timerSeconds}s`; } else evt.style.display = 'none'; }
+    const ts = document.getElementById('team-scores');
+    if (ts) { if (state.teamScores) { ts.style.display = 'flex'; ts.innerHTML = `<div class="ts red">🔴 ${state.teamScores.red}</div><div class="ts blue">🔵 ${state.teamScores.blue}</div>`; } else ts.style.display = 'none'; }
+    const lb = document.getElementById('hud-lb-rows');
+    if (lb) lb.innerHTML = state.leaderboard.slice(0, 6).map((r, i) => `<div class="lb-row ${r.id === this.client.localUserId ? 'me' : ''}"><span>${i + 1}. ${r.name}</span><span>${r.score}</span></div>`).join('');
+  }
+
+  // ------------------------------------------------------------- render dispatch
+  private render() {
+    let body = '';
+    if (this.screen === 'app') body = this.renderApp();
+    else if (this.screen === 'matchmaking') body = this.renderMatchmaking();
+    else if (this.screen === 'play') body = this.renderHUD();
+    else if (this.screen === 'pause') body = this.renderHUD() + this.renderPause();
+    else if (this.screen === 'respawn') body = this.renderHUD() + this.renderRespawn();
+    else if (this.screen === 'gameover') body = this.renderGameover();
+    else if (this.screen === 'ad-reward') body = this.renderAd();
+    this.root.innerHTML = `<canvas id="game-canvas"></canvas>${body}`;
+    this.bind();
+    if (this.screen === 'play' || this.screen === 'pause' || this.screen === 'respawn') this.bindTouch();
+  }
+
+  // ------------------------------------------------------------- APP SHELL
+  private renderApp() {
+    const p = this.profile; const r = this.rank();
+    const nav: Array<[Page, string, string]> = [
+      ['home', '🏠', 'Home'], ['play', '🎮', 'Play'], ['missions', '🎯', 'Missions'], ['inventory', '🎒', 'Inventory'], ['profile', '👤', 'Profile'],
+    ];
+    return `
+      <div class="app-shell">
+        <div class="app-top">
+          <div class="app-brand"><div class="logo">🐍</div><div class="logo-txt">Anaconda Park<small>GROW · EXPLORE · COMPETE</small></div></div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <div class="chip">⭐ <span class="val">${p?.stars ?? 500}</span></div>
+            <div class="chip">🎟️ <span class="val">${p?.tickets ?? 5}</span></div>
+            <button class="icon-btn" data-go="settings">⚙️</button>
+          </div>
+        </div>
+        <div class="app-content">
+          ${this.page === 'home' ? this.pageHome()
+        : this.page === 'play' ? this.pagePlay()
+          : this.page === 'missions' ? this.pageMissions()
+            : this.page === 'inventory' ? this.pageInventory()
+              : this.page === 'profile' ? this.pageProfile()
+                : this.page === 'events' ? this.pageEvents()
+                  : this.page === 'social' ? this.pageSocial()
+                    : this.pageSettings()}
+        </div>
+        <div class="bottom-nav">
+          ${nav.map(([id, ico, label]) => `<button class="nav-item ${this.page === id ? 'active' : ''}" data-go="${id}"><span class="ni-ico">${ico}</span>${label}</button>`).join('')}
+        </div>
+      </div>`;
+  }
+
+  private xpBar() {
+    const p = this.profile; if (!p) return '';
+    const toNext = p.xpToNext || 300; const pct = Math.min(100, (p.xp / toNext) * 100);
+    return `<div class="xp-wrap"><div class="xp-bar"><div style="width:${pct}%"></div></div><div class="xp-label"><span>Level ${p.level}${p.prestige ? ` · ✨${p.prestige}` : ''}</span><span>${p.xp} / ${toNext} XP</span></div></div>`;
+  }
+
+  // ---------- HOME (focused: what do I do next?) ----------
+  private pageHome() {
+    const p = this.profile; const r = this.rank();
+    const daily = this.missions.filter(m => m.category === 'daily').slice(0, 3);
+    return `
+      <div class="page">
+        <div class="hero">
+          <div class="welcome">Welcome back,</div>
+          <div class="who">${p?.displayName || 'Explorer'}</div>
+          <div class="rank-line">
+            <span class="rank-badge" style="color:#fff">🏆 ${r.label}</span>
+            <span class="rank-badge">⭐ ${p?.stars ?? 0}</span>
+            <span class="rank-badge">🎟️ ${p?.tickets ?? 0}</span>
+          </div>
+          ${this.xpBar()}
+        </div>
+
+        <div class="play-now">
+          <button class="btn btn-primary btn-lg btn-block" data-go="play">▶ PLAY NOW</button>
+          <button class="btn btn-gold btn-lg" id="quick-match" title="Quick match">⚡</button>
+        </div>
+
+        <div class="card">
+          <div class="section-title">🎯 Today's Missions <span class="see-all" data-go="missions">See all</span></div>
+          <div class="list">
+            ${daily.map(m => this.missionRow(m, true)).join('') || '<div class="muted">Loading…</div>'}
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="card tint" data-go="events" style="cursor:pointer;">
+            <div class="section-title">🎪 Latest Event</div>
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div style="font-size:2.4rem;">🐍</div>
+              <div><div style="font-family:var(--font-title);font-weight:800;">Jungle Festival</div><div class="muted" style="font-size:0.8rem;">2 days remaining · double stars</div></div>
+            </div>
+          </div>
+          <div class="card" data-go="social" style="cursor:pointer;">
+            <div class="section-title">👥 Friends Online</div>
+            <div class="list">
+              ${['Ashraf', 'Rahul', 'David'].map(n => `<div class="friend"><div class="avatar">${n[0]}</div><div style="font-weight:700;font-size:0.85rem;">${n}</div><div class="dot"></div></div>`).join('')}
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  private missionRow(m: any, compact = false) {
+    const pct = Math.min(100, (m.currentCount / m.targetCount) * 100);
+    const action = m.isClaimed ? `<span class="pill done">Claimed ✓</span>`
+      : m.isCompleted ? `<button class="btn btn-gold claim-btn" data-id="${m.id}" style="padding:7px 12px;font-size:0.78rem;">Claim</button>`
+        : `<span class="pill">${m.currentCount}/${m.targetCount}</span>`;
+    return `<div class="row-card"><div class="r-ico">${m.icon}</div><div class="r-body">
+      <div class="r-title">${m.title}</div>${compact ? '' : `<div class="r-desc">${m.description}</div>`}
+      <div class="progress"><div style="width:${pct}%"></div></div>
+      <div class="r-count">${m.currentCount} / ${m.targetCount} · ⭐${m.rewardStars} · ✨${m.rewardEvoXP} Evo</div>
+      </div><div>${action}</div></div>`;
+  }
+
+  // ---------- PLAY (modes + matchmaking only) ----------
+  private pagePlay() {
+    return `
+      <div class="page">
+        <div class="card">
+          <div class="section-title">🌐 Matchmaking</div>
+          <div class="seg" style="margin-bottom:12px;">
+            <button class="${this.matchType === 'global' ? 'active' : ''}" data-mt="global">🌎 Global Adventure</button>
+            <button class="${this.matchType === 'local' ? 'active' : ''}" data-mt="local">📍 Local Explorer</button>
+          </div>
+          ${this.matchType === 'global'
+        ? `<div class="region-grid">${REGIONS.map(rg => `<div class="region-btn ${this.selectedRegion === rg ? 'active' : ''}" data-region="${rg}">${rg}</div>`).join('')}</div>`
+        : `<div class="muted" style="font-size:0.85rem;">You'll be matched into a game region near your approximate location (neighbourhood level only). Your exact GPS is never shared with other players.</div>`}
+        </div>
+
+        <div class="card">
+          <div class="section-title">🎮 Choose a Mode</div>
+          <div class="mode-grid">
+            ${(Object.keys(MODE_META) as GameMode[]).map(m => `
+              <div class="mode-card ${this.selectedMode === m ? 'selected' : ''}" data-mode="${m}">
+                ${MODE_META[m].mood ? '<span class="mood">MOOD</span>' : ''}
+                <div class="mode-icon">${MODE_META[m].icon}</div>
+                <div class="mode-name">${MODE_META[m].name}</div>
+                <div class="mode-tag">${MODE_META[m].tag}</div>
+              </div>`).join('')}
+          </div>
+          <div class="muted" style="font-size:0.78rem;margin:10px 0;">Feeling casual? <b>Classic</b> is a relaxed free-for-all. Want stakes? Try Battle Royale or Team.</div>
+          <button class="btn btn-primary btn-lg btn-block" id="enter-btn">🚀 Enter ${MODE_META[this.selectedMode].name}</button>
+        </div>
+      </div>`;
+  }
+
+  // ---------- MISSIONS ----------
+  private pageMissions() {
+    const cats: Array<[typeof this.missionCat, string]> = [['daily', 'Daily'], ['weekly', 'Weekly'], ['event', 'Event'], ['achievements', 'Achievements']];
+    return `
+      <div class="page">
+        <div class="section-title">🎯 Missions & Awards</div>
+        <div class="tabs">${cats.map(([id, l]) => `<button class="tab ${this.missionCat === id ? 'active' : ''}" data-mcat="${id}">${l}</button>`).join('')}</div>
+        <div class="list">
+          ${this.missionCat === 'achievements'
+        ? this.achievements.map(a => this.achRow(a)).join('')
+        : (this.missions.filter(m => m.category === this.missionCat).map(m => this.missionRow(m)).join('') || '<div class="muted" style="padding:16px;text-align:center;">Nothing here yet.</div>')}
+        </div>
+      </div>`;
+  }
+  private achRow(a: any) {
+    const pct = Math.min(100, (a.progress / a.target) * 100);
+    return `<div class="row-card ach ${a.isUnlocked ? 'unlocked' : ''}"><div class="r-ico">${a.icon}</div><div class="r-body">
+      <div class="r-title">${a.title} <span class="tier ${a.tier}">${a.tier}</span></div><div class="r-desc">${a.description}</div>
+      <div class="progress"><div style="width:${pct}%"></div></div><div class="r-count">${a.progress} / ${a.target} · ⭐${a.rewardStars}</div>
+      </div>${a.isUnlocked ? '<span class="pill gold">✓</span>' : ''}</div>`;
+  }
+
+  // ---------- INVENTORY ----------
+  private pageInventory() {
+    const tabs: Array<[typeof this.invTab, string]> = [['skins', '🐍 Skins'], ['powerups', '⚡ Power-Ups'], ['coupons', '🎟️ Coupons']];
+    let content = '';
+    if (this.invTab === 'skins') {
+      content = `<div class="grid-auto">${SKINS.map(s => `<div class="skin-card ${this.selectedSkin === s.id ? 'equipped' : ''}" data-skin="${s.id}"><div class="skin-swatch" style="background:${s.grad}"></div><div class="skin-name">${s.name}</div><div class="skin-tag">${s.premium ? '✨ Premium' : this.selectedSkin === s.id ? 'Equipped' : 'Tap to equip'}</div></div>`).join('')}</div>`;
+    } else if (this.invTab === 'powerups') {
+      content = `<div class="list">${POWERUPS.map(p => `<div class="item-card"><div class="i-ico">${p.icon}</div><div><div class="i-name">${p.name}</div><div class="i-sub">${p.sub}</div></div><div class="i-val">${p.val}</div></div>`).join('')}
+        <div class="muted" style="font-size:0.78rem;padding:6px 2px;">Boosts, Eggs, Chests & Trails collected in-match will appear here — full inventory storage is coming in a later update.</div></div>`;
+    } else {
+      const coupons = this.profile?.coupons || [];
+      content = `<div class="list">${coupons.length ? coupons.map((c: any) => `<div class="row-card"><div class="r-ico">${c.icon || '🎟️'}</div><div class="r-body"><div class="r-title">${c.storeName}</div><div class="r-desc">${c.discountText} · <b>${c.promoCode}</b></div></div><button class="btn btn-ghost copy-btn" data-code="${c.promoCode}" style="padding:7px 10px;font-size:0.76rem;">Copy</button></div>`).join('') : '<div class="muted" style="text-align:center;padding:16px;">No coupons yet — grab a 🎁 box near a store in-match.</div>'}</div>`;
+    }
+    return `<div class="page"><div class="section-title">🎒 Inventory</div><div class="tabs">${tabs.map(([id, l]) => `<button class="tab ${this.invTab === id ? 'active' : ''}" data-inv="${id}">${l}</button>`).join('')}</div><div class="card">${content}</div></div>`;
+  }
+
+  // ---------- PROFILE (progression) ----------
+  private pageProfile() {
+    const p = this.profile; if (!p) return '<div class="page"><div class="card muted">Loading…</div></div>';
+    const r = this.rank();
+    const unlocked: string[] = p.unlockedEvolutions || ['Baby'];
+    const kd = p.stats.matchesPlayed ? (p.stats.totalKills / Math.max(1, p.stats.matchesPlayed)).toFixed(1) : '0.0';
+    const winRate = p.stats.matchesPlayed ? Math.round((p.stats.matchesWon / p.stats.matchesPlayed) * 100) : 0;
+    return `
+      <div class="page">
+        <div class="card tint">
+          <div style="display:flex;align-items:center;gap:14px;">
+            <div class="friend"><div class="avatar" style="width:56px;height:56px;font-size:1.5rem;">${(p.displayName || 'E')[0]}</div></div>
+            <div style="flex:1;">
+              <div style="font-family:var(--font-title);font-weight:900;font-size:1.2rem;">${p.displayName}</div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">
+                <span class="rank-badge" style="background:${r.color}22;border-color:${r.color}55;color:${r.color}">🏆 ${r.label}</span>
+                <span class="rank-badge" style="background:#eef6f0;color:var(--ink)">Lvl ${p.level}${p.prestige ? ` ✨${p.prestige}` : ''}</span>
+              </div>
+            </div>
+          </div>
+          <div style="margin-top:12px;"><div class="progress" style="height:10px;"><div style="width:${Math.min(100, (p.xp / (p.xpToNext || 300)) * 100)}%"></div></div>
+          <div class="xp-label muted" style="color:var(--muted)"><span>${p.xp} / ${p.xpToNext || 300} XP to Lv ${p.level + 1}</span><span>✨ ${p.evolutionXp} Evo-XP</span></div></div>
+          ${p.level >= 1000 ? `<button class="btn btn-gold btn-block" id="prestige-btn" style="margin-top:10px;">👑 PRESTIGE (Reset level, keep everything)</button>` : ''}
+        </div>
+
+        <div class="card">
+          <div class="section-title">🧬 Snake Evolution</div>
+          <div class="evo-track">
+            ${EVO_LADDER.map(e => {
+      const isUnlocked = unlocked.includes(e.name);
+      const isEq = p.equippedEvolution === e.name;
+      return `<div class="evo-node ${isEq ? 'equipped' : ''} ${isUnlocked ? '' : 'locked'}" ${isUnlocked ? `data-evo="${e.name}"` : ''}>
+                <div class="evo-dot" style="width:${e.size}px;height:${e.size}px;"></div>
+                <div class="evo-name">${isUnlocked ? '' : '🔒 '}${e.name}</div><div class="evo-req">${e.req}</div></div>`;
+    }).join('')}
+          </div>
+          <div class="muted" style="font-size:0.76rem;margin-top:8px;">Unlock forms with Account Level + Evolution XP (earned from missions & events, never from score). Tap an unlocked form to equip it.</div>
+        </div>
+
+        <div class="card">
+          <div class="section-title">📊 Statistics</div>
+          <div class="stat-grid">
+            <div class="stat-cell"><div class="sv">${p.stats.matchesPlayed}</div><div class="sl">Matches</div></div>
+            <div class="stat-cell"><div class="sv">${p.stats.matchesWon}</div><div class="sl">Wins</div></div>
+            <div class="stat-cell"><div class="sv">${winRate}%</div><div class="sl">Win Rate</div></div>
+            <div class="stat-cell"><div class="sv">${p.stats.totalKills}</div><div class="sl">Kills</div></div>
+            <div class="stat-cell"><div class="sv">${kd}</div><div class="sl">K / Match</div></div>
+            <div class="stat-cell"><div class="sv">${p.stats.highestScore}</div><div class="sl">Best Score</div></div>
+            <div class="stat-cell"><div class="sv">${p.stats.cherriesCollected || 0}</div><div class="sl">Cherries</div></div>
+            <div class="stat-cell"><div class="sv">${Math.round(p.stats.survivalTimeSeconds / 60)}m</div><div class="sl">Survived</div></div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // ---------- EVENTS ----------
+  private pageEvents() {
+    const events = [
+      { icon: '🐍', name: 'Jungle Festival', desc: 'Double stars all weekend', time: '2 days left', on: true },
+      { icon: '🌧️', name: 'Monsoon Rush', desc: 'Frog & star spawns tripled', time: 'Live now', on: true },
+      { icon: '🎃', name: 'Halloween Hunt', desc: 'Pumpkin skins & spooky map', time: 'In 3 weeks', on: false },
+      { icon: '🎄', name: 'Winter Wonderland', desc: 'Snow map + gift chests', time: 'Seasonal', on: false },
+    ];
+    return `<div class="page"><div class="section-title">🎪 Events</div>
+      <div class="list">${events.map(e => `<div class="row-card"><div class="r-ico">${e.icon}</div><div class="r-body"><div class="r-title">${e.name}</div><div class="r-desc">${e.desc}</div></div><span class="pill ${e.on ? 'gold' : 'done'}">${e.time}</span></div>`).join('')}</div>
+      <div class="muted" style="font-size:0.78rem;">Seasonal maps and live world events rotate automatically. More on the roadmap.</div></div>`;
+  }
+
+  // ---------- SOCIAL ----------
+  private pageSocial() {
+    const friends = [{ n: 'Ashraf', on: true }, { n: 'Rahul', on: true }, { n: 'David', on: true }, { n: 'Meera', on: false }, { n: 'Chen', on: false }];
+    return `<div class="page"><div class="section-title">👥 Friends</div>
+      <div class="card"><div class="list">${friends.map(f => `<div class="friend"><div class="avatar">${f.n[0]}</div><div style="flex:1;"><div style="font-weight:700;font-size:0.9rem;">${f.n}</div><div class="muted" style="font-size:0.72rem;">${f.on ? 'Online' : 'Offline'}</div></div><div class="dot ${f.on ? '' : 'off'}"></div></div>`).join('')}</div></div>
+      <button class="btn btn-primary btn-block">➕ Invite to Team</button>
+      <div class="muted" style="font-size:0.78rem;">Parties, team invites and in-match chat are on the roadmap (this is a preview).</div></div>`;
+  }
+
+  // ---------- SETTINGS ----------
+  private pageSettings() {
+    const sw = (on: boolean, key: string) => `<button class="switch ${on ? 'on' : ''}" data-set="${key}"></button>`;
+    return `<div class="page"><div class="section-title">⚙️ Settings</div>
+      <div class="card"><div class="section-title" style="font-size:0.9rem;">🔊 Audio</div>
+        <div class="toggle"><span class="t-label">Sound Effects</span>${sw(this.settings.sfx, 'sfx')}</div>
+        <div class="toggle"><span class="t-label">Music</span>${sw(this.settings.music, 'music')}</div>
+      </div>
+      <div class="card"><div class="section-title" style="font-size:0.9rem;">🎮 Controls</div>
+        <div class="toggle"><span class="t-label">Control Side (touch)</span><button class="btn btn-ghost" id="side-btn" style="padding:6px 14px;font-size:0.8rem;">${this.settings.controlSide === 'right' ? 'Right-handed' : 'Left-handed'}</button></div>
+        <div class="muted" style="font-size:0.76rem;padding-top:8px;">PC: Mouse or WASD to steer · Shift to boost · Space for ability.</div>
+      </div>
+      <div class="card"><div class="section-title" style="font-size:0.9rem;">♿ Accessibility</div>
+        <div class="toggle"><span class="t-label">Large Text</span>${sw(this.settings.largeText, 'largeText')}</div>
+        <div class="toggle"><span class="t-label">High Contrast</span>${sw(this.settings.highContrast, 'highContrast')}</div>
+        <div class="toggle"><span class="t-label">Reduce Motion</span>${sw(this.settings.reduceMotion, 'reduceMotion')}</div>
+      </div>
+      <button class="btn btn-ghost btn-block" data-go="home">← Back to Home</button></div>`;
+  }
+
+  // ---------- GAME OVERLAYS ----------
+  private renderMatchmaking() {
+    const mm = MODE_META[this.selectedMode];
+    const where = this.matchType === 'local' ? '📍 Local region' : this.selectedRegion;
+    return `<div class="overlay"><div class="modal" style="text-align:center;"><div class="section-title" style="justify-content:center;">${mm.icon} ${mm.name}</div>
+      <div class="countdown-num" id="mm-count">3</div><div class="muted">${where} · connecting to the 30 Hz world…</div>
+      <div class="chip" style="margin-top:14px;">💡 Eat 🍒 to heal · grab 🛡️ & ⚡ power-ups</div></div></div>`;
+  }
+
+  private renderHUD() {
+    const lh = this.settings.controlSide === 'left' ? ' left-handed' : '';
+    return `<div class="hud${lh}">
+      <div class="hud-tl hud-panel">
+        <button id="nav-pause" class="hud-pause">⏸</button>
+        <div class="hud-tl-main">
+          <div class="hud-scoreline"><span class="hud-score" id="hv-score">0</span><span class="hud-stage" id="hud-stage">Baby · Lv 1</span></div>
+          <div class="hud-hp"><span class="hud-hp-fill" id="hs-health" style="width:100%"></span><span class="hud-hp-txt" id="hv-health">100</span></div>
+        </div>
+      </div>
+      <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
+      <div class="team-scores" id="team-scores" style="display:none;"></div>
+      <div class="hud-leaderboard hud-panel"><h4>🏆 Top 5</h4><div id="hud-lb-rows"></div></div>
+      <div class="ability-badge hud-panel ready" id="ability-badge">🌀 <span class="cd" id="ability-cd">READY</span></div>
+      <div class="touch-joystick" id="touch-joystick"><div class="touch-knob" id="touch-knob"></div></div>
+      <div class="touch-actions"><div class="touch-btn ability" id="touch-ability">🌀</div><div class="touch-btn boost" id="touch-boost">⚡</div></div>
+    </div>`;
+  }
+
+  private renderPause() {
+    return `<div class="overlay"><div class="modal" style="text-align:center;max-width:380px;"><div class="section-title" style="justify-content:center;">⏸️ Paused</div>
+      <div style="display:flex;flex-direction:column;gap:10px;"><button id="btn-resume" class="btn btn-primary btn-block">▶️ Resume</button>
+      <button id="btn-leave" class="btn btn-danger btn-block">🚪 Leave Match</button></div></div></div>`;
+  }
+
+  private renderRespawn() {
+    const stars = this.profile?.stars ?? 0; const tickets = this.profile?.tickets ?? 0;
+    return `<div class="overlay"><div class="modal"><div class="section-title" style="justify-content:center;color:var(--danger);">💀 You Were Defeated!</div>
+      <div class="respawn-grid">
+        <button class="respawn-opt green" id="rs-stars" ${stars < 20 ? 'disabled' : ''}><span class="ro-ico">🌱</span><span><span class="ro-main">Respawn (20 ⭐)</span><br><span class="ro-sub">Use Stars${stars < 20 ? ' — not enough' : ''}</span></span></button>
+        <button class="respawn-opt gold" id="rs-ad"><span class="ro-ico">📺</span><span><span class="ro-main">Respawn (Watch Ad)</span><br><span class="ro-sub">Free Respawn</span></span></button>
+        <button class="respawn-opt blue" id="respawn-wait-btn" disabled><span class="ro-ico">⏳</span><span><span class="ro-main">Wait to Respawn</span><br><span class="ro-sub" id="respawn-wait">${this.respawnWait}s</span></span></button>
+        <button class="respawn-opt gray" id="rs-ticket" ${tickets < 1 ? 'disabled' : ''}><span class="ro-ico">🎟️</span><span><span class="ro-main">Use Ticket (${tickets})</span><br><span class="ro-sub">Instant Respawn</span></span></button>
+      </div>
+      <button id="rs-end" class="btn btn-ghost btn-block" style="margin-top:12px;">🏁 End Match & See Results</button></div></div>`;
+  }
+
+  private renderGameover() {
+    const s = this.summary || { score: 0, kills: 0, placement: 5, survival: 0, earnedStars: 0, earnedXP: 0, earnedEvoXP: 0 };
+    const mins = Math.floor(s.survival / 60), secs = s.survival % 60;
+    return `<div class="overlay"><div class="modal" style="text-align:center;max-width:500px;">
+      <h1 style="color:var(--danger);">GAME OVER</h1><div class="muted">${MODE_META[this.selectedMode].name}</div>
+      <div class="summary-grid">
+        <div class="summary-cell"><div class="sc-label">Placement</div><div class="sc-val" style="color:var(--green-deep);">#${s.placement}</div></div>
+        <div class="summary-cell"><div class="sc-label">Score</div><div class="sc-val" style="color:var(--gold-deep);">${s.score}</div></div>
+        <div class="summary-cell"><div class="sc-label">Kills</div><div class="sc-val">⚔️ ${s.kills}</div></div>
+        <div class="summary-cell"><div class="sc-label">Survived</div><div class="sc-val">${mins}:${String(secs).padStart(2, '0')}</div></div>
+      </div>
+      <div class="chip" style="margin-bottom:14px;">⭐ ${s.earnedStars} · ✨ ${s.earnedXP} XP · 🧬 ${s.earnedEvoXP} Evo${s.levelsGained ? ` · 🎉 +${s.levelsGained} Level` : ''}</div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <button id="go-ad" class="btn btn-gold btn-block">📺 Watch Ad · 2× Rewards</button>
+        <div style="display:flex;gap:10px;"><button id="go-again" class="btn btn-primary" style="flex:1;">🔄 Play Again</button><button id="go-home" class="btn btn-ghost" style="flex:1;">🏠 Home</button></div>
+      </div></div></div>`;
+  }
+
+  private renderAd() {
+    return `<div class="overlay"><div class="modal" style="text-align:center;max-width:460px;"><div class="chip" style="margin-bottom:10px;">SPONSORED</div>
+      <div class="section-title" style="justify-content:center;">🌟 Anaconda Park VIP</div>
+      <div style="background:var(--card-2);border:1px solid var(--line);border-radius:16px;height:170px;display:grid;place-items:center;margin:12px 0;">
+        <div><div style="font-size:3rem;">🐍🔥</div><div style="color:var(--gold-deep);font-weight:800;">Legend Skins & 3× Boosters!</div>
+        <div class="muted" style="margin-top:6px;">Ad ends in <b id="ad-count">${this.adTimer}</b>s</div></div></div>
+      <div class="muted" style="font-size:0.8rem;">Reward applies automatically…</div></div></div>`;
+  }
+
+  // ------------------------------------------------------------- bind
+  private bind() {
+    const on = (id: string, fn: () => void) => document.getElementById(id)?.addEventListener('click', fn);
+    document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => this.go((b as HTMLElement).dataset.go as Page)));
+    document.querySelectorAll('[data-mcat]').forEach(b => b.addEventListener('click', () => { this.missionCat = (b as HTMLElement).dataset.mcat as any; audio.playClick(); this.render(); }));
+    document.querySelectorAll('[data-inv]').forEach(b => b.addEventListener('click', () => { this.invTab = (b as HTMLElement).dataset.inv as any; audio.playClick(); this.render(); }));
+    document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { audio.playClick(); this.selectedMode = (b as HTMLElement).dataset.mode as GameMode; this.render(); }));
+    document.querySelectorAll('[data-mt]').forEach(b => b.addEventListener('click', () => { this.matchType = (b as HTMLElement).dataset.mt as any; audio.playClick(); this.render(); }));
+    document.querySelectorAll('[data-region]').forEach(b => b.addEventListener('click', () => { this.selectedRegion = (b as HTMLElement).dataset.region!; audio.playClick(); this.render(); }));
+    document.querySelectorAll('[data-skin]').forEach(b => b.addEventListener('click', () => this.equipSkin((b as HTMLElement).dataset.skin!)));
+    document.querySelectorAll('[data-evo]').forEach(b => b.addEventListener('click', () => this.equipEvolution((b as HTMLElement).dataset.evo!)));
+    document.querySelectorAll('.claim-btn').forEach(b => b.addEventListener('click', () => this.claimMission((b as HTMLElement).dataset.id!)));
+    document.querySelectorAll('.copy-btn').forEach(b => b.addEventListener('click', (e) => { const c = (e.currentTarget as HTMLElement).dataset.code!; navigator.clipboard?.writeText(c); this.showToast(`📋 Copied ${c}`); }));
+    document.querySelectorAll('[data-set]').forEach(b => b.addEventListener('click', () => this.toggleSetting((b as HTMLElement).dataset.set as keyof Settings)));
+
+    on('quick-match', () => this.startMatchmaking());
+    on('enter-btn', () => this.startMatchmaking());
+    on('prestige-btn', () => this.doPrestige());
+    on('side-btn', () => { this.settings.controlSide = this.settings.controlSide === 'right' ? 'left' : 'right'; this.saveSettings(); this.render(); });
+
+    on('nav-pause', () => this.togglePause());
+    on('btn-resume', () => this.togglePause());
+    on('btn-leave', () => this.abandon());
+    on('rs-stars', () => this.doRespawn('stars')); on('rs-ad', () => this.doRespawn('ad')); on('respawn-wait-btn', () => this.doRespawn('wait')); on('rs-ticket', () => this.doRespawn('ticket'));
+    on('rs-end', () => this.endMatch());
+    on('go-ad', () => this.triggerAd(async () => { try { const r = await fetch(API + '/api/ads/claim', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } }); const d = await r.json(); if (d.profile) this.profile = d.profile; this.showToast(`🎉 ${d.message}`); } catch { /* */ } this.setScreen('gameover'); }));
+    on('go-again', () => this.startMatchmaking());
+    on('go-home', () => { this.refreshProfile(); this.page = 'home'; this.setScreen('app'); });
+  }
+
+  private toggleSetting(key: keyof Settings) {
+    audio.playClick();
+    if (key === 'controlSide') return;
+    (this.settings as any)[key] = !(this.settings as any)[key];
+    this.saveSettings(); this.render();
+  }
+
+  private showToast(msg: string) {
+    document.getElementById('toast')?.remove();
+    const t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; t.innerText = msg;
+    document.body.appendChild(t); setTimeout(() => t.remove(), 2200);
+  }
+  private showLevelUp(level: number) {
+    const el = document.createElement('div'); el.className = 'levelup'; el.innerHTML = `🎉 LEVEL UP!<br><span style="font-size:1.6rem;">Level ${level}</span>`;
+    document.body.appendChild(el); setTimeout(() => el.remove(), 2600);
+  }
+}
+
+new AnacondaPark();
