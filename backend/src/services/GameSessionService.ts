@@ -211,6 +211,10 @@ export class GameSessionService {
     return snake;
   }
 
+  public respawnPlayer(userId: string, displayName: string, skin: string, evolution: string = 'Baby', region?: string): SnakeState {
+    return this.registerPlayer(userId, displayName, skin, false, evolution, region);
+  }
+
   public handlePlayerInput(userId: string, angle: number, boosting: boolean, _seq: number): void {
     const snake = this.state.snakes[userId];
     if (!snake || !snake.isAlive) return;
@@ -234,10 +238,6 @@ export class GameSessionService {
     snake.abilityActiveTimer = 3;
     snake.abilityCooldown = 12;
     return true;
-  }
-
-  public respawnPlayer(userId: string, displayName: string, skin: string, evolution: string = 'Baby', region?: string): SnakeState {
-    return this.registerPlayer(userId, displayName, skin, false, evolution, region);
   }
 
   public handlePlayerDisconnect(userId: string): void {
