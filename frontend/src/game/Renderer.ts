@@ -3,43 +3,44 @@ import { GameStateTick, SnakeData, FoodData } from './GameClient.js';
 interface SkinPalette {
   primary: string;
   secondary: string;
-  scale: string;
+  belly: string;
   glow: string;
   eye: string;
-  belly?: string;
+  blush: string;
+  outline: string;
+  flower?: string;
 }
 
-// 15 skin families — each gets a distinct palette
+// 15 Cutie Pastel Skin Palettes inspired by high-quality kawaii illustration art
 const SKINS: Record<string, SkinPalette> = {
-  Forest:   { primary: '#43A047', secondary: '#1B5E20', scale: '#8BC34A', glow: '#7CFF6B', eye: '#2E7D32',  belly: '#C8E6C9' },
-  Ocean:    { primary: '#2196F3', secondary: '#0D47A1', scale: '#64B5F6', glow: '#4FC3F7', eye: '#0277BD',  belly: '#BBDEFB' },
-  Fire:     { primary: '#FB8C00', secondary: '#C62828', scale: '#FFB74D', glow: '#FF7043', eye: '#BF360C',  belly: '#FFCCBC' },
-  Ice:      { primary: '#80DEEA', secondary: '#0097A7', scale: '#E0F7FA', glow: '#B2EBF2', eye: '#006064',  belly: '#F0FDFF' },
-  Sakura:   { primary: '#F48FB1', secondary: '#AD1457', scale: '#FCE4EC', glow: '#F8BBD9', eye: '#880E4F',  belly: '#FFF0F5' },
-  Shadow:   { primary: '#5E35B1', secondary: '#1A1035', scale: '#9575CD', glow: '#B388FF', eye: '#311B92',  belly: '#EDE7F6' },
-  Galaxy:   { primary: '#7B1FA2', secondary: '#0D0221', scale: '#CE93D8', glow: '#E040FB', eye: '#4A148C',  belly: '#F3E5F5' },
-  Golden:   { primary: '#FFC107', secondary: '#FF8F00', scale: '#FFE082', glow: '#FFD54F', eye: '#E65100',  belly: '#FFF8E1' },
-  Royal:    { primary: '#7E57C2', secondary: '#311B92', scale: '#D1C4E9', glow: '#9C27B0', eye: '#4527A0',  belly: '#EDE7F6' },
-  Desert:   { primary: '#D4A017', secondary: '#8B5E0A', scale: '#F0D060', glow: '#FFE680', eye: '#5D3A00',  belly: '#FFF9E6' },
-  Jungle:   { primary: '#2E7D32', secondary: '#1B3A1F', scale: '#81C784', glow: '#A5D6A7', eye: '#1B5E20',  belly: '#DCEDC8' },
-  Electric: { primary: '#FFEE58', secondary: '#F57F17', scale: '#FFF9C4', glow: '#FFD600', eye: '#F57F17',  belly: '#FFFDE7' },
-  Christmas:{ primary: '#C62828', secondary: '#1B5E20', scale: '#EF9A9A', glow: '#FF5252', eye: '#1B5E20',  belly: '#FFEBEE' },
-  Halloween:{ primary: '#FF6D00', secondary: '#212121', scale: '#FFB74D', glow: '#FF9100', eye: '#212121',  belly: '#FFF3E0' },
-  Mythical: { primary: '#E040FB', secondary: '#4A0072', scale: '#EA80FC', glow: '#FF80FF', eye: '#4A0072',  belly: '#F3E5F5' },
+  Forest:   { primary: '#B5EAD7', secondary: '#70C1B3', belly: '#E2F0CB', glow: '#C7F9CC', eye: '#2B3A42', blush: '#FFDAC1', outline: '#3E5C59', flower: '🌸' },
+  Ocean:    { primary: '#BEE3F8', secondary: '#90CDF4', belly: '#EBF8FF', glow: '#E0F2FE', eye: '#1A202C', blush: '#FBB6CE', outline: '#2B6CB0', flower: '🌼' },
+  Fire:     { primary: '#FFDAC1', secondary: '#FFB7B2', belly: '#FFF5EB', glow: '#FFE5D9', eye: '#2D3748', blush: '#E53E3E', outline: '#9B2C2C', flower: '🌺' },
+  Ice:      { primary: '#E2F1FF', secondary: '#BEE3F8', belly: '#F7FAFC', glow: '#EDF2F7', eye: '#1A202C', blush: '#FEB2B2', outline: '#3182CE', flower: '❄️' },
+  Sakura:   { primary: '#FFC6FF', secondary: '#FFADAD', belly: '#FFF0F5', glow: '#FFE5EC', eye: '#2D3748', blush: '#FF69B4', outline: '#9B486F', flower: '🌸' },
+  Shadow:   { primary: '#D8B4FE', secondary: '#C084FC', belly: '#F3E8FF', glow: '#F5D0FE', eye: '#1E1B4B', blush: '#F472B6', outline: '#581C87', flower: '✨' },
+  Galaxy:   { primary: '#C7CEEA', secondary: '#B5EAD7', belly: '#F0E6FF', glow: '#E8DFF5', eye: '#191970', blush: '#FFC6FF', outline: '#4A4E69', flower: '⭐' },
+  Golden:   { primary: '#FFFFD1', secondary: '#FFE599', belly: '#FFFDF0', glow: '#FFF9C4', eye: '#3D2C00', blush: '#FFB7B2', outline: '#7A5C00', flower: '✨' },
+  Royal:    { primary: '#DDD6FE', secondary: '#A78BFA', belly: '#F5F3FF', glow: '#EDE9FE', eye: '#2E1065', blush: '#F472B6', outline: '#4C1D95', flower: '👑' },
+  Desert:   { primary: '#FDE68A', secondary: '#FCD34D', belly: '#FEF3C7', glow: '#FEF08A', eye: '#451A03', blush: '#FCA5A5', outline: '#78350F', flower: '🌻' },
+  Jungle:   { primary: '#A7F3D0', secondary: '#6EE7B7', belly: '#ECFDF5', glow: '#D1FAE5', eye: '#064E3B', blush: '#FCA5A5', outline: '#047857', flower: '🌿' },
+  Electric: { primary: '#FEF08A', secondary: '#FDE047', belly: '#FEF9C3', glow: '#FEF08A', eye: '#422006', blush: '#FCA5A5', outline: '#854D0E', flower: '⚡' },
+  Christmas:{ primary: '#FCA5A5', secondary: '#6EE7B7', belly: '#FEF2F2', glow: '#FEE2E2', eye: '#1F2937', blush: '#EF4444', outline: '#991B1B', flower: '🎄' },
+  Halloween:{ primary: '#FDBA74', secondary: '#FB923C', belly: '#FFEDD5', glow: '#FED7AA', eye: '#18181B', blush: '#F43F5E', outline: '#9A3412', flower: '🎃' },
+  Mythical: { primary: '#F472B6', secondary: '#E879F9', belly: '#FDF2F8', glow: '#FCE7F3', eye: '#4C0519', blush: '#FB7185', outline: '#831843', flower: '💖' },
 };
 
-// Legacy skin-name fallbacks so older saves still render.
 const SKIN_ALIASES: Record<string, string> = {
   'Emerald Anaconda': 'Forest', 'Standard Forest Snake': 'Forest', 'Golden Serpent': 'Golden',
   'Crimson Viper': 'Fire', 'Shadow Cobra': 'Shadow', 'Ice': 'Ice', 'Galaxy': 'Galaxy',
 };
 
-// Accessory icon definitions — cosmetic-only
-const ACCESSORY_ICONS: Record<string, string> = {
-  flower_crown: '🌸', pirate_hat: '🏴‍☠️', wizard_hat: '🎩', headphones: '🎧',
-  scarf: '🧣', backpack: '🎒', explorer_hat: '🤠', christmas_hat: '🎅',
-  ramadan_lantern: '🏮', diwali_crown: '👑', golden_wings: '✨',
-};
+interface InterpolatedSnake {
+  x: number;
+  y: number;
+  angle: number;
+  body: Array<{ x: number; y: number }>;
+}
 
 export class Renderer {
   private canvas: HTMLCanvasElement;
@@ -48,20 +49,20 @@ export class Renderer {
   private zoom = 1.0;
   private animFrame = 0;
 
-  // Per-snake animation state
+  // LERP Position Cache for Butter-Smooth 60+ FPS Rendering
+  private lerpSnakes: Map<string, InterpolatedSnake> = new Map();
+
+  // Animation State per snake
   private snakeAnimState: Map<string, {
-    lastDamageTime: number;
-    tongueOut: boolean;
-    tongueTimer: number;
     blinkTimer: number;
     isBlinking: boolean;
-    happyTimer: number;   // green glow after eating
-    idleTimer: number;
+    happyTimer: number;
+    winkTimer: number;
   }> = new Map();
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
-    this.ctx = canvas.getContext('2d')!;
+    this.ctx = canvas.getContext('2d', { alpha: false })!;
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -82,13 +83,10 @@ export class Renderer {
   private getAnimState(id: string) {
     if (!this.snakeAnimState.has(id)) {
       this.snakeAnimState.set(id, {
-        lastDamageTime: -999,
-        tongueOut: false,
-        tongueTimer: 0,
-        blinkTimer: 0,
+        blinkTimer: Math.random() * 3,
         isBlinking: false,
         happyTimer: 0,
-        idleTimer: 0,
+        winkTimer: 0,
       });
     }
     return this.snakeAnimState.get(id)!;
@@ -98,15 +96,22 @@ export class Renderer {
     this.animFrame++;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    this.ctx.clearRect(0, 0, vw, vh);
+
+    // Fast clear background
+    this.ctx.fillStyle = '#E8F5E9';
+    this.ctx.fillRect(0, 0, vw, vh);
 
     let target = state.snakes.find(s => s.id === targetUserId);
     if (!target || !target.isAlive) target = state.snakes.find(s => s.isAlive);
 
+    // LERP Smooth Camera
     if (target) {
-      this.cameraPos.x += (target.head.x - this.cameraPos.x) * 0.12;
-      this.cameraPos.y += (target.head.y - this.cameraPos.y) * 0.12;
-      // Zoom only based on visual stage, NOT physical length — prevents claustrophobia
+      const targetLerp = this.lerpSnakes.get(target.id);
+      const camX = targetLerp ? targetLerp.x : target.head.x;
+      const camY = targetLerp ? targetLerp.y : target.head.y;
+      this.cameraPos.x += (camX - this.cameraPos.x) * 0.15;
+      this.cameraPos.y += (camY - this.cameraPos.y) * 0.15;
+
       const stageZoom: Record<string, number> = {
         Baby: 1.15, Young: 1.1, Teen: 1.05, Adult: 1.0, Elite: 0.95, Titan: 0.9,
       };
@@ -121,8 +126,21 @@ export class Renderer {
 
     this.renderTerrain(3200);
     this.renderSafeZone(state.safeZone);
-    for (const food of state.food) this.renderCollectible(food);
-    for (const snake of state.snakes) if (snake.isAlive) this.renderAnaconda(snake, snake.id === targetUserId);
+
+    // Render Food
+    for (let i = 0; i < state.food.length; i++) {
+      this.renderCollectible(state.food[i]);
+    }
+
+    // Update position LERPs & Render Snakes
+    for (let i = 0; i < state.snakes.length; i++) {
+      const snake = state.snakes[i];
+      if (snake.isAlive) {
+        this.updateSnakeLerp(snake);
+        this.renderCuteSnake(snake, snake.id === targetUserId);
+      }
+    }
+
     if (state.currentEvent?.type === 'rain_storm') this.renderRain(3200);
 
     this.ctx.restore();
@@ -130,67 +148,72 @@ export class Renderer {
     this.renderMinimap(state, targetUserId);
   }
 
+  private updateSnakeLerp(snake: SnakeData) {
+    let lerp = this.lerpSnakes.get(snake.id);
+    if (!lerp) {
+      lerp = {
+        x: snake.head.x,
+        y: snake.head.y,
+        angle: snake.angle,
+        body: snake.body.map(b => ({ x: b.x, y: b.y })),
+      };
+      this.lerpSnakes.set(snake.id, lerp);
+      return;
+    }
+
+    // Smooth position interpolation (LERP 35% towards target per frame)
+    const factor = 0.35;
+    lerp.x += (snake.head.x - lerp.x) * factor;
+    lerp.y += (snake.head.y - lerp.y) * factor;
+
+    // Angle lerp with wrap-around
+    let da = (snake.angle - lerp.angle) % (Math.PI * 2);
+    if (da < -Math.PI) da += Math.PI * 2;
+    if (da > Math.PI) da -= Math.PI * 2;
+    lerp.angle += da * factor;
+
+    // Body segments lerp
+    for (let i = 0; i < snake.body.length; i++) {
+      const targetSeg = snake.body[i];
+      if (!lerp.body[i]) {
+        lerp.body[i] = { x: targetSeg.x, y: targetSeg.y };
+      } else {
+        lerp.body[i].x += (targetSeg.x - lerp.body[i].x) * factor;
+        lerp.body[i].y += (targetSeg.y - lerp.body[i].y) * factor;
+      }
+    }
+    if (lerp.body.length > snake.body.length) {
+      lerp.body.length = snake.body.length;
+    }
+  }
+
   private renderTerrain(world: number) {
     const ctx = this.ctx;
-    ctx.fillStyle = '#bfe6b3';
+    // Cute Pastel Grass Base
+    ctx.fillStyle = '#E2F0CB';
     ctx.fillRect(0, 0, world, world);
 
-    ctx.fillStyle = '#cdeec0';
-    for (const [px, py, pr] of [[350, 500, 260], [2500, 700, 300], [700, 2400, 320], [2400, 2300, 280], [1900, 1900, 240]] as number[][]) {
+    // Soft park patches
+    ctx.fillStyle = '#D6EADF';
+    for (const [px, py, pr] of [[350, 500, 280], [2500, 700, 320], [700, 2400, 340], [2400, 2300, 300]]) {
       ctx.beginPath(); ctx.arc(px, py, pr, 0, Math.PI * 2); ctx.fill();
     }
 
-    ctx.strokeStyle = 'rgba(120, 170, 120, 0.18)'; ctx.lineWidth = 1;
-    for (let x = 0; x <= world; x += 160) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, world); ctx.stroke(); }
-    for (let y = 0; y <= world; y += 160) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(world, y); ctx.stroke(); }
+    // Subtle grid lines
+    ctx.strokeStyle = 'rgba(180, 215, 190, 0.4)'; ctx.lineWidth = 1.5;
+    for (let x = 0; x <= world; x += 180) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, world); ctx.stroke(); }
+    for (let y = 0; y <= world; y += 180) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(world, y); ctx.stroke(); }
 
-    const wave = Math.sin(this.animFrame * 0.04) * 8;
-    ctx.fillStyle = '#8fd3f4';
+    // Cute River
+    const wave = Math.sin(this.animFrame * 0.03) * 6;
+    ctx.fillStyle = '#BEE3F8';
     ctx.beginPath();
     ctx.moveTo(820 + wave, 0); ctx.lineTo(980 + wave, 0);
     ctx.lineTo(1220 + wave, world); ctx.lineTo(1060 + wave, world);
     ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 3;
-    for (let y = 120; y < world; y += 280) { const rx = 940 + ((y / world) * 260) + wave; ctx.beginPath(); ctx.arc(rx, y, 34, 0.1, Math.PI - 0.1); ctx.stroke(); }
 
-    ctx.fillStyle = '#f4f7f5';
-    ctx.fillRect(0, 1500, world, 140);
-    ctx.fillRect(1500, 0, 140, world);
-    ctx.strokeStyle = '#e2e8e4'; ctx.lineWidth = 3;
-    ctx.strokeRect(0, 1500, world, 140); ctx.strokeRect(1500, 0, 140, world);
-    ctx.strokeStyle = '#f5b301'; ctx.lineWidth = 4; ctx.setLineDash([22, 22]);
-    ctx.beginPath(); ctx.moveTo(0, 1570); ctx.lineTo(world, 1570); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(1570, 0); ctx.lineTo(1570, world); ctx.stroke();
-    ctx.setLineDash([]);
-
-    const spots = [
-      { name: '☕ Starbucks', x: 600, y: 1400, color: '#3ba776' },
-      { name: '🍕 Pizza Hut', x: 2200, y: 1400, color: '#e8735e' },
-      { name: '🍔 Park Cafe', x: 1400, y: 600, color: '#f0b45e' },
-      { name: '🏥 Hospital', x: 500, y: 2300, color: '#6db3ee' },
-      { name: '🎓 College', x: 2300, y: 2200, color: '#b39ae8' },
-      { name: '🌉 Bridge', x: 1500, y: 2400, color: '#9fb0a6' },
-    ];
-    for (const s of spots) {
-      ctx.save();
-      ctx.shadowColor = 'rgba(30,60,40,0.18)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 4;
-      ctx.fillStyle = s.color; this.roundRect(s.x, s.y, 130, 90, 12); ctx.fill();
-      ctx.restore();
-      ctx.fillStyle = 'rgba(255,255,255,0.55)'; this.roundRect(s.x + 10, s.y + 10, 110, 26, 6); ctx.fill();
-      ctx.fillStyle = '#1e3a2b'; ctx.font = 'bold 13px Outfit, sans-serif'; ctx.textAlign = 'center';
-      ctx.fillText(s.name, s.x + 65, s.y - 8);
-    }
-
-    const trees = [[300, 400], [520, 860], [1820, 420], [2420, 820], [420, 2180], [2520, 2420], [900, 300], [2000, 1900]];
-    for (const [tx, ty] of trees) {
-      const sway = Math.sin(this.animFrame * 0.03 + tx) * 3;
-      ctx.fillStyle = '#8a5a2b'; ctx.fillRect(tx - 5, ty, 10, 18);
-      ctx.fillStyle = '#4caf50'; ctx.beginPath(); ctx.arc(tx + sway, ty - 14, 28, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#66bb6a'; ctx.beginPath(); ctx.arc(tx + sway - 9, ty - 6, 18, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#81c784'; ctx.beginPath(); ctx.arc(tx + sway + 8, ty - 20, 15, 0, Math.PI * 2); ctx.fill();
-    }
-
-    ctx.strokeStyle = '#4caf50'; ctx.lineWidth = 8; ctx.strokeRect(0, 0, world, world);
+    // Cute Pastel Boundary
+    ctx.strokeStyle = '#B5EAD7'; ctx.lineWidth = 10; ctx.strokeRect(0, 0, world, world);
   }
 
   private renderSafeZone(zone: { centerX: number; centerY: number; radius: number }) {
@@ -199,244 +222,237 @@ export class Renderer {
     ctx.beginPath();
     ctx.rect(0, 0, 3200, 3200);
     ctx.arc(zone.centerX, zone.centerY, zone.radius, 0, Math.PI * 2, true);
-    ctx.fillStyle = 'rgba(120, 20, 40, 0.18)';
+    ctx.fillStyle = 'rgba(255, 183, 178, 0.15)';
     ctx.fill('evenodd');
+
     ctx.beginPath();
     ctx.arc(zone.centerX, zone.centerY, zone.radius, 0, Math.PI * 2);
-    ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 6;
-    ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 18;
+    ctx.strokeStyle = '#FFB7B2'; ctx.lineWidth = 5;
     ctx.stroke();
     ctx.restore();
   }
 
   private renderCollectible(food: FoodData) {
     const ctx = this.ctx;
-    const big = food.type === 'coupon_box' || food.type === 'egg' || food.type === 'shield' || food.type === 'speed';
-    const pulse = Math.sin(this.animFrame * 0.1 + food.x) * 2;
+    const bounce = Math.sin(this.animFrame * 0.08 + food.x) * 3;
+    const py = food.y + bounce;
+
     ctx.save();
+    // Soft shadow
     ctx.beginPath();
-    ctx.arc(food.x, food.y + pulse, big ? 15 : 10, 0, Math.PI * 2);
-    ctx.fillStyle = food.color + '33';
+    ctx.ellipse(food.x, food.y + 10, 8, 4, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
     ctx.fill();
+
     if (food.icon) {
-      ctx.font = `${big ? 26 : 18}px sans-serif`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.shadowColor = food.color; ctx.shadowBlur = 10;
-      ctx.fillText(food.icon, food.x, food.y + pulse);
+      ctx.font = '22px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(food.icon, food.x, py);
     } else {
-      ctx.beginPath(); ctx.arc(food.x, food.y + pulse, 7, 0, Math.PI * 2);
-      ctx.fillStyle = food.color; ctx.shadowColor = food.color; ctx.shadowBlur = 8; ctx.fill();
+      ctx.beginPath();
+      ctx.arc(food.x, py, 8, 0, Math.PI * 2);
+      ctx.fillStyle = food.color || '#FFDAC1';
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 2;
+      ctx.stroke();
     }
     ctx.restore();
   }
 
-  private renderAnaconda(snake: SnakeData, isTarget: boolean) {
+  /**
+   * Renders Ultra-Cute Kawaii Snake matching the attached reference photo!
+   * Highly optimized single continuous stroke/fill path for max 60+ FPS performance.
+   */
+  private renderCuteSnake(snake: SnakeData, isTarget: boolean) {
     const ctx = this.ctx;
     const pal = this.palette(snake.skin);
-    const shielded = (snake.shieldTimer ?? 0) > 0;
-    const speeding = (snake.speedBoostTimer ?? 0) > 0;
+    const lerp = this.lerpSnakes.get(snake.id);
+    const headX = lerp ? lerp.x : snake.head.x;
+    const headY = lerp ? lerp.y : snake.head.y;
+    const angle = lerp ? lerp.angle : snake.angle;
+    const body = lerp ? lerp.body : snake.body;
     const anim = this.getAnimState(snake.id);
-    const hp = snake.hp ?? 100;
-    const maxHp = snake.maxHp ?? 100;
-    const isLowHp = hp / maxHp < 0.25;
-    const isBoosting = snake.boosting;
 
-    // ----- Tick animations -----
-    anim.tongueTimer += 1 / 30;
-    anim.blinkTimer += 1 / 30;
-    anim.happyTimer = Math.max(0, anim.happyTimer - 1 / 30);
+    // Anim Timers
+    anim.blinkTimer += 0.02;
+    if (anim.blinkTimer > 3.5) anim.blinkTimer = 0;
+    anim.isBlinking = anim.blinkTimer < 0.15;
+    if (anim.happyTimer > 0) anim.happyTimer -= 0.02;
 
-    // Tongue: out for 0.4s, off for 1.6s — cute flick
-    if (anim.tongueTimer > 2.0) anim.tongueTimer = 0;
-    anim.tongueOut = anim.tongueTimer < 0.4;
+    const r = Math.max(12, snake.radius);
 
-    // Blink: every ~4 seconds, shut for 0.12s
-    if (anim.blinkTimer > 4.0) anim.blinkTimer = 0;
-    anim.isBlinking = anim.blinkTimer < 0.12;
-
-    // Speed motion trail
-    if (speeding) {
-      for (let i = snake.body.length - 1; i >= 0; i -= 3) {
-        const seg = snake.body[i];
-        ctx.beginPath();
-        ctx.arc(seg.x, seg.y, snake.radius * 0.7, 0, Math.PI * 2);
-        ctx.fillStyle = pal.glow + '22'; ctx.fill();
-      }
-    }
-
-    // Happy glow pulse after eating
-    if (anim.happyTimer > 0) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(snake.head.x, snake.head.y, snake.radius * 2.4, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(100, 255, 100, ${anim.happyTimer * 0.18})`;
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // Low-HP red pulse on body
-    if (isLowHp) {
-      const pulse = 0.5 + 0.5 * Math.sin(this.animFrame * 0.18);
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(snake.head.x, snake.head.y, snake.radius * 2, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(239, 68, 68, ${pulse * 0.12})`;
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // ----- Body — smooth bezier-like rendering -----
-    const segs = snake.body;
-    const totalSegs = segs.length;
-
-    for (let i = totalSegs - 1; i >= 0; i--) {
-      const seg = segs[i];
-      // Taper radius from full at head-end to ~20% at tail tip
-      const ratio = i / Math.max(1, totalSegs - 1);
-      const taperFactor = 1 - ratio * 0.78;
-      const segRadius = Math.max(4, snake.radius * taperFactor);
-
-      ctx.beginPath();
-      ctx.arc(seg.x, seg.y, segRadius, 0, Math.PI * 2);
-
-      // Alternating scale pattern — slight color variation between segments
-      const even = i % 2 === 0;
-      const g = ctx.createRadialGradient(seg.x - segRadius * 0.3, seg.y - segRadius * 0.3, 1, seg.x, seg.y, segRadius);
-      g.addColorStop(0, even ? pal.scale : pal.belly ?? '#fff');
-      g.addColorStop(0.55, even ? pal.primary : pal.secondary);
-      g.addColorStop(1, '#08130b');
-      ctx.fillStyle = g;
-      ctx.fill();
-
-      // Subtle outline to define scales
-      ctx.strokeStyle = pal.secondary;
-      ctx.lineWidth = Math.max(0.8, segRadius * 0.07);
-      ctx.stroke();
-    }
-
-    // ----- Head -----
+    // --- 1. DRAW SMOOTH PASTEL BODY PATH ---
     ctx.save();
-    const headX = snake.head.x;
-    const headY = snake.head.y;
-    ctx.translate(headX, headY);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
-    // Dizzy wobble when low HP
-    let headAngle = snake.angle;
-    if (isLowHp) {
-      headAngle += Math.sin(this.animFrame * 0.5) * 0.15;
-    }
-    // Elongate head when boosting for aggression feel
-    const headScaleX = isBoosting ? 1.5 : 1.3;
-    const headScaleY = isBoosting ? 0.88 : 0.98;
-    ctx.rotate(headAngle);
-
+    // Step A: Draw Outer Dark Pastel Contour Line for the whole body
     ctx.beginPath();
-    ctx.ellipse(0, 0, snake.radius * headScaleX, snake.radius * headScaleY, 0, 0, Math.PI * 2);
-    const hg = ctx.createRadialGradient(-snake.radius * 0.2, -snake.radius * 0.2, 2, 0, 0, snake.radius * headScaleX);
-    hg.addColorStop(0, pal.scale); hg.addColorStop(0.75, pal.primary); hg.addColorStop(1, '#08130b');
-    ctx.fillStyle = hg; ctx.fill();
-
-    const outline = isTarget ? '#ffe066' : snake.team === 'red' ? '#ef4444' : snake.team === 'blue' ? '#3b82f6' : pal.secondary;
-    ctx.lineWidth = 2.6; ctx.strokeStyle = outline; ctx.stroke();
-
-    // ----- Eyes -----
-    const eyeOffX = snake.radius * 0.42;
-    const eyeOffY = -snake.radius * 0.38;
-    const eyeR = Math.max(2.5, snake.radius * 0.22);
-
-    for (const side of [-1, 1]) {
-      // Sclera (white)
-      ctx.beginPath();
-      ctx.arc(eyeOffX, side * eyeOffY, eyeR, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffffee';
-      ctx.fill();
-      ctx.strokeStyle = pal.secondary; ctx.lineWidth = 1;
-      ctx.stroke();
-
-      if (!anim.isBlinking) {
-        // Pupil — cute round
-        ctx.beginPath();
-        ctx.arc(eyeOffX + eyeR * 0.2, side * eyeOffY, eyeR * 0.55, 0, Math.PI * 2);
-        ctx.fillStyle = pal.eye;
-        ctx.fill();
-        // Shine dot
-        ctx.beginPath();
-        ctx.arc(eyeOffX + eyeR * 0.35, side * eyeOffY - eyeR * 0.3, eyeR * 0.2, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(255,255,255,0.9)';
-        ctx.fill();
-      }
+    ctx.moveTo(headX, headY);
+    for (let i = 0; i < body.length; i += 2) {
+      ctx.lineTo(body[i].x, body[i].y);
     }
+    ctx.strokeStyle = pal.outline;
+    ctx.lineWidth = r * 2.2;
+    ctx.stroke();
 
-    // ----- Tongue flick -----
-    if (anim.tongueOut) {
-      const tongueLen = snake.radius * 1.1;
-      const forkLen = snake.radius * 0.5;
-      const tongueSpread = 0.22;
-      ctx.strokeStyle = '#e53935'; ctx.lineWidth = Math.max(1.2, snake.radius * 0.09); ctx.lineCap = 'round';
-      // Main stem
-      ctx.beginPath();
-      ctx.moveTo(snake.radius * headScaleX - 2, 0);
-      ctx.lineTo(snake.radius * headScaleX + tongueLen, 0);
-      ctx.stroke();
-      // Forks
-      ctx.beginPath();
-      ctx.moveTo(snake.radius * headScaleX + tongueLen, 0);
-      ctx.lineTo(snake.radius * headScaleX + tongueLen + forkLen, -tongueSpread * forkLen * 2.5);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(snake.radius * headScaleX + tongueLen, 0);
-      ctx.lineTo(snake.radius * headScaleX + tongueLen + forkLen, tongueSpread * forkLen * 2.5);
-      ctx.stroke();
+    // Step B: Draw Inner Main Pastel Soft Body Fill
+    ctx.beginPath();
+    ctx.moveTo(headX, headY);
+    for (let i = 0; i < body.length; i += 2) {
+      ctx.lineTo(body[i].x, body[i].y);
+    }
+    ctx.strokeStyle = pal.primary;
+    ctx.lineWidth = r * 1.85;
+    ctx.stroke();
+
+    // Step C: Draw Soft Underbelly Highlight Line
+    ctx.beginPath();
+    ctx.moveTo(headX, headY);
+    for (let i = 0; i < body.length; i += 2) {
+      ctx.lineTo(body[i].x, body[i].y);
+    }
+    ctx.strokeStyle = pal.belly;
+    ctx.lineWidth = r * 0.9;
+    ctx.stroke();
+
+    // --- 2. DRAW DECORATIVE FLOWERS / ACCENTS ON BODY ---
+    const flowerIcon = pal.flower || '🌸';
+    for (let i = 4; i < body.length - 2; i += 6) {
+      const seg = body[i];
+      ctx.font = `${r * 0.9}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(flowerIcon, seg.x, seg.y);
     }
 
     ctx.restore();
 
-    // ----- Shield bubble -----
-    if (shielded) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(headX, headY, snake.radius * 1.9, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(96, 165, 250, 0.9)'; ctx.lineWidth = 3;
-      ctx.shadowColor = '#60a5fa'; ctx.shadowBlur = 14; ctx.stroke();
-      ctx.fillStyle = 'rgba(96,165,250,0.10)'; ctx.fill();
-      ctx.restore();
+    // --- 3. DRAW ADORABLE KAWAII HEAD & FACE ---
+    ctx.save();
+    ctx.translate(headX, headY);
+    ctx.rotate(angle);
+
+    // Head Outline & Fill (Plump rounded head)
+    const headW = r * 1.35;
+    const headH = r * 1.15;
+
+    // Head Base Shadow / Outline
+    ctx.beginPath();
+    ctx.ellipse(0, 0, headW + 2, headH + 2, 0, 0, Math.PI * 2);
+    ctx.fillStyle = pal.outline;
+    ctx.fill();
+
+    // Head Pastel Soft Fill
+    ctx.beginPath();
+    ctx.ellipse(0, 0, headW, headH, 0, 0, Math.PI * 2);
+    ctx.fillStyle = pal.primary;
+    ctx.fill();
+
+    // Soft Blush Cheeks (translucent cute pink circles under eyes)
+    ctx.beginPath();
+    ctx.ellipse(headW * 0.25, -headH * 0.45, r * 0.35, r * 0.22, 0, 0, Math.PI * 2);
+    ctx.ellipse(headW * 0.25, headH * 0.45, r * 0.35, r * 0.22, 0, 0, Math.PI * 2);
+    ctx.fillStyle = pal.blush;
+    ctx.globalAlpha = 0.65;
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+
+    // --- 4. KAWAII BUTTON EYES (Big glossy anime eyes with double shine dots) ---
+    const eyeOffsetX = headW * 0.38;
+    const eyeOffsetY = headH * 0.32;
+    const eyeRadius = Math.max(3.5, r * 0.28);
+
+    for (const side of [-1, 1]) {
+      const ey = side * eyeOffsetY;
+
+      if (anim.isBlinking) {
+        // Cute closed curved blink line (◡)
+        ctx.beginPath();
+        ctx.arc(eyeOffsetX, ey, eyeRadius, 0.2 * Math.PI, 0.8 * Math.PI, false);
+        ctx.strokeStyle = pal.outline;
+        ctx.lineWidth = 2.2;
+        ctx.stroke();
+      } else {
+        // Solid glossy dark pupil
+        ctx.beginPath();
+        ctx.arc(eyeOffsetX, ey, eyeRadius, 0, Math.PI * 2);
+        ctx.fillStyle = pal.eye;
+        ctx.fill();
+
+        // Primary Glossy Sparkle Dot (Top Left)
+        ctx.beginPath();
+        ctx.arc(eyeOffsetX + eyeRadius * 0.25, ey - eyeRadius * 0.25, eyeRadius * 0.42, 0, Math.PI * 2);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fill();
+
+        // Secondary Tiny Sparkle Dot (Bottom Right)
+        ctx.beginPath();
+        ctx.arc(eyeOffsetX - eyeRadius * 0.3, ey + eyeRadius * 0.3, eyeRadius * 0.2, 0, Math.PI * 2);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fill();
+      }
     }
 
-    this.renderNameHp(snake, isTarget, anim);
+    // --- 5. ADORABLE SMILE MOUTH ---
+    ctx.beginPath();
+    ctx.arc(headW * 0.65, 0, r * 0.18, -0.2 * Math.PI, 0.7 * Math.PI, false);
+    ctx.strokeStyle = pal.outline;
+    ctx.lineWidth = 2.0;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    // Cute target indicator ring around local player
+    if (isTarget) {
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 1.8, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([6, 6]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    ctx.restore();
+
+    // --- 6. HEALTH BAR (Only shown when damaged/combat) ---
+    this.renderNameHp(snake, isTarget, anim, headX, headY, r);
   }
 
   private renderNameHp(
     snake: SnakeData,
     isTarget: boolean,
-    anim: { lastDamageTime: number; happyTimer: number }
+    _anim: any,
+    headX: number,
+    headY: number,
+    r: number
   ) {
     const ctx = this.ctx;
-    const hp = snake.hp ?? 100, maxHp = snake.maxHp ?? 100;
+    const hp = snake.hp ?? 100;
+    const maxHp = snake.maxHp ?? 100;
     const ratio = Math.max(0, Math.min(1, hp / maxHp));
-    const timeSinceDamage = (this.animFrame / 30) - anim.lastDamageTime;
-    const recentlyDamaged = timeSinceDamage < 3.0;
 
-    // Track damage event
-    if (hp < maxHp && timeSinceDamage > 3.5) {
-      anim.lastDamageTime = this.animFrame / 30;
-    }
+    // Hide HP bar when at full health to keep screen clean & pretty
+    if (ratio >= 0.99 && !isTarget) return;
 
-    const w = Math.max(46, snake.radius * 3), h = 6;
-    const x = snake.head.x - w / 2, y = snake.head.y - snake.radius - 20;
+    const w = Math.max(40, r * 2.5);
+    const h = 5;
+    const x = headX - w / 2;
+    const y = headY - r - 16;
 
     ctx.save();
-    ctx.font = 'bold 12px Outfit, sans-serif'; ctx.textAlign = 'center';
-    ctx.fillStyle = isTarget ? '#b45309' : '#153524';
-    ctx.shadowColor = 'rgba(255,255,255,0.9)'; ctx.shadowBlur = 5;
-    ctx.fillText(`${snake.displayName} · ${(snake as any).evolution || snake.stage}`, snake.head.x, y - 6);
-    ctx.shadowBlur = 0;
+    ctx.font = 'bold 11px Outfit, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = isTarget ? '#2B6CB0' : '#4A5568';
+    ctx.fillText(`${snake.displayName}`, headX, y - 4);
 
-    // Health bar: only show when not at full HP, recently damaged, or low HP
-    const showHp = ratio < 0.999 || recentlyDamaged || ratio < 0.4;
-    if (showHp) {
-      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
-      let c = '#22c55e'; if (ratio < 0.3) c = '#ef4444'; else if (ratio < 0.6) c = '#facc15';
-      ctx.fillStyle = c; ctx.fillRect(x, y, w * ratio, h);
+    if (ratio < 0.99) {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
+      ctx.fillStyle = ratio < 0.3 ? '#FC8181' : '#F6AD55';
+      ctx.fillRect(x, y, w * ratio, h);
     }
     ctx.restore();
   }
@@ -444,11 +460,12 @@ export class Renderer {
   private renderRain(world: number) {
     const ctx = this.ctx;
     ctx.save();
-    ctx.strokeStyle = 'rgba(160, 224, 255, 0.35)'; ctx.lineWidth = 1.5;
-    for (let i = 0; i < 90; i++) {
-      const rx = (i * 45 + this.animFrame * 12) % world;
-      const ry = (i * 35 + this.animFrame * 20) % world;
-      ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx - 6, ry + 16); ctx.stroke();
+    ctx.strokeStyle = 'rgba(190, 227, 248, 0.4)';
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 50; i++) {
+      const rx = (i * 65 + this.animFrame * 10) % world;
+      const ry = (i * 55 + this.animFrame * 18) % world;
+      ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx - 4, ry + 12); ctx.stroke();
     }
     ctx.restore();
   }
@@ -457,50 +474,32 @@ export class Renderer {
     const ctx = this.ctx;
     const vw = window.innerWidth, vh = window.innerHeight;
     const mobile = vw <= 640;
-    const size = mobile ? 84 : 118;
-    const margin = mobile ? 10 : 18;
+    const size = mobile ? 80 : 110;
+    const margin = mobile ? 10 : 16;
     const x = vw - size - margin;
-    const y = vh - size - (mobile ? 96 : 60);
+    const y = vh - size - (mobile ? 90 : 55);
 
     ctx.save();
-    ctx.fillStyle = 'rgba(10, 30, 20, 0.85)';
-    ctx.strokeStyle = 'rgba(74, 222, 128, 0.6)'; ctx.lineWidth = 2;
-    this.roundRectAbs(x, y, size, size, 10); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.strokeStyle = '#B5EAD7'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(x, y, size, size, 12);
+    ctx.fill(); ctx.stroke();
 
     const scale = size / 3200;
-    if (state.safeZone) {
-      ctx.beginPath();
-      ctx.arc(x + state.safeZone.centerX * scale, y + state.safeZone.centerY * scale, state.safeZone.radius * scale, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(239, 68, 68, 0.8)'; ctx.lineWidth = 1.5; ctx.stroke();
-    }
-    for (const s of state.snakes) {
+    for (let i = 0; i < state.snakes.length; i++) {
+      const s = state.snakes[i];
       if (!s.isAlive) continue;
       const isT = s.id === targetUserId;
       ctx.beginPath();
-      ctx.arc(x + s.head.x * scale, y + s.head.y * scale, isT ? 3.5 : s.isBoss ? 3 : 1.8, 0, Math.PI * 2);
-      ctx.fillStyle = isT ? '#ffe066' : s.isBoss ? '#ef4444' : '#4ade80'; ctx.fill();
+      ctx.arc(x + s.head.x * scale, y + s.head.y * scale, isT ? 3.5 : 2, 0, Math.PI * 2);
+      ctx.fillStyle = isT ? '#FFB7B2' : '#70C1B3'; ctx.fill();
     }
     ctx.restore();
   }
 
-  /** Trigger happy animation from outside (called when food is eaten) */
   public triggerHappyAnim(snakeId: string) {
     const anim = this.getAnimState(snakeId);
-    anim.happyTimer = 1.2;
-  }
-
-  private roundRect(x: number, y: number, w: number, h: number, r: number) {
-    const ctx = this.ctx;
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r);
-    ctx.closePath();
-  }
-
-  private roundRectAbs(x: number, y: number, w: number, h: number, r: number) {
-    this.roundRect(x, y, w, h, r);
+    anim.happyTimer = 1.0;
   }
 }

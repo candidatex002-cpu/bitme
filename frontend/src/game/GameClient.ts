@@ -101,8 +101,14 @@ export class GameClient {
       this.socket = null;
     }
 
-    // Connect straight to the authoritative backend (see serverBase()).
-    this.socket = io(serverBase(), { transports: ['websocket', 'polling'], reconnection: true, reconnectionAttempts: 10 });
+    // Connect to backend with polling fallback first for stable connection setup
+    this.socket = io(serverBase(), {
+      transports: ['polling', 'websocket'],
+      reconnection: true,
+      reconnectionAttempts: 15,
+      reconnectionDelay: 1000,
+      closeOnBeforeunload: true,
+    });
 
     this.socket.on('connect', () => {
       this.isConnected = true;
