@@ -309,13 +309,13 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 760px) { .two-col { grid-template-columns: 1fr; } }
 @media (max-width: 640px) {
-  .touch-joystick, .touch-actions { display: flex; }
+  .touch-joystick, .touch-actions { display: none !important; }
   .hud-tl-main { min-width: 96px; }
   .hud-leaderboard { width: min(136px, 40vw); }
   .ability-badge { display: none; }
 }
 @media (pointer: coarse) {
-  .touch-joystick, .touch-actions { display: flex; }
+  .touch-joystick, .touch-actions { display: none !important; }
 }
 
 /* ---------------------------------------------------------------- skin families */

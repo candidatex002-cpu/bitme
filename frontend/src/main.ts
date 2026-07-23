@@ -359,19 +359,21 @@ class AnacondaPark {
     this.client.sendInput(this.angle, this.boosting);
   }
   private bindTouch() {
-    const joy = document.getElementById('touch-joystick'); const knob = document.getElementById('touch-knob');
-    if (!joy || !knob) return;
-    const move = (t: Touch) => {
-      const r = joy.getBoundingClientRect(); const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-      const dx = t.clientX - cx, dy = t.clientY - cy; const d = Math.hypot(dx, dy) || 1;
-      this.angle = Math.atan2(dy, dx); const cl = Math.min(1, d / 38);
-      knob.style.left = `${50 + Math.cos(this.angle) * cl * 34}%`; knob.style.top = `${50 + Math.sin(this.angle) * cl * 34}%`;
+    const handleTouch = (t: Touch) => {
+      const cx = window.innerWidth / 2;
+      const cy = window.innerHeight / 2;
+      this.angle = Math.atan2(t.clientY - cy, t.clientX - cx);
     };
-    joy.ontouchstart = (e) => { this.joyActive = true; move(e.touches[0]); };
-    joy.ontouchmove = (e) => { e.preventDefault(); move(e.touches[0]); };
-    joy.ontouchend = () => { this.joyActive = false; knob.style.left = '50%'; knob.style.top = '50%'; };
-    const boost = document.getElementById('touch-boost'); if (boost) { boost.ontouchstart = (e) => { e.preventDefault(); this.boosting = true; }; boost.ontouchend = () => { this.boosting = false; }; }
-    const ab = document.getElementById('touch-ability'); if (ab) ab.ontouchstart = (e) => { e.preventDefault(); this.client.activateAbility(); };
+
+    window.addEventListener('touchstart', (e) => {
+      if (this.screen !== 'play') return;
+      if (e.touches.length > 0) handleTouch(e.touches[0]);
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (e) => {
+      if (this.screen !== 'play') return;
+      if (e.touches.length > 0) handleTouch(e.touches[0]);
+    }, { passive: true });
   }
 
   // ------------------------------------------------------------- HUD
