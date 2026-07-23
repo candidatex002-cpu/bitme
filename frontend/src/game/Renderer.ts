@@ -357,12 +357,12 @@ export class Renderer {
     ctx.translate(headX, headY);
     ctx.rotate(angle);
 
-    const headW = baseRadius * 1.48;
-    const headH = baseRadius * 1.22;
+    const headW = baseRadius * 1.15;
+    const headH = baseRadius * 1.05;
 
     // Head Dark Contour Outline
     ctx.beginPath();
-    ctx.ellipse(0, 0, headW + 2.4, headH + 2.4, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, headW + 2.2, headH + 2.2, 0, 0, Math.PI * 2);
     ctx.fillStyle = pal.outline;
     ctx.fill();
 
@@ -374,8 +374,8 @@ export class Renderer {
 
     // Soft Pink Blush Cheeks
     ctx.beginPath();
-    ctx.ellipse(headW * 0.28, -headH * 0.46, baseRadius * 0.35, baseRadius * 0.2, 0, 0, Math.PI * 2);
-    ctx.ellipse(headW * 0.28, headH * 0.46, baseRadius * 0.35, baseRadius * 0.2, 0, 0, Math.PI * 2);
+    ctx.ellipse(headW * 0.28, -headH * 0.46, baseRadius * 0.32, baseRadius * 0.18, 0, 0, Math.PI * 2);
+    ctx.ellipse(headW * 0.28, headH * 0.46, baseRadius * 0.32, baseRadius * 0.18, 0, 0, Math.PI * 2);
     ctx.fillStyle = pal.blush;
     ctx.globalAlpha = 0.75;
     ctx.fill();
@@ -384,8 +384,8 @@ export class Renderer {
     // --- 3. KAWAII BUTTON EYES ---
     const eyeOffsetX = headW * 0.36;
     const eyeOffsetY = headH * 0.32;
-    const eyeRadiusX = Math.max(4.0, baseRadius * 0.28);
-    const eyeRadiusY = Math.max(3.2, baseRadius * 0.22);
+    const eyeRadiusX = Math.max(3.5, baseRadius * 0.24);
+    const eyeRadiusY = Math.max(2.8, baseRadius * 0.18);
 
     for (const side of [-1, 1]) {
       const ey = side * eyeOffsetY;
@@ -394,7 +394,7 @@ export class Renderer {
         ctx.beginPath();
         ctx.arc(eyeOffsetX, ey, eyeRadiusX, 0.15 * Math.PI, 0.85 * Math.PI, false);
         ctx.strokeStyle = pal.outline;
-        ctx.lineWidth = 2.4;
+        ctx.lineWidth = 2.2;
         ctx.stroke();
       } else {
         ctx.beginPath();
@@ -402,25 +402,6 @@ export class Renderer {
         ctx.fillStyle = pal.eye;
         ctx.fill();
       }
-    }
-
-    // --- 4. TINY CUTE 'v' MOUTH ---
-    ctx.beginPath();
-    ctx.moveTo(headW * 0.58, -baseRadius * 0.12);
-    ctx.lineTo(headW * 0.65, 0);
-    ctx.lineTo(headW * 0.58, baseRadius * 0.12);
-    ctx.strokeStyle = pal.outline;
-    ctx.lineWidth = 2.0;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.stroke();
-
-    // Cute Tongue
-    if (anim.tongueOut) {
-      ctx.beginPath();
-      ctx.ellipse(headW * 0.82, 0, baseRadius * 0.2, baseRadius * 0.09, 0, 0, Math.PI * 2);
-      ctx.fillStyle = '#FF70A6';
-      ctx.fill();
     }
 
     // Equipped Accessory
