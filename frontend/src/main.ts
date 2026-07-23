@@ -152,6 +152,8 @@ class AnacondaPark {
     if (audio.getMuted() === this.settings.sfx) audio.toggleMute();
   }
 
+  private animFrameId: number | null = null;
+
   // ------------------------------------------------------------- data
   private async initGuest() {
     try {
@@ -163,7 +165,25 @@ class AnacondaPark {
       await this.refreshProfile();
       await this.fetchAux();
       this.render();
-    } catch { this.showToast('⚠️ Backend offline — run: npm run dev'); }
+    } catch {
+      this.token = 'guest_local_token';
+      this.profile = {
+        id: 'guest_1',
+        displayName: 'Explorer',
+        stars: 500,
+        tickets: 5,
+        level: 1,
+        xp: 50,
+        xpToNext: 300,
+        evolutionXp: 0,
+        equippedSkin: 'Forest',
+        equippedEvolution: 'Baby',
+        unlockedEvolutions: ['Baby'],
+        stats: { matchesPlayed: 0, matchesWon: 0, totalKills: 0, totalFoodEaten: 0, highestScore: 0, survivalTimeSeconds: 0, cherriesCollected: 0 },
+        rank: { label: 'Bronze I', color: '#b45309', tier: 'Bronze' }
+      };
+      this.render();
+    }
   }
 
   private async fetchAux() {
@@ -251,6 +271,20 @@ class AnacondaPark {
     const region = this.matchType === 'local' ? 'Perambur' : this.selectedRegion.replace(/^[^\w]+/, '').trim() || 'Global';
     this.client.connect(this.token, this.selectedSkin, this.selectedMode, region, this.matchType);
     this.setupInput();
+    this.startRenderLoop();
+  }
+
+  private startRenderLoop() {
+    if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
+    const loop = () => {
+      if (this.screen === 'play' || this.screen === 'pause' || this.screen === 'respawn') {
+        if (this.renderer && this.lastState) {
+          this.renderer.render(this.lastState, this.client.localUserId);
+        }
+        this.animFrameId = requestAnimationFrame(loop);
+      }
+    };
+    this.animFrameId = requestAnimationFrame(loop);
   }
 
   private onTick(state: GameStateTick) {
@@ -260,7 +294,6 @@ class AnacondaPark {
     if (me && me.isAlive) for (const l of LANDMARKS) { const dx = me.head.x - l.x, dy = me.head.y - l.y; if (dx * dx + dy * dy < 240 * 240) this.visitedAreas.add(l.name); }
     if (me && !me.isAlive && this.lastAlive && this.screen === 'play') { this.lastAlive = false; audio.playDeath(); this.openRespawn(); return; }
     if (me && me.isAlive) this.lastAlive = true;
-    if (this.renderer && (this.screen === 'play' || this.screen === 'pause' || this.screen === 'respawn')) this.renderer.render(state, this.client.localUserId);
     if (this.screen === 'play') this.updateHUD(state, me);
   }
 
