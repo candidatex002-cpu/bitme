@@ -8,26 +8,27 @@ interface SkinPalette {
   eye: string;
   blush: string;
   outline: string;
-  flower?: string;
+  scaleColor: string;
+  flower: string;
 }
 
-// 15 Cutie Bubble Pastel Skin Palettes
+// 15 Cutie 2D Kawaii Illustration Palettes (Inspired directly by the reference artwork)
 const SKINS: Record<string, SkinPalette> = {
-  Forest:   { primary: '#A8E6CF', secondary: '#70C1B3', belly: '#DCEDC8', glow: '#C7F9CC', eye: '#1E293B', blush: '#FFB7B2', outline: '#2D5045', flower: '🌸' },
-  Ocean:    { primary: '#BEE3F8', secondary: '#90CDF4', belly: '#EBF8FF', glow: '#E0F2FE', eye: '#1A202C', blush: '#FBB6CE', outline: '#2B6CB0', flower: '🌼' },
-  Fire:     { primary: '#FFDAC1', secondary: '#FFB7B2', belly: '#FFF5EB', glow: '#FFE5D9', eye: '#2D3748', blush: '#FF9AA2', outline: '#9B2C2C', flower: '🌺' },
-  Ice:      { primary: '#E2F1FF', secondary: '#BEE3F8', belly: '#F7FAFC', glow: '#EDF2F7', eye: '#1A202C', blush: '#FEB2B2', outline: '#3182CE', flower: '❄️' },
-  Sakura:   { primary: '#FFC6FF', secondary: '#FFADAD', belly: '#FFF0F5', glow: '#FFE5EC', eye: '#2D3748', blush: '#FF70A6', outline: '#9B486F', flower: '🌸' },
-  Shadow:   { primary: '#D8B4FE', secondary: '#C084FC', belly: '#F3E8FF', glow: '#F5D0FE', eye: '#1E1B4B', blush: '#F472B6', outline: '#581C87', flower: '✨' },
-  Galaxy:   { primary: '#C7CEEA', secondary: '#B5EAD7', belly: '#F0E6FF', glow: '#E8DFF5', eye: '#191970', blush: '#FFC6FF', outline: '#4A4E69', flower: '⭐' },
-  Golden:   { primary: '#FFFFD1', secondary: '#FFE599', belly: '#FFFDF0', glow: '#FFF9C4', eye: '#3D2C00', blush: '#FFB7B2', outline: '#7A5C00', flower: '✨' },
-  Royal:    { primary: '#DDD6FE', secondary: '#A78BFA', belly: '#F5F3FF', glow: '#EDE9FE', eye: '#2E1065', blush: '#F472B6', outline: '#4C1D95', flower: '👑' },
-  Desert:   { primary: '#FDE68A', secondary: '#FCD34D', belly: '#FEF3C7', glow: '#FEF08A', eye: '#451A03', blush: '#FCA5A5', outline: '#78350F', flower: '🌻' },
-  Jungle:   { primary: '#A7F3D0', secondary: '#6EE7B7', belly: '#ECFDF5', glow: '#D1FAE5', eye: '#064E3B', blush: '#FCA5A5', outline: '#047857', flower: '🌿' },
-  Electric: { primary: '#FEF08A', secondary: '#FDE047', belly: '#FEF9C3', glow: '#FEF08A', eye: '#422006', blush: '#FCA5A5', outline: '#854D0E', flower: '⚡' },
-  Christmas:{ primary: '#FCA5A5', secondary: '#6EE7B7', belly: '#FEF2F2', glow: '#FEE2E2', eye: '#1F2937', blush: '#EF4444', outline: '#991B1B', flower: '🎄' },
-  Halloween:{ primary: '#FDBA74', secondary: '#FB923C', belly: '#FFEDD5', glow: '#FED7AA', eye: '#18181B', blush: '#F43F5E', outline: '#9A3412', flower: '🎃' },
-  Mythical: { primary: '#F472B6', secondary: '#E879F9', belly: '#FDF2F8', glow: '#FCE7F3', eye: '#4C0519', blush: '#FB7185', outline: '#831843', flower: '💖' },
+  Forest:   { primary: '#F2F9F6', secondary: '#B5EAD7', belly: '#C7E9DE', glow: '#D8F3DC', eye: '#1B243B', blush: '#FFB7B2', outline: '#233240', scaleColor: 'rgba(112, 193, 179, 0.4)', flower: '🌸' },
+  Ocean:    { primary: '#F0F8FF', secondary: '#BEE3F8', belly: '#D0E4F2', glow: '#E0F2FE', eye: '#1B243B', blush: '#FFB7CE', outline: '#1F2D42', scaleColor: 'rgba(144, 205, 244, 0.45)', flower: '🌼' },
+  Fire:     { primary: '#FFF8F5', secondary: '#FFDAC1', belly: '#FCE1D4', glow: '#FFE5D9', eye: '#2D1B24', blush: '#FF9AA2', outline: '#3D1E28', scaleColor: 'rgba(255, 183, 178, 0.45)', flower: '🌺' },
+  Ice:      { primary: '#F5FCFF', secondary: '#E2F1FF', belly: '#D4EBFC', glow: '#EDF2F7', eye: '#162235', blush: '#FEB2B2', outline: '#1C2C42', scaleColor: 'rgba(190, 227, 248, 0.45)', flower: '❄️' },
+  Sakura:   { primary: '#FFF5F8', secondary: '#FFC6FF', belly: '#FCDDEC', glow: '#FFE5EC', eye: '#331B28', blush: '#FF70A6', outline: '#421E32', scaleColor: 'rgba(255, 173, 173, 0.45)', flower: '🌸' },
+  Shadow:   { primary: '#F9F5FF', secondary: '#D8B4FE', belly: '#E9D5FF', glow: '#F5D0FE', eye: '#1E1035', blush: '#F472B6', outline: '#2D184C', scaleColor: 'rgba(192, 132, 252, 0.4)', flower: '✨' },
+  Galaxy:   { primary: '#F4F5FB', secondary: '#C7CEEA', belly: '#D8DCF2', glow: '#E8DFF5', eye: '#161936', blush: '#FFC6FF', outline: '#22274C', scaleColor: 'rgba(181, 234, 215, 0.4)', flower: '⭐' },
+  Golden:   { primary: '#FFFFF5', secondary: '#FFFFD1', belly: '#FAF3C0', glow: '#FFF9C4', eye: '#35280F', blush: '#FFB7B2', outline: '#4A3918', scaleColor: 'rgba(255, 229, 153, 0.45)', flower: '✨' },
+  Royal:    { primary: '#F8F6FF', secondary: '#DDD6FE', belly: '#E5DEF9', glow: '#EDE9FE', eye: '#201642', blush: '#F472B6', outline: '#312361', scaleColor: 'rgba(167, 139, 250, 0.4)', flower: '👑' },
+  Desert:   { primary: '#FFFDF5', secondary: '#FDE68A', belly: '#F7E7A9', glow: '#FEF08A', eye: '#38230B', blush: '#FCA5A5', outline: '#4A3113', scaleColor: 'rgba(252, 211, 77, 0.45)', flower: '🌻' },
+  Jungle:   { primary: '#F3FBF7', secondary: '#A7F3D0', belly: '#C6F6D5', glow: '#D1FAE5', eye: '#103022', blush: '#FCA5A5', outline: '#194532', scaleColor: 'rgba(110, 231, 183, 0.45)', flower: '🌿' },
+  Electric: { primary: '#FFFFF2', secondary: '#FEF08A', belly: '#FAF0A3', glow: '#FEF08A', eye: '#382B08', blush: '#FCA5A5', outline: '#4D3B0E', scaleColor: 'rgba(253, 224, 71, 0.45)', flower: '⚡' },
+  Christmas:{ primary: '#FFF5F5', secondary: '#FCA5A5', belly: '#FAD1D1', glow: '#FEE2E2', eye: '#281717', blush: '#EF4444', outline: '#421E1E', scaleColor: 'rgba(110, 231, 183, 0.45)', flower: '🎄' },
+  Halloween:{ primary: '#FFF8F2', secondary: '#FDBA74', belly: '#FCD7B0', glow: '#FED7AA', eye: '#261810', blush: '#F43F5E', outline: '#40261A', scaleColor: 'rgba(251, 146, 60, 0.45)', flower: '🎃' },
+  Mythical: { primary: '#FFF2FA', secondary: '#F472B6', belly: '#F9CEE7', glow: '#FCE7F3', eye: '#380E24', blush: '#FB7185', outline: '#4F1836', scaleColor: 'rgba(232, 121, 249, 0.45)', flower: '💖' },
 };
 
 const SKIN_ALIASES: Record<string, string> = {
@@ -55,10 +56,10 @@ export class Renderer {
   private zoom = 1.0;
   private animFrame = 0;
 
-  // LERP Position Cache for Smooth Motion
+  // LERP Position Cache for Butter-Smooth Movement
   private lerpSnakes: Map<string, InterpolatedSnake> = new Map();
 
-  // Animation State
+  // Animation State per snake
   private snakeAnimState: Map<string, {
     blinkTimer: number;
     isBlinking: boolean;
@@ -105,8 +106,8 @@ export class Renderer {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
-    // Soft pastel grass background
-    this.ctx.fillStyle = '#E8F5E9';
+    // Soft Pastel Blue Sky Canvas (Matching the reference photo backdrop)
+    this.ctx.fillStyle = '#D4EEF9';
     this.ctx.fillRect(0, 0, vw, vh);
 
     let target = state.snakes.find(s => s.id === targetUserId);
@@ -140,12 +141,12 @@ export class Renderer {
       this.renderCollectible(state.food[i]);
     }
 
-    // Update position LERPs & Render Snakes
+    // Render Snakes
     for (let i = 0; i < state.snakes.length; i++) {
       const snake = state.snakes[i];
       if (snake.isAlive) {
         this.updateSnakeLerp(snake);
-        this.renderCuteSnake(snake, snake.id === targetUserId);
+        this.renderKawaiiVectorSnake(snake, snake.id === targetUserId);
       }
     }
 
@@ -194,26 +195,23 @@ export class Renderer {
 
   private renderTerrain(world: number) {
     const ctx = this.ctx;
-    ctx.fillStyle = '#E2F0CB';
+    // Dreamy Kawaii Park Base
+    ctx.fillStyle = '#E3F2FD';
     ctx.fillRect(0, 0, world, world);
 
-    ctx.fillStyle = '#D6EADF';
+    // Soft park patches
+    ctx.fillStyle = '#E8F5E9';
     for (const [px, py, pr] of [[350, 500, 280], [2500, 700, 320], [700, 2400, 340], [2400, 2300, 300]]) {
       ctx.beginPath(); ctx.arc(px, py, pr, 0, Math.PI * 2); ctx.fill();
     }
 
-    ctx.strokeStyle = 'rgba(180, 215, 190, 0.4)'; ctx.lineWidth = 1.5;
+    // Subtle Grid
+    ctx.strokeStyle = 'rgba(187, 222, 251, 0.5)'; ctx.lineWidth = 1.5;
     for (let x = 0; x <= world; x += 180) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, world); ctx.stroke(); }
     for (let y = 0; y <= world; y += 180) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(world, y); ctx.stroke(); }
 
-    const wave = Math.sin(this.animFrame * 0.03) * 6;
-    ctx.fillStyle = '#BEE3F8';
-    ctx.beginPath();
-    ctx.moveTo(820 + wave, 0); ctx.lineTo(980 + wave, 0);
-    ctx.lineTo(1220 + wave, world); ctx.lineTo(1060 + wave, world);
-    ctx.closePath(); ctx.fill();
-
-    ctx.strokeStyle = '#B5EAD7'; ctx.lineWidth = 10; ctx.strokeRect(0, 0, world, world);
+    // Boundary
+    ctx.strokeStyle = '#B39DDB'; ctx.lineWidth = 8; ctx.strokeRect(0, 0, world, world);
   }
 
   private renderSafeZone(zone: { centerX: number; centerY: number; radius: number }) {
@@ -240,7 +238,7 @@ export class Renderer {
     ctx.save();
     ctx.beginPath();
     ctx.ellipse(food.x, food.y + 10, 8, 4, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.06)';
     ctx.fill();
 
     if (food.icon) {
@@ -261,9 +259,11 @@ export class Renderer {
   }
 
   /**
-   * Overlapping Shiny Bubble Circle Segments (Matching the user's preferred design)!
+   * EXACT 2D Kawaii Vector Snake Illustration Renderer (Matching the user's reference photo)!
+   * Smooth continuous body tube with dark indigo outline, soft powder blue belly, delicate scale arcs,
+   * chubby bean head, simple dark button eyes, blush lines, and sprouting cherry blossom flowers.
    */
-  private renderCuteSnake(snake: SnakeData, isTarget: boolean) {
+  private renderKawaiiVectorSnake(snake: SnakeData, isTarget: boolean) {
     const ctx = this.ctx;
     const pal = this.palette(snake.skin);
     const lerp = this.lerpSnakes.get(snake.id);
@@ -275,145 +275,159 @@ export class Renderer {
 
     // Timers
     anim.blinkTimer += 0.02;
-    if (anim.blinkTimer > 3.5) anim.blinkTimer = 0;
-    anim.isBlinking = anim.blinkTimer < 0.15;
+    if (anim.blinkTimer > 3.8) anim.blinkTimer = 0;
+    anim.isBlinking = anim.blinkTimer < 0.14;
 
     anim.tongueTimer += 0.02;
-    if (anim.tongueTimer > 2.5) anim.tongueTimer = 0;
-    anim.tongueOut = anim.tongueTimer < 0.4;
+    if (anim.tongueTimer > 2.8) anim.tongueTimer = 0;
+    anim.tongueOut = anim.tongueTimer < 0.42;
 
-    const baseRadius = Math.max(15, snake.radius);
+    const baseRadius = Math.max(16, snake.radius);
 
-    // --- 1. OVERLAPPING SHINY BUBBLE CIRCLE SEGMENTS (Tail to Neck) ---
     ctx.save();
-    const totalSegs = body.length;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
-    for (let i = totalSegs - 1; i >= 0; i--) {
+    // --- 1. CONTINUOUS SMOOTH KAWAII BODY TUBE ---
+
+    // Pass A: Dark Indigo Outer Line (Contour)
+    ctx.beginPath();
+    ctx.moveTo(headX, headY);
+    for (let i = 0; i < body.length; i++) {
+      ctx.lineTo(body[i].x, body[i].y);
+    }
+    ctx.strokeStyle = pal.outline;
+    ctx.lineWidth = baseRadius * 2.15;
+    ctx.stroke();
+
+    // Pass B: Main Soft Pastel Cream Body Fill
+    ctx.beginPath();
+    ctx.moveTo(headX, headY);
+    for (let i = 0; i < body.length; i++) {
+      ctx.lineTo(body[i].x, body[i].y);
+    }
+    ctx.strokeStyle = pal.primary;
+    ctx.lineWidth = baseRadius * 1.82;
+    ctx.stroke();
+
+    // Pass C: Soft Powder Blue Underbelly Shade (offset slightly along inner curve)
+    ctx.beginPath();
+    ctx.moveTo(headX, headY);
+    for (let i = 0; i < body.length; i++) {
+      ctx.lineTo(body[i].x, body[i].y);
+    }
+    ctx.strokeStyle = pal.belly;
+    ctx.lineWidth = baseRadius * 0.72;
+    ctx.stroke();
+
+    // Pass D: Delicate Scalloped Scale Lines (◠ ◠ ◠) along top body curve
+    ctx.strokeStyle = pal.scaleColor;
+    ctx.lineWidth = 1.6;
+    for (let i = 2; i < body.length - 1; i += 3) {
       const seg = body[i];
-      // Taper radius smoothly from head down to tail tip
-      const taperRatio = i / Math.max(1, totalSegs);
-      const r = Math.max(6, baseRadius * (1.0 - taperRatio * 0.52));
-
-      // A. Dark Outer Border Circle
       ctx.beginPath();
-      ctx.arc(seg.x, seg.y, r + 2.5, 0, Math.PI * 2);
-      ctx.fillStyle = pal.outline;
-      ctx.fill();
+      ctx.arc(seg.x, seg.y - baseRadius * 0.2, baseRadius * 0.35, 0.2 * Math.PI, 0.8 * Math.PI, false);
+      ctx.stroke();
+    }
 
-      // B. Soft Pastel Primary Body Fill
-      ctx.beginPath();
-      ctx.arc(seg.x, seg.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = pal.primary;
-      ctx.fill();
-
-      // C. Soft Glossy Oval Highlight on Top Right of Bubble
-      ctx.beginPath();
-      ctx.ellipse(seg.x - r * 0.22, seg.y - r * 0.25, r * 0.38, r * 0.25, -0.3, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
-      ctx.fill();
-
-      // D. Occasional Cherry Blossom Flower Icon inside bubble
-      if (i > 1 && i < totalSegs - 1 && i % 5 === 0) {
-        const flowerIcon = pal.flower || '🌸';
-        ctx.font = `${r * 0.95}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(flowerIcon, seg.x, seg.y);
-      }
+    // Pass E: Sprouting Flowers & Leaf Buds Along Body Curve (Matching illustration!)
+    for (let i = 3; i < body.length - 1; i += 5) {
+      const seg = body[i];
+      const floatY = Math.sin(this.animFrame * 0.08 + i) * 2;
+      const flowerIcon = pal.flower || '🌸';
+      ctx.font = `${baseRadius * 1.1}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(flowerIcon, seg.x, seg.y - baseRadius * 0.4 + floatY);
     }
 
     // Trailing sparkles when boosting
     if (snake.boosting) {
       const tailSeg = body[body.length - 1] || { x: headX, y: headY };
-      const sparkX = tailSeg.x + (Math.random() - 0.5) * 16;
-      const sparkY = tailSeg.y + (Math.random() - 0.5) * 16;
-      ctx.font = `${baseRadius * 0.8}px sans-serif`;
+      const sparkX = tailSeg.x + (Math.random() - 0.5) * 18;
+      const sparkY = tailSeg.y + (Math.random() - 0.5) * 18;
+      ctx.font = `${baseRadius * 0.85}px sans-serif`;
       ctx.fillText('✨', sparkX, sparkY);
     }
+
     ctx.restore();
 
-    // --- 2. CUTE BUBBLE HEAD & FACE ---
+    // --- 2. CHUBBY KAWAII HEAD & FACE ---
     ctx.save();
     ctx.translate(headX, headY);
     ctx.rotate(angle);
 
-    const headR = baseRadius * 1.32;
+    const headW = baseRadius * 1.48;
+    const headH = baseRadius * 1.22;
 
-    // Head Outer Border Circle
+    // Head Dark Contour Outline
     ctx.beginPath();
-    ctx.arc(0, 0, headR + 2.8, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, headW + 2.4, headH + 2.4, 0, 0, Math.PI * 2);
     ctx.fillStyle = pal.outline;
     ctx.fill();
 
-    // Head Primary Soft Fill
+    // Head Primary Soft Pastel Fill
     ctx.beginPath();
-    ctx.arc(0, 0, headR, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, headW, headH, 0, 0, Math.PI * 2);
     ctx.fillStyle = pal.primary;
     ctx.fill();
 
-    // Head Glossy Top-Right Highlight
+    // Head Top Soft Scales / Texture
+    ctx.strokeStyle = pal.scaleColor;
+    ctx.lineWidth = 1.4;
     ctx.beginPath();
-    ctx.ellipse(-headR * 0.2, -headR * 0.25, headR * 0.42, headR * 0.28, -0.3, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
-    ctx.fill();
+    ctx.arc(-headW * 0.15, -headH * 0.3, baseRadius * 0.35, 0.2 * Math.PI, 0.8 * Math.PI, false);
+    ctx.stroke();
 
-    // Soft Pink Blush Cheeks
+    // Soft Pink Blush Cheeks (Translucent cute rosy cheeks next to eyes)
     ctx.beginPath();
-    ctx.ellipse(headR * 0.25, -headR * 0.38, headR * 0.32, headR * 0.22, 0, 0, Math.PI * 2);
-    ctx.ellipse(headR * 0.25, headR * 0.38, headR * 0.32, headR * 0.22, 0, 0, Math.PI * 2);
-    ctx.fillStyle = pal.blush || '#FFB7B2';
+    ctx.ellipse(headW * 0.28, -headH * 0.46, baseRadius * 0.35, baseRadius * 0.2, 0, 0, Math.PI * 2);
+    ctx.ellipse(headW * 0.28, headH * 0.46, baseRadius * 0.35, baseRadius * 0.2, 0, 0, Math.PI * 2);
+    ctx.fillStyle = pal.blush;
     ctx.globalAlpha = 0.75;
     ctx.fill();
     ctx.globalAlpha = 1.0;
 
-    // Shiny Anime Button Eyes
-    const eyeX = headR * 0.35;
-    const eyeY = headR * 0.28;
-    const eyeR = Math.max(4.0, headR * 0.26);
+    // --- 3. KAWAII BUTTON EYES (Solid Dark Oval Button Eyes Tilted Inward, Matching Illustration!) ---
+    const eyeOffsetX = headW * 0.36;
+    const eyeOffsetY = headH * 0.32;
+    const eyeRadiusX = Math.max(4.0, baseRadius * 0.28);
+    const eyeRadiusY = Math.max(3.2, baseRadius * 0.22);
 
     for (const side of [-1, 1]) {
-      const ey = side * eyeY;
+      const ey = side * eyeOffsetY;
 
       if (anim.isBlinking) {
-        // Cute closed blink curve (◡)
+        // Cute closed curved blink line (◡)
         ctx.beginPath();
-        ctx.arc(eyeX, ey, eyeR, 0.15 * Math.PI, 0.85 * Math.PI, false);
+        ctx.arc(eyeOffsetX, ey, eyeRadiusX, 0.15 * Math.PI, 0.85 * Math.PI, false);
         ctx.strokeStyle = pal.outline;
         ctx.lineWidth = 2.4;
         ctx.stroke();
       } else {
-        // Dark Pupil
+        // Solid Dark Navy Oval Pupil (Exactly like reference art)
         ctx.beginPath();
-        ctx.arc(eyeX, ey, eyeR, 0, Math.PI * 2);
-        ctx.fillStyle = pal.eye || '#1E293B';
-        ctx.fill();
-
-        // Big Top Gloss Sparkle
-        ctx.beginPath();
-        ctx.arc(eyeX + eyeR * 0.26, ey - eyeR * 0.26, eyeR * 0.44, 0, Math.PI * 2);
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fill();
-
-        // Small Bottom Gloss Sparkle
-        ctx.beginPath();
-        ctx.arc(eyeX - eyeR * 0.28, ey + eyeR * 0.3, eyeR * 0.22, 0, Math.PI * 2);
-        ctx.fillStyle = '#FFFFFF';
+        ctx.ellipse(eyeOffsetX, ey, eyeRadiusX, eyeRadiusY, side * 0.15, 0, Math.PI * 2);
+        ctx.fillStyle = pal.eye;
         ctx.fill();
       }
     }
 
-    // Sweet Curved Smile Mouth
+    // --- 4. TINY CUTE 'v' MOUTH ---
     ctx.beginPath();
-    ctx.arc(headR * 0.58, 0, headR * 0.18, -0.2 * Math.PI, 0.7 * Math.PI, false);
+    ctx.moveTo(headW * 0.58, -baseRadius * 0.12);
+    ctx.lineTo(headW * 0.65, 0);
+    ctx.lineTo(headW * 0.58, baseRadius * 0.12);
     ctx.strokeStyle = pal.outline;
-    ctx.lineWidth = 2.2;
+    ctx.lineWidth = 2.0;
     ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     ctx.stroke();
 
     // Cute Tongue
     if (anim.tongueOut) {
       ctx.beginPath();
-      ctx.ellipse(headR * 0.78, 0, headR * 0.22, headR * 0.1, 0, 0, Math.PI * 2);
+      ctx.ellipse(headW * 0.82, 0, baseRadius * 0.2, baseRadius * 0.09, 0, 0, Math.PI * 2);
       ctx.fillStyle = '#FF70A6';
       ctx.fill();
     }
@@ -421,16 +435,16 @@ export class Renderer {
     // Equipped Accessory (Hats / Crowns)
     const equippedAcc = (snake as any).equippedAccessory;
     if (equippedAcc && ACCESSORY_ICONS[equippedAcc]) {
-      ctx.font = `${headR * 1.2}px sans-serif`;
+      ctx.font = `${baseRadius * 1.3}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(ACCESSORY_ICONS[equippedAcc], 0, -headR * 0.75);
+      ctx.fillText(ACCESSORY_ICONS[equippedAcc], 0, -headH * 0.75);
     }
 
     ctx.restore();
 
-    // Name Tag & HP Bar positioned neatly ABOVE head
-    this.renderNameHp(snake, isTarget, anim, headX, headY, headR);
+    // --- 5. CLEAN NAME TAG & HP BAR ---
+    this.renderNameHp(snake, isTarget, anim, headX, headY, baseRadius);
   }
 
   private renderNameHp(
@@ -446,14 +460,14 @@ export class Renderer {
     const maxHp = snake.maxHp ?? 100;
     const ratio = Math.max(0, Math.min(1, hp / maxHp));
 
-    // Clean name tag positioned nicely above head
+    // Clean name tag positioned above head
     const y = headY - r - 22;
     ctx.save();
     ctx.font = 'bold 12px Outfit, sans-serif';
     ctx.textAlign = 'center';
 
     const label = isTarget ? `👑 ${snake.displayName}` : `${snake.displayName}`;
-    ctx.fillStyle = isTarget ? '#2B6CB0' : '#4A5568';
+    ctx.fillStyle = isTarget ? '#1E3A8A' : '#475569';
     ctx.shadowColor = 'rgba(255,255,255,0.9)';
     ctx.shadowBlur = 4;
     ctx.fillText(label, headX, y - 4);
