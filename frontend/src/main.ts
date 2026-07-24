@@ -5,7 +5,7 @@ import { audio } from './game/AudioSystem.js';
 const API = serverBase();
 
 type Screen = 'app' | 'matchmaking' | 'play' | 'pause' | 'respawn' | 'gameover' | 'ad-reward';
-type Page = 'home' | 'play' | 'missions' | 'inventory' | 'profile' | 'events' | 'social' | 'settings';
+type Page = 'home' | 'play' | 'missions' | 'inventory' | 'profile' | 'events' | 'social' | 'settings' | 'rewards';
 
 interface SkinDef { id: string; name: string; grad: string; premium?: boolean; family?: string; }
 // 15 skin families — each belongs to a themed group
@@ -119,6 +119,10 @@ class AnacondaPark {
   private equippedAccessory = '';
   private matchType: 'global' | 'local' = 'global';
   private selectedRegion = '🌍 Quick Match';
+
+  // §15 Rewards marketplace
+  private rewards: any[] = [];
+  private rewardRegion = 'Global';
 
   private settings: Settings = { sfx: true, music: false, largeText: false, reduceMotion: false, highContrast: false, controlSide: 'right' };
 
@@ -260,7 +264,7 @@ class AnacondaPark {
 
   // ------------------------------------------------------------- navigation
   private setScreen(s: Screen) { this.screen = s; this.render(); }
-  private go(p: Page) { this.page = p; this.screen = 'app'; audio.playClick(); this.render(); }
+  private go(p: Page) { this.page = p; this.screen = 'app'; audio.playClick(); this.render(); if (p === 'rewards') this.loadRewards(); }
 
   private async equipSkin(id: string) {
     audio.playClick(); this.selectedSkin = id; if (this.profile) this.profile.equippedSkin = id;
@@ -619,7 +623,8 @@ class AnacondaPark {
               : this.page === 'profile' ? this.pageProfile()
                 : this.page === 'events' ? this.pageEvents()
                   : this.page === 'social' ? this.pageSocial()
-                    : this.pageSettings()}
+                    : this.page === 'rewards' ? this.pageRewards()
+                      : this.pageSettings()}
         </div>
         <div class="bottom-nav">
           ${nav.map(([id, ico, label]) => `<button class="nav-item ${this.page === id ? 'active' : ''}" data-go="${id}"><span class="ni-ico">${ico}</span>${label}</button>`).join('')}
@@ -660,6 +665,14 @@ class AnacondaPark {
           <div class="list">
             ${daily.map(m => this.missionRow(m, true)).join('') || '<div class="muted">Loading…</div>'}
           </div>
+        </div>
+
+        <div class="card tint" data-go="rewards" style="cursor:pointer;display:flex;align-items:center;gap:12px;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div style="font-size:2rem;">🎁</div>
+            <div><div style="font-family:var(--font-title);font-weight:800;">Rewards Marketplace</div><div class="muted" style="font-size:0.8rem;">Redeem ⭐ for gift cards, merch &amp; passes</div></div>
+          </div>
+          <span class="pill gold">Open</span>
         </div>
 
         <div class="two-col">
@@ -874,6 +887,68 @@ class AnacondaPark {
       <div class="muted" style="font-size:0.78rem;">Parties, team invites and in-match chat are on the roadmap (this is a preview).</div></div>`;
   }
 
+  // ---------- REWARDS MARKETPLACE (§15) ----------
+  private async loadRewards() {
+    try {
+      const res = await fetch(`${API}/api/rewards/catalog?region=${encodeURIComponent(this.rewardRegion)}`);
+      const data = await res.json();
+      this.rewards = data.items || [];
+    } catch { this.rewards = []; }
+    if (this.page === 'rewards') this.render();
+  }
+
+  private async redeemReward(itemId: string) {
+    audio.playClick();
+    try {
+      const res = await fetch(`${API}/api/rewards/redeem`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
+        body: JSON.stringify({ itemId, region: this.rewardRegion }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (data.profile) { this.profile = data.profile; this.persistSession(); }
+        audio.playFanfare();
+        this.showToast(`🎁 ${data.message}`);
+        await this.loadRewards();
+      } else {
+        this.showToast(`❌ ${data.message || 'Redeem failed'}`);
+      }
+    } catch { this.showToast('❌ Redeem failed'); }
+    this.render();
+  }
+
+  private pageRewards() {
+    const regions = ['Global', 'USA', 'Europe', 'India', 'Brazil'];
+    const vouchers = (this.profile?.coupons || []).filter((c: any) => String(c.id).startsWith('rdm_'));
+    return `
+      <div class="page">
+        <div class="section-title">🎁 Rewards Marketplace</div>
+        <div class="card">
+          <div class="muted" style="font-size:0.8rem;margin-bottom:8px;">Redeem ⭐ Stars for digital rewards. Availability, price &amp; stock vary by region. Gift cards &amp; branded rewards are fulfilled only through approved providers.</div>
+          <div class="seg" style="flex-wrap:wrap;gap:6px;">
+            ${regions.map(r => `<button class="${this.rewardRegion === r ? 'active' : ''}" data-rwregion="${r}">${r}</button>`).join('')}
+          </div>
+        </div>
+        <div class="list">
+          ${this.rewards.length ? this.rewards.map((it: any) => this.rewardRow(it)).join('') : '<div class="muted" style="text-align:center;padding:16px;">Loading rewards…</div>'}
+        </div>
+        ${vouchers.length ? `<div class="section-title" style="margin-top:8px;">🎟️ My Vouchers</div><div class="list">${vouchers.map((c: any) => `<div class="row-card"><div class="r-ico">${c.icon || '🎟️'}</div><div class="r-body"><div class="r-title">${c.storeName}</div><div class="r-desc">${c.discountText} · <b>${c.promoCode}</b></div></div><button class="btn btn-ghost copy-btn" data-code="${c.promoCode}" style="padding:7px 10px;font-size:0.76rem;">Copy</button></div>`).join('')}</div>` : ''}
+      </div>`;
+  }
+
+  private rewardRow(it: any) {
+    const stars = this.profile?.stars ?? 0;
+    const canAfford = stars >= it.starCost;
+    const disabled = !it.available || it.soldOut || !canAfford;
+    const tag = it.soldOut ? 'Sold out' : !it.available ? 'Region locked' : it.stock < 0 ? 'In stock' : `${it.stock} left`;
+    return `<div class="row-card"><div class="r-ico">${it.icon}</div><div class="r-body">
+      <div class="r-title">${it.title} <span class="pill ${it.soldOut || !it.available ? 'done' : 'gold'}">${tag}</span></div>
+      <div class="r-desc">${it.description} · <i>${it.provider}</i></div>
+      <div class="r-count">⭐ ${it.starCost}${it.minLevel > 1 ? ` · Lvl ${it.minLevel}+` : ''}${!canAfford && it.available && !it.soldOut ? ' · not enough ⭐' : ''}</div>
+      </div><button class="btn ${disabled ? 'btn-ghost' : 'btn-gold'} redeem-btn" data-reward="${it.id}" ${disabled ? 'disabled' : ''} style="padding:8px 12px;font-size:0.78rem;">${it.soldOut ? '—' : 'Redeem'}</button></div>`;
+  }
+
   // ---------- SETTINGS ----------
   private pageSettings() {
     const sw = (on: boolean, key: string) => `<button class="switch ${on ? 'on' : ''}" data-set="${key}"></button>`;
@@ -990,6 +1065,8 @@ class AnacondaPark {
     document.querySelectorAll('[data-acc]').forEach(b => b.addEventListener('click', () => this.equipAccessory((b as HTMLElement).dataset.acc!)));
     document.querySelectorAll('.claim-btn').forEach(b => b.addEventListener('click', () => this.claimMission((b as HTMLElement).dataset.id!)));
     document.querySelectorAll('.copy-btn').forEach(b => b.addEventListener('click', (e) => { const c = (e.currentTarget as HTMLElement).dataset.code!; navigator.clipboard?.writeText(c); this.showToast(`📋 Copied ${c}`); }));
+    document.querySelectorAll('[data-rwregion]').forEach(b => b.addEventListener('click', () => { this.rewardRegion = (b as HTMLElement).dataset.rwregion!; audio.playClick(); this.render(); this.loadRewards(); }));
+    document.querySelectorAll('.redeem-btn').forEach(b => b.addEventListener('click', () => this.redeemReward((b as HTMLElement).dataset.reward!)));
     document.querySelectorAll('[data-set]').forEach(b => b.addEventListener('click', () => this.toggleSetting((b as HTMLElement).dataset.set as keyof Settings)));
 
     on('quick-match', () => this.startMatchmaking());

@@ -11,6 +11,10 @@ backend/dist/
 # Vercel
 .vercel/
 
+# Runtime persistence (§10 file-backed DB)
+data/
+backend/data/
+
 # Environment files
 .env
 .env.local

@@ -6,6 +6,7 @@ import { AuthService } from './services/AuthService';
 import { EconomyService } from './services/EconomyService';
 import { MissionService } from './services/MissionService';
 import { AdminService } from './services/AdminService';
+import { RewardsService } from './services/RewardsService';
 import { sessionManager } from './services/GameSessionManager';
 import { getModeConfig } from './services/GameSessionService';
 import { ProgressionService } from './services/ProgressionService';
@@ -94,6 +95,19 @@ app.get('/api/world/events', (_req, res) => {
 });
 
 app.get('/api/shop/catalog', (_req, res) => res.json(EconomyService.getCatalog()));
+
+// §15 Rewards marketplace — region-aware catalog + Star redemption for digital rewards.
+app.get('/api/rewards/catalog', (req, res) => {
+  const region = (req.query.region as string) || 'Global';
+  res.json(RewardsService.getCatalog(region));
+});
+
+app.post('/api/rewards/redeem', (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const { itemId, region } = req.body;
+  const result = RewardsService.redeem(a.userId, itemId, region || 'Global');
+  res.json({ ...result, profile: result.profile ? withRank(result.profile) : undefined });
+});
 
 app.post('/api/shop/purchase', (req, res) => {
   const a = auth(req, res); if (!a) return;

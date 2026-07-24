@@ -1,6 +1,8 @@
 import { UserAccount, PlayerProfile, MissionObjective, Achievement, AntiCheatViolation, ProgressMetric, Evolution } from '../types';
 import { ProgressionService } from '../services/ProgressionService';
 import bcrypt from 'bcryptjs';
+import fs from 'fs';
+import path from 'path';
 
 export class Database {
   private users: Map<string, UserAccount> = new Map();
@@ -10,8 +12,62 @@ export class Database {
   private auditLogs: AntiCheatViolation[] = [];
   private globalLeaderboard: Map<string, { displayName: string; score: number; wins: number }> = new Map();
 
+  // §10 File-based persistence — profiles/progress/leaderboard survive restarts.
+  // Swap load()/flush() for a Postgres/Redis client to go fully cloud/multi-node.
+  private readonly dataFile: string;
+  private saveTimer: NodeJS.Timeout | null = null;
+  private dirty = false;
+
   constructor() {
+    this.dataFile = process.env.DATA_FILE || path.join(process.cwd(), 'data', 'anaconda-db.json');
     this.seedDefaultData();
+    this.load();
+    this.registerFlushHooks();
+  }
+
+  // ------------------------------------------------------------- persistence
+  private registerFlushHooks() {
+    const flush = () => this.flush();
+    process.once('beforeExit', flush);
+    process.once('SIGINT', () => { this.flush(); process.exit(0); });
+    process.once('SIGTERM', () => { this.flush(); process.exit(0); });
+  }
+
+  private markDirty() {
+    this.dirty = true;
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => { this.saveTimer = null; this.flush(); }, 1500); // debounce disk writes
+  }
+
+  private flush() {
+    if (!this.dirty) return;
+    this.dirty = false;
+    try {
+      fs.mkdirSync(path.dirname(this.dataFile), { recursive: true });
+      const snapshot = {
+        v: 1,
+        users: Array.from(new Set(this.users.values())),          // id + username alias share one object
+        profiles: Array.from(this.profiles.values()),
+        missions: Array.from(this.missions.entries()),
+        achievements: Array.from(this.achievements.entries()),
+        leaderboard: Array.from(this.globalLeaderboard.entries()),
+      };
+      const tmp = this.dataFile + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(snapshot));
+      fs.renameSync(tmp, this.dataFile); // atomic replace
+    } catch { /* read-only / serverless FS — persistence off, in-memory still works */ }
+  }
+
+  private load() {
+    try {
+      if (!fs.existsSync(this.dataFile)) return;
+      const data = JSON.parse(fs.readFileSync(this.dataFile, 'utf8'));
+      if (data.users) for (const u of data.users) { this.users.set(u.id, u); this.users.set(u.username.toLowerCase(), u); }
+      if (data.profiles) for (const p of data.profiles) this.profiles.set(p.userId, p);
+      if (data.missions) for (const [k, v] of data.missions) this.missions.set(k, v);
+      if (data.achievements) for (const [k, v] of data.achievements) this.achievements.set(k, v);
+      if (data.leaderboard) for (const [k, v] of data.leaderboard) this.globalLeaderboard.set(k, v);
+    } catch { /* corrupt/unreadable — fall back to seeded defaults */ }
   }
 
   // ------------------------------------------------------------- templates
@@ -97,6 +153,7 @@ export class Database {
     this.profiles.set(id, profile);
     this.missions.set(id, this.defaultMissions());
     this.achievements.set(id, this.defaultAchievements());
+    this.markDirty();
 
     return { user, profile };
   }
@@ -110,6 +167,7 @@ export class Database {
     if (!existing) return undefined;
     const updated = { ...existing, ...updates };
     this.profiles.set(userId, updated);
+    this.markDirty();
     return updated;
   }
 
@@ -153,6 +211,7 @@ export class Database {
         if (profile) this.updateProfile(userId, { stars: profile.stars + a.rewardStars });
       }
     }
+    this.markDirty();
   }
 
   public claimMissionReward(userId: string, missionId: string): { success: boolean; stars: number; xp: number; evoXp: number; updatedMissions: MissionObjective[]; profile?: PlayerProfile } {
@@ -220,6 +279,7 @@ export class Database {
     const newScore = Math.max(existing?.score || 0, score);
     const newWins = (existing?.wins || 0) + (won ? 1 : 0);
     this.globalLeaderboard.set(userId, { displayName, score: newScore, wins: newWins });
+    this.markDirty();
   }
 
   public getLeaderboard(): Array<{ rank: number; userId: string; displayName: string; score: number; wins: number }> {

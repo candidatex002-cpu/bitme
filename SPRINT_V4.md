@@ -21,7 +21,8 @@ behaviour matches whether or not a live server is reachable.
 | 9 | **Live UI** | HUD (score, health, stage, ability CD, event timer, team scores, leaderboard) already refreshes every 30 Hz tick via `updateHUD()` — no manual refresh. |
 | 12 | **Mobile pause** | `visibilitychange` / `blur` auto-pause; server marks the player **inactive → frozen, no damage** (`player_pause`/`player_resume`); local engine freezes the player; session snapshot saved. |
 | 13 | **Respawn screen** | Three paths already present: Watch Ad, Stars (20⭐), Ticket, plus free wait + "End match". |
-| 10 | **Persistence (client)** | Session (token + profile) cached locally so stars/level/skins survive **app close / restart / offline**; a 401 or offline fetch no longer wipes progress. *(Server-side authoritative store still needed — see below.)* |
+| 10 | **Persistence** | **Server**: file-backed DB (`data/anaconda-db.json`, atomic + debounced writes, flush on exit, `DATA_FILE` env override) — profiles/progress/leaderboard survive restarts on any stateful host. **Client**: session cached locally so stars/level/skins survive app close / restart / offline; a 401 or offline fetch no longer wipes progress. |
+| 15 | **Rewards marketplace** | Dedicated **Rewards** page (from Home) + `RewardsService`: data-driven catalog (no hard-coded brands — "approved provider" labels), **regional availability**, **dynamic pricing** (scarcity), **stock limits**, **min-level thresholds**. Redeem deducts Stars, decrements stock, issues a persisted voucher code. `GET /api/rewards/catalog` + `POST /api/rewards/redeem`. |
 | — | **Android packaging** | Capacitor config (`capacitor.config.json`), root scripts (`android:init/sync/open`), safe-area insets, configurable backend via `<meta name="anaconda-server">`, and `ANDROID.md` with the full Play Store flow. |
 
 ## 🟡 Needs your infrastructure / accounts to finish
@@ -29,15 +30,15 @@ behaviour matches whether or not a live server is reachable.
 These are coded up to the integration boundary but require credentials or a hosted
 service that can't live in the repo:
 
-- **§10 Authoritative / cross-device persistence** — `backend/src/db/Database.ts` is
-  **in-memory**; it resets on server restart and doesn't sync across devices. Wire it to
-  a real store (Postgres / Redis / Firestore). The client cache above covers single-device
-  restart resilience in the meantime.
+- **§10 Multi-node / cross-device cloud save** — the file-backed DB now survives restarts on
+  a single stateful host, but for horizontal scaling / true cross-device sync, swap
+  `Database.load()`/`flush()` for Postgres / Redis / Firestore. (On serverless like Vercel the
+  filesystem is ephemeral — host the backend somewhere with a disk, or plug in a cloud DB.)
+- **§15 Reward fulfilment** — the marketplace, catalog, pricing, stock and voucher issuance are
+  built; hooking real gift-card / partner delivery to an **authorized provider** (and moving the
+  catalog+stock into the DB for durable inventory) is the remaining integration.
 - **§14 AdMob** — respawn/ad UI hooks exist; add the Google Mobile Ads plugin + your real
   app-id/ad-unit-ids and declare ads in the Play Console. No live ad ids ship here.
-- **§15 Coupon/Rewards marketplace** — coupon capture + inventory exist; a configurable,
-  region-aware **Rewards catalog** (stock limits, dynamic pricing, approved partners only)
-  needs a catalog service + admin. Not yet built.
 - **§16 Performance** — client renders on a 60 FPS rAF loop, server runs 30 Hz; formal
   device profiling (Android/iPhone battery, memory, network compression) not yet measured.
 - **§17 Security** — `AntiCheatService` validates packet frequency and the server is
