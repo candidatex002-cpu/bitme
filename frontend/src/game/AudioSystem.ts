@@ -27,14 +27,10 @@ export class AudioSystem {
     }
   }
 
+  // SFX mute only — background music is a separate channel (see setMusicEnabled).
   public toggleMute(): boolean {
     this.isMuted = !this.isMuted;
-    if (this.isMuted) {
-      this.stopMusic();
-    } else {
-      this.playChime();
-      this.startMusic();
-    }
+    if (!this.isMuted) this.playChime();
     return this.isMuted;
   }
 
@@ -42,15 +38,42 @@ export class AudioSystem {
     return this.isMuted;
   }
 
-  // --- Additive 100% Copyright-Free Web Audio Background Music Loop ---
-  public startMusic() {
-    if (this.isMuted || this.musicTimer) return;
+  // --- Background music (independent of the SFX mute) ---
+  public isMusicEnabled(): boolean {
+    return this.musicEnabled;
+  }
+
+  public setMusicEnabled(on: boolean) {
+    this.musicEnabled = on;
+    if (on) this.ensureMusic();
+    else this.stopMusic();
+  }
+
+  // Start the loop as soon as the browser lets us — audio needs a user gesture to unlock,
+  // so this is safe to call on page load AND from the first tap/click/keypress.
+  public ensureMusic() {
+    if (!this.musicEnabled || this.musicTimer) return;
     this.initCtx();
     if (!this.ctx) return;
+    const tryStart = () => {
+      if (this.musicEnabled && !this.musicTimer && this.ctx && this.ctx.state === 'running') this.startMusicLoop();
+    };
+    if (this.ctx.state === 'running') tryStart();
+    else this.ctx.resume().then(tryStart).catch(() => { /* still locked — retries on next gesture */ });
+  }
+
+  // Back-compat: a match starting just ensures music is going (respects the on/off setting).
+  public startMusic() {
+    this.ensureMusic();
+  }
+
+  // --- Additive 100% Copyright-Free Web Audio Background Music Loop ---
+  private startMusicLoop() {
+    if (this.musicTimer) return;
 
     // Play a gentle, soothing pentatonic note every 320ms
     this.musicTimer = setInterval(() => {
-      if (this.isMuted || !this.ctx) return;
+      if (!this.musicEnabled || !this.ctx) return;
       const freq = this.melodyNotes[this.musicStep % this.melodyNotes.length];
       this.musicStep++;
 

@@ -124,7 +124,7 @@ class AnacondaPark {
   private rewards: any[] = [];
   private rewardRegion = 'Global';
 
-  private settings: Settings = { sfx: true, music: false, largeText: false, reduceMotion: false, highContrast: false, controlSide: 'right' };
+  private settings: Settings = { sfx: true, music: true, largeText: false, reduceMotion: false, highContrast: false, controlSide: 'right' };
 
   // input
   private angle = 0; private boosting = false; private keys: Record<string, boolean> = {};
@@ -148,6 +148,16 @@ class AnacondaPark {
     window.addEventListener('resize', () => this.renderer?.resize());
     window.addEventListener('keydown', (e) => { if (e.code === 'Escape' && (this.screen === 'play' || this.screen === 'pause')) this.togglePause(); });
     this.bindLifecycle();
+    // Browsers block audio until the user interacts — kick off the Home music on the
+    // very first tap/click/keypress (idempotent; no-ops if music is turned off).
+    ['pointerdown', 'keydown', 'touchstart'].forEach(ev => window.addEventListener(ev, () => audio.ensureMusic(), { passive: true }));
+  }
+
+  private toggleMusic() {
+    this.settings.music = !this.settings.music;
+    if (this.settings.music) audio.playClick();
+    this.saveSettings(); // applySettings() calls audio.setMusicEnabled(...)
+    this.render();
   }
 
   // §12 Mobile pause — home button, incoming call, lock screen, backgrounding all
@@ -179,6 +189,14 @@ class AnacondaPark {
   // ------------------------------------------------------------- settings
   private loadSettings() {
     try { const s = JSON.parse(localStorage.getItem('ap_settings') || '{}'); this.settings = { ...this.settings, ...s }; } catch { /* */ }
+    // One-time migration: music is now an independent channel that plays from Home. Default it
+    // ON for everyone once (older saves had a meaningless music:false), then respect the choice
+    // the player makes via the Home 🎵 button / Settings from here on.
+    if (!localStorage.getItem('ap_music_v2')) {
+      this.settings.music = true;
+      localStorage.setItem('ap_music_v2', '1');
+      try { localStorage.setItem('ap_settings', JSON.stringify(this.settings)); } catch { /* */ }
+    }
     this.applySettings();
   }
   private saveSettings() { localStorage.setItem('ap_settings', JSON.stringify(this.settings)); this.applySettings(); }
@@ -186,6 +204,7 @@ class AnacondaPark {
     document.body.classList.toggle('a11y-large', this.settings.largeText);
     document.body.classList.toggle('a11y-contrast', this.settings.highContrast);
     if (audio.getMuted() === this.settings.sfx) audio.toggleMute();
+    audio.setMusicEnabled(this.settings.music); // §music — independent of SFX
   }
 
   private animFrameId: number | null = null;
@@ -612,6 +631,7 @@ class AnacondaPark {
           <div style="display:flex;gap:8px;align-items:center;">
             <div class="chip">⭐ <span class="val">${p?.stars ?? 500}</span></div>
             <div class="chip">🎟️ <span class="val">${p?.tickets ?? 5}</span></div>
+            <button class="icon-btn ${this.settings.music ? '' : 'off'}" id="music-toggle" title="${this.settings.music ? 'Music on' : 'Music off'}">${this.settings.music ? '🎵' : '🔕'}</button>
             <button class="icon-btn" data-go="settings">⚙️</button>
           </div>
         </div>
@@ -1069,6 +1089,7 @@ class AnacondaPark {
     document.querySelectorAll('.redeem-btn').forEach(b => b.addEventListener('click', () => this.redeemReward((b as HTMLElement).dataset.reward!)));
     document.querySelectorAll('[data-set]').forEach(b => b.addEventListener('click', () => this.toggleSetting((b as HTMLElement).dataset.set as keyof Settings)));
 
+    on('music-toggle', () => this.toggleMusic());
     on('quick-match', () => this.startMatchmaking());
     on('enter-btn', () => this.startMatchmaking());
     on('prestige-btn', () => this.doPrestige());
