@@ -38,27 +38,28 @@ const COLLECTIBLE_TABLE: CollectibleTemplate[] = [
   { type: 'egg', icon: '🥚', value: 500, color: '#F4E9CD', weight: 2, hpRestore: 25 },
 ];
 
-// New 6-stage growth table — score-based thresholds matching SCORE_EVOLUTION_THRESHOLDS.
-// Physical radius is CAPPED at Titan level (34px) — score keeps going, snake stops growing.
+// Milestone-gated growth — the snake does NOT grow until 500, then grows in discrete steps
+// at 500 / 1500 / 3000 / 5000 / 8000. Radius is capped small (23px) so a snake never fills
+// the screen (especially on mobile); length grows slowly too. Score keeps rising past the cap.
 const STAGE_THRESHOLDS: Array<{ stage: GrowthStage; min: number; radius: number; defense: number; growthFactor: number }> = [
-  { stage: 'Baby',  min: 0,    radius: 14, defense: 0,  growthFactor: 0.8  }, // fast early growth
-  { stage: 'Young', min: 500,  radius: 18, defense: 8,  growthFactor: 0.6  }, // medium growth
-  { stage: 'Teen',  min: 1000, radius: 22, defense: 14, growthFactor: 0.45 }, // slowing down
-  { stage: 'Adult', min: 1500, radius: 26, defense: 22, growthFactor: 0.3  }, // slow
-  { stage: 'Elite', min: 2000, radius: 30, defense: 32, growthFactor: 0.15 }, // very slow
-  { stage: 'Titan', min: 2500, radius: 34, defense: 40, growthFactor: 0.05 }, // almost stops — Titan cap
+  { stage: 'Baby',  min: 0,    radius: 13, defense: 0,  growthFactor: 0.0  }, // no growth before 500
+  { stage: 'Young', min: 500,  radius: 15, defense: 8,  growthFactor: 0.28 },
+  { stage: 'Teen',  min: 1500, radius: 17, defense: 14, growthFactor: 0.20 },
+  { stage: 'Adult', min: 3000, radius: 19, defense: 22, growthFactor: 0.12 },
+  { stage: 'Elite', min: 5000, radius: 21, defense: 32, growthFactor: 0.07 },
+  { stage: 'Titan', min: 8000, radius: 23, defense: 40, growthFactor: 0.04 }, // hard size cap
 ];
 
 // §2 Obstacle palette — blocking props soft-push snakes; cosmetic ones are decoration only.
 const OBSTACLE_TEMPLATES: Array<{ type: ObstacleType; icon: string; radius: number; blocking: boolean }> = [
-  { type: 'tree', icon: '🌳', radius: 34, blocking: true },
-  { type: 'rock', icon: '🪨', radius: 30, blocking: true },
-  { type: 'bush', icon: '🌲', radius: 28, blocking: true },
-  { type: 'cactus', icon: '🌵', radius: 24, blocking: true },
-  { type: 'flowerbed', icon: '🌼', radius: 26, blocking: false }, // decorative — passable
-  { type: 'log', icon: '🪵', radius: 26, blocking: true },
-  { type: 'pond', icon: '🪷', radius: 46, blocking: false },      // water — passable
-  { type: 'hill', icon: '⛰️', radius: 40, blocking: true },
+  { type: 'tree', icon: '🌳', radius: 44, blocking: true },
+  { type: 'rock', icon: '🪨', radius: 34, blocking: true },
+  { type: 'bush', icon: '🌲', radius: 32, blocking: true },
+  { type: 'cactus', icon: '🌵', radius: 30, blocking: true },
+  { type: 'flowerbed', icon: '🌼', radius: 28, blocking: false }, // decorative — passable
+  { type: 'log', icon: '🪵', radius: 30, blocking: true },
+  { type: 'pond', icon: '🪷', radius: 50, blocking: false },      // water — passable
+  { type: 'hill', icon: '⛰️', radius: 46, blocking: true },
 ];
 
 const MODE_CONFIGS: Record<GameMode, GameModeConfig> = {
@@ -80,16 +81,15 @@ export class GameSessionService {
   private readonly WORLD_SIZE = 3200;
   private readonly BASE_SPEED = 240; // Faster, smooth, responsive movement
   private readonly BOOST_MULT = 1.7;
-  private readonly MAX_LENGTH = 220;
+  private readonly MAX_LENGTH = 90; // shorter snakes → easier to see everyone (esp. on mobile)
 
   // §3 moving stars
   private readonly STAR_MAX = 20;
   private readonly STAR_TARGET = 16;
   private starCooldown = 0;
-  // §7 dynamic wormhole lifecycle (active 1 min, then a 4 min gap → 5 min cadence)
-  private wormholeActive = false;
-  private wormholeLife = 0;
-  private wormholePhaseTimer = 60; // first wormhole appears ~1 min into the match
+  // §7 Four linked wormholes — always present; entering one exits from another (escape route).
+  // They relocate together periodically to stay dynamic.
+  private wormholeRelocate = 120;
   // §8 dynamic safe/sanctuary zone relocation
   private sanctuaryTimer = 300;
 
@@ -140,6 +140,7 @@ export class GameSessionService {
     this.spawnInitialCollectibles(60); // Clean, lesser food count
     this.spawnMovingStars(this.STAR_TARGET); // §3
     this.spawnObstacles(); // §2
+    this.spawnWormholes(); // §7 four linked wormholes
     this.spawnBotSnakes(this.config.botCount);
     this.startLoop();
   }
@@ -163,22 +164,13 @@ export class GameSessionService {
 
   // ---------------------------------------------------------------- stage math
   private computeStage(score: number): { stage: GrowthStage; radius: number; defense: number; growthFactor: number } {
+    // Discrete, milestone-based growth — radius jumps at each threshold (no smooth creep),
+    // so the snake stays a predictable, visible size and only grows at 500/1500/3000/5000/8000.
     let match = STAGE_THRESHOLDS[0];
     for (const t of STAGE_THRESHOLDS) {
       if (score >= t.min) match = t;
     }
-    // Smoothly interpolate radius between stages for a fluid feel — but never exceed the cap.
-    const idx = STAGE_THRESHOLDS.indexOf(match);
-    const next = STAGE_THRESHOLDS[idx + 1];
-    let radius = match.radius;
-    if (next) {
-      const t = Math.min(1, (score - match.min) / (next.min - match.min));
-      radius = match.radius + (next.radius - match.radius) * t * 0.8; // ease out
-    }
-    // Hard cap — never exceed Titan radius regardless of score
-    const TITAN_RADIUS = 34;
-    radius = Math.min(TITAN_RADIUS, radius);
-    return { stage: match.stage, radius, defense: match.defense, growthFactor: match.growthFactor };
+    return { stage: match.stage, radius: match.radius, defense: match.defense, growthFactor: match.growthFactor };
   }
 
   private assignTeam(): 'red' | 'blue' | undefined {
@@ -198,7 +190,7 @@ export class GameSessionService {
       x: 400 + Math.random() * (this.WORLD_SIZE - 800),
       y: 400 + Math.random() * (this.WORLD_SIZE - 800),
     };
-    const initialBody = Array.from({ length: 12 }, (_, i) => ({ x: spawnPos.x - i * 14, y: spawnPos.y }));
+    const initialBody = Array.from({ length: 9 }, (_, i) => ({ x: spawnPos.x - i * 14, y: spawnPos.y }));
     const { stage, radius, defense } = this.computeStage(0);
 
     const snake: SnakeState = {
@@ -352,22 +344,27 @@ export class GameSessionService {
     snake.head.x = this.wrap(snake.head.x + moveX);
     snake.head.y = this.wrap(snake.head.y + moveY);
 
-    // §7 Wormhole teleport — entering an active wormhole jumps to a random SAFE location.
+    // §7 Wormhole teleport — entering wh_i exits from its LINKED wormhole (never a random
+    // spot), a controlled escape route from a bigger snake.
     if (this.state.portals && this.state.portals.length) {
       if ((snake as any).teleportCooldown > 0) {
         (snake as any).teleportCooldown -= dt;
       } else {
         for (const wh of this.state.portals) {
-          const dx = snake.head.x - wh.x;
-          const dy = snake.head.y - wh.y;
-          if (dx * dx + dy * dy < 42 * 42) {
-            const dest = this.randomSafeLocation(snake);
-            const offsetX = dest.x - snake.head.x;
-            const offsetY = dest.y - snake.head.y;
-            snake.head.x = dest.x;
-            snake.head.y = dest.y;
-            snake.body.forEach(seg => { seg.x += offsetX; seg.y += offsetY; });
-            (snake as any).teleportCooldown = 3.0; // short cooldown after teleport
+          const dx = this.wrapDelta(snake.head.x - wh.x);
+          const dy = this.wrapDelta(snake.head.y - wh.y);
+          if (dx * dx + dy * dy < 44 * 44) {
+            const target = this.state.portals.find(p => p.id === wh.targetId) || this.state.portals.find(p => p.id !== wh.id);
+            if (!target) break;
+            const ang = Math.random() * Math.PI * 2;
+            const destX = this.wrap(target.x + Math.cos(ang) * 80); // exit just beyond the linked hole
+            const destY = this.wrap(target.y + Math.sin(ang) * 80);
+            const offsetX = destX - snake.head.x;
+            const offsetY = destY - snake.head.y;
+            snake.head.x = destX;
+            snake.head.y = destY;
+            snake.body.forEach(seg => { seg.x = this.wrap(seg.x + offsetX); seg.y = this.wrap(seg.y + offsetY); });
+            (snake as any).teleportCooldown = 3.0; // brief cooldown so you don't re-enter instantly
             break;
           }
         }
@@ -510,9 +507,9 @@ export class GameSessionService {
     // as the snake progresses. After Titan (2500+) body length barely grows at all.
     const { stage, radius, defense, growthFactor } = this.computeStage(snake.score);
 
-    if (value > 0 && snake.body.length < this.MAX_LENGTH) {
-      // Base segments per food scaled by stage factor — Titan factor is 0.05 (almost nothing)
-      const segments = Math.max(0, Math.floor((value / 25) * growthFactor));
+    // Length only grows once past the first milestone (500) — before that the snake stays tiny.
+    if (value > 0 && snake.score >= 500 && snake.body.length < this.MAX_LENGTH) {
+      const segments = Math.max(0, Math.round((value / 25) * growthFactor));
       const tail = snake.body[snake.body.length - 1] || snake.head;
       for (let i = 0; i < segments && snake.body.length < this.MAX_LENGTH; i++) {
         snake.body.push({ x: tail.x, y: tail.y });
@@ -805,49 +802,30 @@ export class GameSessionService {
     star.y = this.wrap(star.y + (star.vy ?? 0) * dt);
   }
 
-  // ---------------------------------------------------------------- §7 dynamic wormholes
+  // ---------------------------------------------------------------- §7 linked wormholes
   private updateWormhole(dt: number) {
-    if (this.wormholeActive) {
-      this.wormholeLife -= dt;
-      const wh = this.state.portals?.[0];
-      if (wh) wh.timerSeconds = Math.max(0, Math.ceil(this.wormholeLife));
-      if (this.wormholeLife <= 0) {
-        this.state.portals = [];
-        this.wormholeActive = false;
-        this.wormholePhaseTimer = 240; // 4 min gap → 5 min spawn cadence
-      }
-    } else {
-      this.wormholePhaseTimer -= dt;
-      if (this.wormholePhaseTimer <= 0) {
-        this.spawnWormhole();
-        this.wormholeActive = true;
-        this.wormholeLife = 60; // active for 1 minute
-      }
-    }
+    if (!this.state.portals || this.state.portals.length < 4) { this.spawnWormholes(); this.wormholeRelocate = 120; return; }
+    this.wormholeRelocate -= dt;
+    if (this.wormholeRelocate <= 0) { this.spawnWormholes(); this.wormholeRelocate = 120; }
   }
 
-  private spawnWormhole() {
-    const x = 350 + Math.random() * (this.WORLD_SIZE - 700);
-    const y = 350 + Math.random() * (this.WORLD_SIZE - 700);
-    this.state.portals = [
-      { id: 'wormhole_active', targetId: 'random_safe', x, y, label: '🌀 Wormhole', color: '#8B5CF6', wormhole: true, timerSeconds: 60 },
-    ];
-  }
-
-  private randomSafeLocation(exclude: SnakeState): Vector2D {
-    for (let tries = 0; tries < 24; tries++) {
-      const x = 250 + Math.random() * (this.WORLD_SIZE - 500);
-      const y = 250 + Math.random() * (this.WORLD_SIZE - 500);
-      let ok = true;
-      for (const id in this.state.snakes) {
-        const o = this.state.snakes[id];
-        if (o.id === exclude.id || !o.isAlive) continue;
-        const dx = o.head.x - x, dy = o.head.y - y;
-        if (dx * dx + dy * dy < 260 * 260) { ok = false; break; }
+  // Four wormholes linked in a ring — entering wh_i exits at wh_(i+1). Spread across the map.
+  private spawnWormholes() {
+    const W = this.WORLD_SIZE;
+    const colors = ['#8B5CF6', '#EC4899', '#3B82F6', '#F59E0B'];
+    const pts: Vector2D[] = [];
+    for (let i = 0; i < 4; i++) {
+      let p: Vector2D | null = null;
+      for (let tries = 0; tries < 20; tries++) {
+        const cand = { x: 320 + Math.random() * (W - 640), y: 320 + Math.random() * (W - 640) };
+        if (pts.every(q => (q.x - cand.x) ** 2 + (q.y - cand.y) ** 2 > 700 * 700)) { p = cand; break; }
       }
-      if (ok) return { x, y };
+      pts.push(p || { x: 320 + Math.random() * (W - 640), y: 320 + Math.random() * (W - 640) });
     }
-    return { x: this.state.safeZone.centerX, y: this.state.safeZone.centerY };
+    this.state.portals = pts.map((p, i) => ({
+      id: `wh_${i}`, targetId: `wh_${(i + 1) % 4}`, x: p.x, y: p.y,
+      label: '🌀 Wormhole', color: colors[i], wormhole: true,
+    }));
   }
 
   // ---------------------------------------------------------------- §8 dynamic sanctuary

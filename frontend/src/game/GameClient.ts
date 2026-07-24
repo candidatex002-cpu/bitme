@@ -102,14 +102,14 @@ const FOOD_TYPES = [
 
 // §2 obstacle palette for the local engine (mirrors the server table)
 const OBSTACLE_TYPES: Array<{ type: string; icon: string; radius: number; blocking: boolean }> = [
-  { type: 'tree', icon: '🌳', radius: 34, blocking: true },
-  { type: 'rock', icon: '🪨', radius: 30, blocking: true },
-  { type: 'bush', icon: '🌲', radius: 28, blocking: true },
-  { type: 'cactus', icon: '🌵', radius: 24, blocking: true },
-  { type: 'flowerbed', icon: '🌼', radius: 26, blocking: false }, // decorative — passable
-  { type: 'log', icon: '🪵', radius: 26, blocking: true },
-  { type: 'pond', icon: '🪷', radius: 46, blocking: false },      // water — passable
-  { type: 'hill', icon: '⛰️', radius: 40, blocking: true },
+  { type: 'tree', icon: '🌳', radius: 44, blocking: true },
+  { type: 'rock', icon: '🪨', radius: 34, blocking: true },
+  { type: 'bush', icon: '🌲', radius: 32, blocking: true },
+  { type: 'cactus', icon: '🌵', radius: 30, blocking: true },
+  { type: 'flowerbed', icon: '🌼', radius: 28, blocking: false }, // decorative — passable
+  { type: 'log', icon: '🪵', radius: 30, blocking: true },
+  { type: 'pond', icon: '🪷', radius: 50, blocking: false },      // water — passable
+  { type: 'hill', icon: '⛰️', radius: 46, blocking: true },
 ];
 
 const BOT_NAMES = ['AlphaViper', 'KobraX', 'Slinky', 'GigaPython', 'NeonSnake', 'ShadowSerpent', 'TitanApex'];
@@ -138,10 +138,8 @@ export class GameClient {
   private localPaused = false; // §12 freeze the local player while backgrounded
   // §3/§7/§8 local-engine timers (seconds)
   private starCooldown = 0;
-  private wormholeActive = false;
-  private wormholeLife = 0;
-  private wormholePhase = 45;   // first wormhole ~45s into a local match
-  private sanctuaryTimer = 90;  // relocate sanctuary periodically in the local sim
+  private wormholeRelocate = 120; // §7 four linked wormholes relocate periodically
+  private sanctuaryTimer = 90;    // relocate sanctuary periodically in the local sim
 
   constructor() {
     this.localUserId = 'usr_' + Math.random().toString(36).substring(2, 9);
@@ -243,8 +241,9 @@ export class GameClient {
       if (me) {
         me.isAlive = true;
         me.hp = 100;
+        me.score = 150; me.level = 1; me.radius = 13; me.length = 9; // reset to a small snake
         me.head = { x: 1600 + (Math.random() - 0.5) * 400, y: 1600 + (Math.random() - 0.5) * 400 };
-        me.body = Array.from({ length: 12 }, (_, i) => ({ x: me.head.x - i * 10, y: me.head.y }));
+        me.body = Array.from({ length: 9 }, (_, i) => ({ x: me.head.x - i * 10, y: me.head.y }));
         this.onRespawnResult?.({ success: true, method });
       }
       return;
@@ -262,15 +261,15 @@ export class GameClient {
       displayName: 'You (Explorer)',
       skin: skinName,
       head: { x: 1600, y: 1600 },
-      body: Array.from({ length: 14 }, (_, i) => ({ x: 1600 - i * 12, y: 1600 })),
+      body: Array.from({ length: 9 }, (_, i) => ({ x: 1600 - i * 12, y: 1600 })),
       angle: 0,
       speed: 4,
       speedPct: 1,
       boosting: false,
       score: 150,
       level: 1,
-      length: 14,
-      radius: 18,
+      length: 9,
+      radius: 13,
       hp: 100,
       maxHp: 100,
       defense: 0,
@@ -293,15 +292,15 @@ export class GameClient {
         displayName: name,
         skin: BOT_SKINS[idx % BOT_SKINS.length],
         head: { x: bx, y: by },
-        body: Array.from({ length: 12 }, (_, i) => ({ x: bx - i * 10, y: by })),
+        body: Array.from({ length: 9 }, (_, i) => ({ x: bx - i * 10, y: by })),
         angle: Math.random() * Math.PI * 2,
         speed: 3.5,
         speedPct: 1,
         boosting: false,
         score: Math.floor(100 + Math.random() * 400),
         level: 1,
-        length: 12,
-        radius: 18,
+        length: 9,
+        radius: 13,
         hp: 100,
         maxHp: 100,
         defense: 0,
@@ -326,7 +325,7 @@ export class GameClient {
       food: foodItems,
       safeZone: { centerX: 1600, centerY: 1600, radius: 1500, targetRadius: 1500, damagePerSecond: 2 },
       sanctuaryZone: { centerX: 1600, centerY: 1600, radius: 320, label: '🛡️ Safe Sanctuary', icon: '🛡️' }, // §8
-      portals: [], // §7 dynamic wormholes spawn in here
+      portals: this.genWormholes(), // §7 four linked wormholes
       obstacles: this.genObstacles(14), // §2
       leaderboard: [],
     };
@@ -481,7 +480,10 @@ export class GameClient {
         if (dx * dx + dy * dy < (s.radius + 14) * (s.radius + 14)) {
           s.score += f.value;
           s.level = Math.floor(s.score / 250) + 1; // drives level-scaled power durations
-          s.length = Math.min(60, 14 + Math.floor(s.score / 20));
+          // Milestone-gated growth (matches the server): grow only past 500, small caps so
+          // the snake never fills the screen. Radius jumps at 500/1500/3000/5000/8000.
+          s.radius = s.score >= 8000 ? 23 : s.score >= 5000 ? 21 : s.score >= 3000 ? 19 : s.score >= 1500 ? 17 : s.score >= 500 ? 15 : 13;
+          s.length = s.score < 500 ? 9 : Math.min(40, 9 + Math.floor((s.score - 500) / 220));
           while (s.body.length < s.length) {
             const last = s.body[s.body.length - 1] || s.head;
             s.body.push({ x: last.x, y: last.y });
@@ -535,10 +537,10 @@ export class GameClient {
         const by = 300 + Math.random() * 2600;
         s.isAlive = true;
         s.head = { x: bx, y: by };
-        s.body = Array.from({ length: 12 }, (_, i) => ({ x: bx - i * 10, y: by }));
+        s.body = Array.from({ length: 9 }, (_, i) => ({ x: bx - i * 10, y: by }));
         s.score = Math.floor(100 + Math.random() * 400);
-        s.length = 12;
-        s.radius = 18;
+        s.length = 9;
+        s.radius = 13;
         s.shieldTimer = 1.5; // brief spawn protection
         s.respawnAt = undefined;
       }
@@ -588,22 +590,26 @@ export class GameClient {
     if (count < 16 && this.starCooldown <= 0 && count < 20) { food.push(this.genStar(`star_${Date.now()}`)); this.starCooldown = 1.5; }
   }
 
-  // §7 Wormhole lifecycle — active 1 min, then a gap, repeating.
+  // §7 Four linked wormholes — always present, relocate periodically to stay dynamic.
+  private genWormholes(): PortalData[] {
+    const colors = ['#8B5CF6', '#EC4899', '#3B82F6', '#F59E0B'];
+    const pts: Array<{ x: number; y: number }> = [];
+    for (let i = 0; i < 4; i++) {
+      let p: { x: number; y: number } | null = null;
+      for (let t = 0; t < 20; t++) {
+        const c = { x: 320 + Math.random() * 2560, y: 320 + Math.random() * 2560 };
+        if (pts.every(q => (q.x - c.x) ** 2 + (q.y - c.y) ** 2 > 700 * 700)) { p = c; break; }
+      }
+      pts.push(p || { x: 320 + Math.random() * 2560, y: 320 + Math.random() * 2560 });
+    }
+    return pts.map((p, i) => ({ id: `wh_${i}`, targetId: `wh_${(i + 1) % 4}`, x: p.x, y: p.y, label: '🌀 Wormhole', color: colors[i], wormhole: true }));
+  }
+
   private updateLocalWormhole(dt: number) {
     if (!this.localState) return;
-    if (this.wormholeActive) {
-      this.wormholeLife -= dt;
-      const wh = this.localState.portals?.[0];
-      if (wh) wh.timerSeconds = Math.max(0, Math.ceil(this.wormholeLife));
-      if (this.wormholeLife <= 0) { this.localState.portals = []; this.wormholeActive = false; this.wormholePhase = 240; }
-    } else {
-      this.wormholePhase -= dt;
-      if (this.wormholePhase <= 0) {
-        const x = 350 + Math.random() * 2500, y = 350 + Math.random() * 2500;
-        this.localState.portals = [{ id: 'wormhole_active', targetId: 'random_safe', x, y, label: '🌀 Wormhole', color: '#8B5CF6', wormhole: true, timerSeconds: 60 }];
-        this.wormholeActive = true; this.wormholeLife = 60;
-      }
-    }
+    if (!this.localState.portals || this.localState.portals.length < 4) { this.localState.portals = this.genWormholes(); this.wormholeRelocate = 120; return; }
+    this.wormholeRelocate -= dt;
+    if (this.wormholeRelocate <= 0) { this.localState.portals = this.genWormholes(); this.wormholeRelocate = 120; }
   }
 
   // §8 Relocate the sanctuary periodically.
@@ -636,20 +642,28 @@ export class GameClient {
     }
   }
 
-  // §7 Entering an active wormhole jumps a snake to a random location + short cooldown.
+  // §7 Entering wh_i exits from its LINKED wormhole (escape route) + short cooldown.
   private resolveLocalWormholeTeleport() {
-    const wh = this.localState?.portals?.[0];
-    if (!wh) return;
+    const holes = this.localState?.portals;
+    if (!holes || holes.length < 2) return;
     for (const s of this.localState!.snakes) {
       if (!s.isAlive) continue;
       if ((s as any).teleportCd > 0) { (s as any).teleportCd -= 0.033; continue; }
-      const dx = s.head.x - wh.x, dy = s.head.y - wh.y;
-      if (dx * dx + dy * dy < 42 * 42) {
-        const nx = 250 + Math.random() * 2700, ny = 250 + Math.random() * 2700;
-        const offX = nx - s.head.x, offY = ny - s.head.y;
-        s.head.x = nx; s.head.y = ny;
-        s.body.forEach(seg => { seg.x += offX; seg.y += offY; });
-        (s as any).teleportCd = 3.0;
+      for (const wh of holes) {
+        const dx = this.wrapDeltaLocal(s.head.x - wh.x);
+        const dy = this.wrapDeltaLocal(s.head.y - wh.y);
+        if (dx * dx + dy * dy < 44 * 44) {
+          const target = holes.find(p => p.id === wh.targetId) || holes.find(p => p.id !== wh.id);
+          if (!target) break;
+          const ang = Math.random() * Math.PI * 2;
+          const nx = this.wrapLocal(target.x + Math.cos(ang) * 80);
+          const ny = this.wrapLocal(target.y + Math.sin(ang) * 80);
+          const offX = nx - s.head.x, offY = ny - s.head.y;
+          s.head.x = nx; s.head.y = ny;
+          s.body.forEach(seg => { seg.x = this.wrapLocal(seg.x + offX); seg.y = this.wrapLocal(seg.y + offY); });
+          (s as any).teleportCd = 3.0;
+          break;
+        }
       }
     }
   }

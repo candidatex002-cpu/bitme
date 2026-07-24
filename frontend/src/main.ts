@@ -399,15 +399,51 @@ class AnacondaPark {
     const alive = state ? state.snakes.filter(s => s.isAlive).length : 8;
     const placement = alive + 1;
     const distanceKm = snake ? +((snake as any).distanceTravelled?.toFixed?.(2) || 0) : 0;
+    const score = snake?.score || 0; const kills = snake?.kills || 0;
     try {
-      const res = await fetch(API + '/api/match/summary', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify({ score: snake?.score || 0, kills: snake?.kills || 0, placement, survivalSeconds: survival, distanceKm, areasVisited: this.visitedAreas.size }) });
+      const res = await fetch(API + '/api/match/summary', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify({ score, kills, placement, survivalSeconds: survival, distanceKm, areasVisited: this.visitedAreas.size }) });
       const data = await res.json();
-      this.summary = { score: Math.round(snake?.score || 0), kills: snake?.kills || 0, placement, survival, earnedStars: data.earnedStars || 0, earnedXP: data.earnedXP || 0, earnedEvoXP: data.earnedEvoXP || 0, levelsGained: data.levelsGained || 0 };
-      if (data.profile) this.profile = data.profile;
-      if (data.levelsGained > 0) this.showLevelUp(data.profile.level);
-    } catch { this.summary = { score: Math.round(snake?.score || 0), kills: snake?.kills || 0, placement, survival, earnedStars: 0, earnedXP: 0, earnedEvoXP: 0, levelsGained: 0 }; }
-    this.persistSession(); // §10 keep earned stars/XP across restarts
+      if (data && data.profile) {
+        this.summary = { score: Math.round(score), kills, placement, survival, earnedStars: data.earnedStars || 0, earnedXP: data.earnedXP || 0, earnedEvoXP: data.earnedEvoXP || 0, levelsGained: data.levelsGained || 0 };
+        this.profile = data.profile;
+        if (data.levelsGained > 0) this.showLevelUp(data.profile.level);
+      } else {
+        // No authoritative server (deployed local-engine build) — apply + persist locally.
+        this.summary = this.applyLocalMatchRewards(score, kills, placement, survival);
+      }
+    } catch {
+      this.summary = this.applyLocalMatchRewards(score, kills, placement, survival);
+    }
+    this.persistSession(); // §10 keep earned stars/XP/level across restarts
     await this.fetchAux(); this.client.disconnect(); this.setScreen('gameover');
+  }
+
+  // §10 Client-side reward application for the deployed build (no persistent server).
+  // Mirrors the server's /api/match/summary formula so progression works + persists offline.
+  private applyLocalMatchRewards(score: number, kills: number, placement: number, survival: number) {
+    const won = placement === 1;
+    const earnedStars = Math.floor(score / 10) + kills * 50 + (won ? 500 : 0);
+    const earnedXP = Math.floor(score / 5) + kills * 100 + (won ? 300 : 0);
+    const earnedEvoXP = Math.floor(score / 50) + kills * 10 + (won ? 50 : 0);
+    const p = this.profile = this.profile || {};
+    p.stars = (p.stars || 0) + earnedStars;
+    p.evolutionXp = (p.evolutionXp || 0) + earnedEvoXP;
+    // Roll account level-ups with a simple rising curve.
+    let level = p.level || 1;
+    let xp = (p.xp || 0) + earnedXP;
+    let toNext = p.xpToNext || (300 + level * 40);
+    let levelsGained = 0;
+    while (xp >= toNext) { xp -= toNext; level++; levelsGained++; toNext = 300 + level * 40; }
+    p.level = level; p.xp = xp; p.xpToNext = toNext;
+    // Persistent stats.
+    p.stats = p.stats || { matchesPlayed: 0, matchesWon: 0, totalKills: 0, totalFoodEaten: 0, highestScore: 0, survivalTimeSeconds: 0, cherriesCollected: 0 };
+    p.stats.matchesPlayed += 1;
+    p.stats.matchesWon += won ? 1 : 0;
+    p.stats.totalKills += kills;
+    p.stats.highestScore = Math.max(p.stats.highestScore || 0, Math.round(score));
+    p.stats.survivalTimeSeconds += survival;
+    if (levelsGained > 0) this.showLevelUp(level);
+    return { score: Math.round(score), kills, placement, survival, earnedStars, earnedXP, earnedEvoXP, levelsGained };
   }
 
   private togglePause() {

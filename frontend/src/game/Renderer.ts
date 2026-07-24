@@ -147,11 +147,13 @@ export class Renderer {
       this.cameraPos.x = this.wrapRaw(this.cameraPos.x + this.wrapDeltaRaw(camX - this.cameraPos.x) * 0.15);
       this.cameraPos.y = this.wrapRaw(this.cameraPos.y + this.wrapDeltaRaw(camY - this.cameraPos.y) * 0.15);
 
-      const stageZoom: Record<string, number> = {
-        Baby: 1.15, Young: 1.1, Teen: 1.05, Adult: 1.0, Elite: 0.95, Titan: 0.9,
-      };
-      // Stage auto-zoom, then fold in the player's manual zoom, then ease smoothly.
-      const targetZoom = (stageZoom[(target as any).stage] ?? 1.0) * this.userZoom;
+      // Adaptive zoom: keep the snake a consistent, visible size on screen. As it grows
+      // (radius + length), zoom OUT so it never fills the view; zoom out further on phones.
+      const size = ((target as any).radius ?? 16) + ((target as any).length ?? 12) * 0.12;
+      const isMobile = Math.min(window.innerWidth, window.innerHeight) <= 820;
+      let baseZoom = 17 / Math.max(12, size);   // bigger snake → smaller zoom
+      if (isMobile) baseZoom *= 0.8;            // reveal more of the world on small screens
+      const targetZoom = Math.max(0.42, Math.min(1.5, baseZoom * this.userZoom));
       this.zoom += (targetZoom - this.zoom) * 0.08; // smooth interpolation, no shake
     }
 
@@ -331,16 +333,27 @@ export class Renderer {
       ctx.save();
       if (ob.type === 'pond') {
         ctx.beginPath(); ctx.arc(ox, oy, ob.radius, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(96,165,250,0.32)'; ctx.fill();
-        ctx.strokeStyle = 'rgba(59,130,246,0.5)'; ctx.lineWidth = 3; ctx.stroke();
+        ctx.fillStyle = 'rgba(96,165,250,0.5)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(59,130,246,0.75)'; ctx.lineWidth = 3.5; ctx.stroke();
       } else {
+        // Contact shadow so props sit on the ground
         ctx.beginPath();
-        ctx.ellipse(ox, oy + ob.radius * 0.55, ob.radius * 0.72, ob.radius * 0.3, 0, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(0,0,0,0.10)'; ctx.fill();
+        ctx.ellipse(ox, oy + ob.radius * 0.6, ob.radius * 0.78, ob.radius * 0.32, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.fill();
+        // Solid bright disc so the prop is 100% visible on any terrain
+        ctx.beginPath();
+        ctx.arc(ox, oy, ob.radius * 0.98, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.72)';
+        ctx.fill();
+        ctx.strokeStyle = ob.blocking ? 'rgba(180,110,90,0.6)' : 'rgba(120,180,140,0.55)';
+        ctx.lineWidth = 3;
+        ctx.stroke();
       }
-      ctx.font = `${ob.radius * 1.85}px sans-serif`;
+      // Big crisp emoji — full opacity
+      ctx.globalAlpha = 1;
+      ctx.font = `${ob.radius * 2.1}px sans-serif`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(ob.icon, ox, oy);
+      ctx.fillText(ob.icon, ox, oy + ob.radius * 0.06);
       ctx.restore();
     }
   }
