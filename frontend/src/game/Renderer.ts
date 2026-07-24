@@ -230,13 +230,39 @@ export class Renderer {
     const ctx = this.ctx;
     const cam = this.cameraPos;
     const R = 5000; // covers the viewport at any zoom — §6 seamless, borderless ground
-    // Clean Dreamy Base without grid lines or map edges
-    ctx.fillStyle = '#E3F2FD';
+
+    // 1. Light Dreamy Base (Light Sky/Meadow pastel ground)
+    ctx.fillStyle = '#EBF5FB';
     ctx.fillRect(cam.x - R, cam.y - R, R * 2, R * 2);
 
-    // Soft park patches, each drawn at its nearest wrapped copy
-    ctx.fillStyle = '#E8F5E9';
-    for (const [px, py, pr] of [[350, 500, 280], [2500, 700, 320], [700, 2400, 340], [2400, 2300, 300]]) {
+    // 2. Soft Winding Sandy Paths (Lightly visible pastel sandy dirt trail)
+    ctx.strokeStyle = 'rgba(253, 230, 138, 0.42)';
+    ctx.lineWidth = 90;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(this.wrapNear(200, cam.x), this.wrapNear(300, cam.y));
+    ctx.bezierCurveTo(
+      this.wrapNear(800, cam.x), this.wrapNear(1200, cam.y),
+      this.wrapNear(1800, cam.x), this.wrapNear(600, cam.y),
+      this.wrapNear(2800, cam.x), this.wrapNear(1800, cam.y)
+    );
+    ctx.stroke();
+
+    // 3. Soft Light Blue River Curves with Sandy Shores
+    ctx.strokeStyle = 'rgba(186, 230, 253, 0.55)';
+    ctx.lineWidth = 60;
+    ctx.beginPath();
+    ctx.moveTo(this.wrapNear(2800, cam.x), this.wrapNear(200, cam.y));
+    ctx.bezierCurveTo(
+      this.wrapNear(2000, cam.x), this.wrapNear(1000, cam.y),
+      this.wrapNear(1200, cam.x), this.wrapNear(2200, cam.y),
+      this.wrapNear(300, cam.x), this.wrapNear(2800, cam.y)
+    );
+    ctx.stroke();
+
+    // 4. Soft Park Meadow Patches
+    ctx.fillStyle = 'rgba(220, 252, 231, 0.45)';
+    for (const [px, py, pr] of [[350, 500, 320], [2500, 700, 360], [700, 2400, 380], [2400, 2300, 340]]) {
       ctx.beginPath(); ctx.arc(this.wrapNear(px, cam.x), this.wrapNear(py, cam.y), pr, 0, Math.PI * 2); ctx.fill();
     }
   }
@@ -346,7 +372,7 @@ export class Renderer {
     }
   }
 
-  /** §2 Dynamic obstacles — rich custom pond matching reference designs, props rendered 100% crisp without shadows. */
+  /** §2 Dynamic obstacles — custom vector tree & pond matching reference designs, 100% crisp without shadows. */
   private renderObstacles(obstacles: ObstacleData[]) {
     const ctx = this.ctx;
     for (const ob of obstacles) {
@@ -355,6 +381,8 @@ export class Renderer {
       ctx.save();
       if (ob.type === 'pond') {
         this.renderRichPond(ox, oy, ob.radius || 52);
+      } else if (ob.type === 'tree' || ob.type === 'bush') {
+        this.renderRichTree(ox, oy, ob.radius || 44);
       } else {
         // NO ground shadow — 100% full visibility prop directly on ground
         ctx.globalAlpha = 1.0;
@@ -364,6 +392,78 @@ export class Renderer {
       }
       ctx.restore();
     }
+  }
+
+  /** Custom Top-Down Vector Tree Renderer matching reference images (Branching wooden limbs, 3-layer leaf canopy clusters) */
+  private renderRichTree(ox: number, oy: number, radius: number) {
+    const ctx = this.ctx;
+    const r = radius || 44;
+
+    ctx.save();
+    ctx.translate(ox, oy);
+
+    // 1. Central Dark Wooden Trunk & Radiating Branch Limbs
+    ctx.strokeStyle = '#3E2723';
+    ctx.lineWidth = Math.max(3.5, r * 0.16);
+    ctx.lineCap = 'round';
+    
+    // Core trunk base
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.16, 0, Math.PI * 2);
+    ctx.fillStyle = '#3E2723';
+    ctx.fill();
+
+    // Spreading Primary Branches
+    const branches = [
+      [0, 0, -r * 0.55, -r * 0.35],
+      [0, 0, r * 0.5, -r * 0.4],
+      [0, 0, -r * 0.6, r * 0.3],
+      [0, 0, r * 0.55, r * 0.45],
+      [0, 0, 0, -r * 0.65],
+    ];
+    for (const [x1, y1, x2, y2] of branches) {
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.quadraticCurveTo(x1 + (x2 - x1) * 0.5, y1 + (y2 - y1) * 0.5 + 4, x2, y2);
+      ctx.stroke();
+    }
+
+    // 2. Layered Leaf Canopy Clusters (3 Tone Layers for Depth)
+    const clusters = [
+      { x: -r * 0.4, y: -r * 0.3, size: r * 0.55 },
+      { x: r * 0.45, y: -r * 0.35, size: r * 0.5 },
+      { x: -r * 0.45, y: r * 0.35, size: r * 0.52 },
+      { x: r * 0.4, y: r * 0.4, size: r * 0.48 },
+      { x: 0, y: -r * 0.5, size: r * 0.52 },
+      { x: 0, y: r * 0.45, size: r * 0.48 },
+      { x: 0, y: 0, size: r * 0.6 },
+    ];
+
+    // Layer 1: Dark Forest Green Base
+    ctx.fillStyle = '#1B5E20';
+    for (const c of clusters) {
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, c.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Layer 2: Vibrant Mid-Leaf Green
+    ctx.fillStyle = '#4CAF50';
+    for (const c of clusters) {
+      ctx.beginPath();
+      ctx.arc(c.x - c.size * 0.12, c.y - c.size * 0.12, c.size * 0.85, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Layer 3: Top Highlight Bright Lime Green
+    ctx.fillStyle = '#8BC34A';
+    for (const c of clusters) {
+      ctx.beginPath();
+      ctx.arc(c.x - c.size * 0.22, c.y - c.size * 0.22, c.size * 0.65, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
   }
 
   /** Custom Rich Water Pond Renderer matching reference images (Stone rim, swimming koi, lily pads, water lilies, reeds) */
@@ -450,8 +550,9 @@ export class Renderer {
     // Jumping frog animation for 🐸, smooth float/bounce for other food items
     let jumpY = 0;
     if (food.type === 'frog') {
-      // Frogs hop up and down dynamically
       jumpY = Math.abs(Math.sin(this.animFrame * 0.15 + fx * 0.08)) * 18;
+      this.renderKawaiiFrog(fx, fy0 - jumpY);
+      return;
     } else if (food.type !== 'star') {
       jumpY = Math.sin(this.animFrame * 0.08 + food.x) * 3;
     }
@@ -466,6 +567,64 @@ export class Renderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(icon, fx, py);
+
+    ctx.restore();
+  }
+
+  /** Custom Kawaii Vector Tree Frog Renderer matching reference image (Big glossy eyes, lime body, cream belly, smiling mouth) */
+  private renderKawaiiFrog(fx: number, py: number) {
+    const ctx = this.ctx;
+    const size = 18;
+
+    ctx.save();
+    ctx.translate(fx, py);
+
+    // 1. Bent Hind Legs & Webbed Feet
+    ctx.fillStyle = '#689F38'; // Darker lime green for legs
+    ctx.beginPath();
+    ctx.ellipse(-size * 0.85, size * 0.28, size * 0.52, size * 0.3, -0.3, 0, Math.PI * 2);
+    ctx.ellipse(size * 0.85, size * 0.28, size * 0.52, size * 0.3, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 2. Main Lime Green Body & Head
+    ctx.fillStyle = '#7CB342'; // Bright tree frog green
+    ctx.beginPath();
+    ctx.ellipse(0, size * 0.08, size * 0.82, size * 0.7, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 3. Light Cream/Lime Belly Patch
+    ctx.fillStyle = '#DCEDC8';
+    ctx.beginPath();
+    ctx.ellipse(0, size * 0.26, size * 0.56, size * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 4. Prominent Bulging Eye Sockets
+    ctx.fillStyle = '#7CB342';
+    ctx.beginPath();
+    ctx.arc(-size * 0.46, -size * 0.42, size * 0.4, 0, Math.PI * 2);
+    ctx.arc(size * 0.46, -size * 0.42, size * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 5. Large Glossy Black Pupils & White Light Reflection Highlights
+    ctx.fillStyle = '#212121'; // Black Pupil
+    ctx.beginPath();
+    ctx.arc(-size * 0.46, -size * 0.42, size * 0.3, 0, Math.PI * 2);
+    ctx.arc(size * 0.46, -size * 0.42, size * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // White Glossy Glint
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(-size * 0.54, -size * 0.5, size * 0.11, 0, Math.PI * 2);
+    ctx.arc(size * 0.38, -size * 0.5, size * 0.11, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 6. Cute Smiling Mouth & Nostrils
+    ctx.strokeStyle = '#33691E';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(0, -size * 0.04, size * 0.42, 0.2, Math.PI - 0.2);
+    ctx.stroke();
 
     ctx.restore();
   }
