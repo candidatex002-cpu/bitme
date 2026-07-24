@@ -346,7 +346,7 @@ export class Renderer {
     }
   }
 
-  /** §2 Dynamic obstacles — ponds get water discs + lily pads, props sit directly on terrain without circular badge borders. */
+  /** §2 Dynamic obstacles — rich custom pond matching reference designs, props rendered 100% crisp without shadows. */
   private renderObstacles(obstacles: ObstacleData[]) {
     const ctx = this.ctx;
     for (const ob of obstacles) {
@@ -354,28 +354,10 @@ export class Renderer {
       const oy = this.wrapNear(ob.y, this.cameraPos.y);
       ctx.save();
       if (ob.type === 'pond') {
-        // Water Pond with Soft Ripples and Lily Pads
-        const r = ob.radius || 48;
-        ctx.beginPath(); ctx.arc(ox, oy, r, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(147, 197, 253, 0.65)'; ctx.fill();
-        ctx.strokeStyle = '#3B82F6'; ctx.lineWidth = 4; ctx.stroke();
-
-        // Inner Ripple Ring
-        ctx.beginPath(); ctx.arc(ox, oy, r * 0.65, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)'; ctx.lineWidth = 2; ctx.stroke();
-
-        // Lily Pads inside pond
-        ctx.font = '22px sans-serif';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('🪷', ox - r * 0.3, oy - r * 0.2);
-        ctx.fillText('🪻', ox + r * 0.35, oy + r * 0.25);
+        this.renderRichPond(ox, oy, ob.radius || 52);
       } else {
-        // Soft ground shadow only — NO circular background disc or outline circle!
-        ctx.beginPath();
-        ctx.ellipse(ox, oy + ob.radius * 0.6, ob.radius * 0.78, ob.radius * 0.32, 0, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fill();
-
-        // Crisp Emoji / Prop directly on the ground
+        // NO ground shadow — 100% full visibility prop directly on ground
+        ctx.globalAlpha = 1.0;
         ctx.font = `${ob.radius * 2.1}px sans-serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText(ob.icon, ox, oy + ob.radius * 0.06);
@@ -384,10 +366,81 @@ export class Renderer {
     }
   }
 
+  /** Custom Rich Water Pond Renderer matching reference images (Stone rim, swimming koi, lily pads, water lilies, reeds) */
+  private renderRichPond(ox: number, oy: number, radius: number) {
+    const ctx = this.ctx;
+    const r = radius || 52;
+    const time = this.animFrame * 0.04;
+
+    ctx.save();
+    ctx.translate(ox, oy);
+
+    // 1. Earthy Stone Rim Base (Organic Curved Shape)
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 1.28, r * 0.96, 0.08, 0, Math.PI * 2);
+    ctx.fillStyle = '#785438'; // Terracotta / Earthy Stone Rim
+    ctx.fill();
+
+    // 2. Cobblestones / Rocks around Border
+    ctx.fillStyle = '#5A3E27';
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 6) {
+      const rx = Math.cos(a) * r * 1.18;
+      const ry = Math.sin(a) * r * 0.88;
+      ctx.beginPath();
+      ctx.arc(rx, ry, r * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 3. Sandy Shore Edge
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 1.08, r * 0.82, 0.08, 0, Math.PI * 2);
+    ctx.fillStyle = '#FACC15';
+    ctx.fill();
+
+    // 4. Deep Cyan / Turquoise Water Body
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 0.98, r * 0.74, 0.08, 0, Math.PI * 2);
+    const grad = ctx.createRadialGradient(0, 0, r * 0.2, 0, 0, r);
+    grad.addColorStop(0, '#38BDF8'); // Vibrant Light Aqua
+    grad.addColorStop(1, '#0284C7'); // Deep Ocean Blue
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // 5. Water Ripples (Animated Light Reflection)
+    ctx.beginPath();
+    ctx.ellipse(-r * 0.15, -r * 0.12, r * 0.58, r * 0.38, 0.08 + Math.sin(time) * 0.05, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+
+    // 6. Lily Pads & Lotus Flowers
+    ctx.font = `${r * 0.42}px sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('🪷', -r * 0.35, -r * 0.18);
+    ctx.fillText('🌸', r * 0.32, r * 0.22);
+
+    // 7. Animated Swimming Koi Fish inside Pond
+    const fishAngle = time * 0.8;
+    const fishX = Math.cos(fishAngle) * r * 0.44;
+    const fishY = Math.sin(fishAngle) * r * 0.30;
+    ctx.save();
+    ctx.translate(fishX, fishY);
+    ctx.rotate(fishAngle + Math.PI / 2);
+    ctx.font = `${r * 0.36}px sans-serif`;
+    ctx.fillText('🐟', 0, 0);
+    ctx.restore();
+
+    // 8. Reeds Sprouting from Stone Rim
+    ctx.font = `${r * 0.38}px sans-serif`;
+    ctx.fillText('🌿', -r * 0.92, -r * 0.48);
+    ctx.fillText('🌾', r * 0.88, -r * 0.42);
+
+    ctx.restore();
+  }
+
   /**
    * High-Contrast Collectibles (Cherries 🍒, Apples 🍎, Frogs 🐸, Stars ⭐, Powers 🛡️/⚡)
-   * Rendered directly on the ground without white circle disc badges or borders!
-   * Frogs feature an active jumping/hopping animation!
+   * Rendered 100% crisp and fully visible directly on terrain WITHOUT ground shadows!
    */
   private renderCollectible(food: FoodData) {
     const ctx = this.ctx;
@@ -407,14 +460,8 @@ export class Renderer {
 
     ctx.save();
 
-    // 1. Soft Ground Shadow
-    const shadowScale = food.type === 'frog' ? Math.max(0.4, 1 - jumpY / 24) : 1;
-    ctx.beginPath();
-    ctx.ellipse(fx, fy0 + 10, 12 * shadowScale, 5 * shadowScale, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.16)';
-    ctx.fill();
-
-    // 2. Crisp Icon / Emoji directly on terrain — NO circle disc badge or outline!
+    // 100% Full Visibility Icon — NO ground shadow!
+    ctx.globalAlpha = 1.0;
     ctx.font = '28px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
