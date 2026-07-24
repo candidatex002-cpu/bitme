@@ -163,23 +163,22 @@ export class Renderer {
       this.cameraPos.y = this.wrapRaw(this.cameraPos.y + this.wrapDeltaRaw(camY - this.cameraPos.y) * 0.15);
 
       // Responsive camera zoom — continuous scaling curve for all device sizes.
-      // Replaces binary isMobile check with smooth proportional scaling from 320px to 2560px.
       const size = ((target as any).radius ?? 16) + ((target as any).length ?? 12) * 0.12;
       const minDim = Math.min(vw, vh);
       const maxDim = Math.max(vw, vh);
-      let baseZoom = 18 / Math.max(12, size); // bigger snake → smaller zoom
+      let baseZoom = 18 / Math.max(12, size);
 
-      // Continuous screen-adaptive scale: ref 400px → 1.0, smaller → zoom out, larger → zoom in
-      const screenScale = Math.max(0.65, Math.min(1.25, minDim / 400));
+      // Screen-adaptive scale: ref 360px → 1.0 (so phones are baseline, not zoomed out)
+      const screenScale = Math.max(0.75, Math.min(1.3, minDim / 360));
 
-      // Landscape compensation — wider screens can afford to zoom in slightly more
+      // Landscape compensation — wider aspect ratios zoom out slightly
       const aspectRatio = maxDim / minDim;
-      const landscapeBoost = aspectRatio > 1.6 ? 0.95 : 1.0;
+      const landscapeBoost = aspectRatio > 1.6 ? 0.92 : 1.0;
 
-      let targetZoom = Math.max(0.35, Math.min(1.6,
+      let targetZoom = Math.max(0.45, Math.min(1.6,
         baseZoom * screenScale * landscapeBoost * this.userZoom
       ));
-      this.zoom += (targetZoom - this.zoom) * 0.08; // smooth interpolation, no shake
+      this.zoom += (targetZoom - this.zoom) * 0.08;
     }
 
     this.ctx.save();
@@ -348,9 +347,9 @@ export class Renderer {
 
     ctx.save();
 
-    // Viewport-scaled collectible icon — proportional to screen size
+    // Viewport-scaled collectible icon — proportional to screen size, minimum 24px
     const minDim = Math.min(window.innerWidth, window.innerHeight);
-    const iconSize = Math.max(18, Math.min(32, Math.floor(minDim * 0.05)));
+    const iconSize = Math.max(24, Math.min(36, Math.floor(minDim * 0.065)));
     ctx.globalAlpha = 1.0;
     ctx.font = `${iconSize}px sans-serif`;
     ctx.textAlign = 'center';
@@ -672,16 +671,13 @@ export class Renderer {
     const vw = window.innerWidth, vh = window.innerHeight;
     const minDim = Math.min(vw, vh);
 
-    // Proportional minimap: 14% of shortest viewport dimension, clamped to [60, 130]px
-    const size = Math.max(60, Math.min(130, Math.floor(minDim * 0.14)));
-    const margin = Math.max(6, Math.floor(minDim * 0.015));
+    // Proportional minimap: 16% of shortest viewport dimension, clamped to [70, 140]px
+    const size = Math.max(70, Math.min(140, Math.floor(minDim * 0.16)));
+    const margin = Math.max(8, Math.floor(minDim * 0.02));
 
     const x = vw - size - margin;
-    // Portrait phones: top-right below leaderboard. Otherwise: bottom-right.
-    const isSmallPortrait = vh > vw && minDim < 500;
-    const y = isSmallPortrait
-      ? margin + Math.max(70, Math.floor(vh * 0.12))  // below leaderboard
-      : vh - size - margin;
+    // Always bottom-right — never overlaps leaderboard (top-right)
+    const y = vh - size - margin - (vh > vw ? 20 : 0); // extra padding on portrait
 
     ctx.save();
     ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';

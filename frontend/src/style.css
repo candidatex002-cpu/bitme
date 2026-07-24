@@ -309,15 +309,15 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .hud-leaderboard {
   position: absolute;
   top: clamp(6px, 1.5vh, 14px); right: clamp(6px, 1.5vw, 14px);
-  width: clamp(100px, 22vw, 280px);
-  padding: clamp(4px, 0.8vw, 10px) clamp(5px, 1vw, 12px);
-  font-size: clamp(0.55rem, 1.5vw, 0.78rem); z-index: 15;
+  width: clamp(130px, 28vw, 280px);
+  padding: clamp(6px, 1.2vw, 12px) clamp(8px, 1.5vw, 14px);
+  font-size: clamp(0.62rem, 1.8vw, 0.82rem); z-index: 15;
 }
 .hud-leaderboard h4 {
   color: var(--green-deep); margin-bottom: clamp(2px, 0.5vh, 5px);
-  font-size: clamp(0.56rem, 1.6vw, 0.82rem);
+  font-size: clamp(0.65rem, 2vw, 0.88rem);
 }
-.lb-row { display: flex; justify-content: space-between; padding: clamp(0px, 0.2vh, 2px) 0; gap: clamp(2px, 0.5vw, 4px); }
+.lb-row { display: flex; justify-content: space-between; padding: clamp(1px, 0.3vh, 3px) 0; gap: clamp(3px, 0.8vw, 6px); }
 .lb-row.me { color: var(--gold-deep); font-weight: 800; }
 .lb-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
 
@@ -369,50 +369,50 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 /* ---- Bottom-Left: Touch Joystick ---- */
 .touch-joystick {
   position: absolute;
-  bottom: clamp(12px, 2.5vh, 30px); left: clamp(10px, 2vw, 24px);
-  width: clamp(80px, 22vmin, 130px); height: clamp(80px, 22vmin, 130px);
-  border-radius: 50%; background: rgba(255,255,255,0.45);
-  border: 2px solid var(--line-strong); display: none; touch-action: none;
-  opacity: 0.35; transition: opacity 0.15s ease; z-index: 14;
+  bottom: clamp(16px, 3vh, 36px); left: clamp(12px, 3vw, 28px);
+  width: clamp(100px, 26vw, 150px); height: clamp(100px, 26vw, 150px);
+  border-radius: 50%; background: rgba(255,255,255,0.50);
+  border: 2.5px solid var(--line-strong); display: none; touch-action: none;
+  opacity: 0.40; transition: opacity 0.15s ease; z-index: 14;
 }
-.touch-joystick.active { opacity: 0.68; }
-.touch-joystick.boosting { opacity: 0.8; box-shadow: 0 0 16px 4px rgba(111,224,141,0.7); border-color: #1f9d47; }
+.touch-joystick.active { opacity: 0.72; }
+.touch-joystick.boosting { opacity: 0.85; box-shadow: 0 0 18px 5px rgba(111,224,141,0.7); border-color: #1f9d47; }
 .touch-knob {
   position: absolute; top: 50%; left: 50%;
-  width: clamp(30px, 8vmin, 50px); height: clamp(30px, 8vmin, 50px);
+  width: clamp(36px, 10vw, 56px); height: clamp(36px, 10vw, 56px);
   border-radius: 50%; background: radial-gradient(circle at 40% 35%, #6fe08d, var(--green-deep));
-  transform: translate(-50%,-50%); box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+  transform: translate(-50%,-50%); box-shadow: 0 4px 12px rgba(0,0,0,0.35);
 }
 
 /* ---- Bottom-Right: Action Buttons ---- */
 .touch-actions {
   position: absolute;
-  bottom: clamp(12px, 2.5vh, 30px); right: clamp(10px, 2vw, 24px);
+  bottom: clamp(16px, 3vh, 36px); right: clamp(12px, 3vw, 28px);
   display: none; flex-direction: column;
-  gap: clamp(5px, 1.2vh, 12px); align-items: flex-end; z-index: 14;
+  gap: clamp(8px, 1.8vh, 14px); align-items: flex-end; z-index: 14;
 }
-.touch-row { display: flex; gap: clamp(5px, 1.2vw, 10px); align-items: center; }
+.touch-row { display: flex; gap: clamp(8px, 2vw, 12px); align-items: center; }
 .touch-btn {
   position: relative;
-  width: clamp(38px, 10vmin, 60px); height: clamp(38px, 10vmin, 60px);
+  width: clamp(48px, 12vw, 64px); height: clamp(48px, 12vw, 64px);
   border-radius: 50%; display: grid; place-items: center;
-  font-size: clamp(1rem, 2.8vw, 1.5rem); color: #fff; touch-action: none;
-  box-shadow: var(--shadow-lg); border: 2px solid rgba(255,255,255,0.6); opacity: 0.9;
+  font-size: clamp(1.1rem, 3.2vw, 1.6rem); color: #fff; touch-action: none;
+  box-shadow: var(--shadow-lg); border: 2.5px solid rgba(255,255,255,0.65); opacity: 0.92;
 }
 .touch-btn.boost { background: radial-gradient(circle at 40% 30%, #6fe08d, #1f9d47); }
 .touch-btn.ability { background: radial-gradient(circle at 40% 30%, #b0a3f7, #6d55d6); }
 .touch-btn.zoom {
-  width: clamp(32px, 8vmin, 48px); height: clamp(32px, 8vmin, 48px);
-  font-size: clamp(0.8rem, 2.2vw, 1.1rem);
+  width: clamp(40px, 10vw, 52px); height: clamp(40px, 10vw, 52px);
+  font-size: clamp(0.9rem, 2.6vw, 1.15rem);
   background: radial-gradient(circle at 40% 30%, #7fd0f5, #2f80b8);
 }
 .touch-btn .tz-label {
-  position: absolute; bottom: clamp(-12px, -1.5vh, -16px);
-  font-size: clamp(0.4rem, 1vw, 0.52rem); font-weight: 800;
-  color: var(--ink); background: rgba(255,255,255,0.85);
-  border-radius: 6px; padding: 0 clamp(2px, 0.4vw, 4px);
+  position: absolute; bottom: clamp(-14px, -1.8vh, -18px);
+  font-size: clamp(0.44rem, 1.2vw, 0.56rem); font-weight: 800;
+  color: var(--ink); background: rgba(255,255,255,0.88);
+  border-radius: 6px; padding: 1px clamp(3px, 0.6vw, 5px);
 }
-.touch-btn:active { transform: scale(0.92); }
+.touch-btn:active { transform: scale(0.90); }
 .touch-btn.cooling { opacity: 0.5; }
 
 /* ---- Minimap toggle ---- */
@@ -421,8 +421,8 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .hud.mini-hidden .team-scores { opacity: 0; pointer-events: none; }
 
 /* ---- Left-handed controls swap ---- */
-.hud.left-handed .touch-joystick { left: auto; right: clamp(10px, 2vw, 24px); }
-.hud.left-handed .touch-actions { right: auto; left: clamp(10px, 2vw, 24px); align-items: flex-start; }
+.hud.left-handed .touch-joystick { left: auto; right: clamp(12px, 3vw, 28px); }
+.hud.left-handed .touch-actions { right: auto; left: clamp(12px, 3vw, 28px); align-items: flex-start; }
 
 /* ---- Touch devices: show joystick + action cluster ---- */
 @media (pointer: coarse) {
@@ -436,51 +436,57 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 
 /* Extra-small phones (iPhone SE, 320×568) */
 @media (max-width: 374px) {
-  .hud-tl { max-width: 55vw; }
-  .hud-tl-main { min-width: 54px; }
-  .hud-leaderboard { width: clamp(85px, 28vw, 110px); font-size: 0.52rem; }
-  .hud-leaderboard h4 { font-size: 0.54rem; }
+  .hud-tl { max-width: 52vw; }
+  .hud-tl-main { min-width: 60px; }
+  .hud-leaderboard { width: clamp(100px, 30vw, 130px); font-size: 0.58rem; }
+  .hud-leaderboard h4 { font-size: 0.60rem; }
   .ability-badge { display: none; }
   .hud-event { display: none; }
   .touch-btn .tz-label { display: none; }
+  .touch-joystick { width: 90px; height: 90px; }
+  .touch-btn { width: 44px; height: 44px; }
+  .touch-btn.zoom { width: 36px; height: 36px; }
 }
 
 /* Standard phones (375–480px) */
 @media (min-width: 375px) and (max-width: 480px) {
-  .hud-tl { max-width: 48vw; }
-  .hud-tl-main { min-width: 70px; }
-  .hud-leaderboard { width: clamp(95px, 26vw, 140px); }
+  .hud-tl { max-width: 46vw; }
+  .hud-tl-main { min-width: 72px; }
+  .hud-leaderboard { width: clamp(115px, 30vw, 160px); }
   .ability-badge { display: none; }
+  .touch-joystick { width: clamp(96px, 25vw, 115px); height: clamp(96px, 25vw, 115px); }
+  .touch-btn { width: clamp(46px, 12vw, 56px); height: clamp(46px, 12vw, 56px); }
+  .touch-btn.zoom { width: clamp(38px, 10vw, 46px); height: clamp(38px, 10vw, 46px); }
 }
 
 /* Large phones / phablets (481–768px) */
 @media (min-width: 481px) and (max-width: 768px) {
-  .hud-leaderboard { width: clamp(130px, 24vw, 200px); }
+  .hud-leaderboard { width: clamp(150px, 26vw, 220px); }
 }
 
 /* Tablets (769–1024px) */
 @media (min-width: 769px) and (max-width: 1024px) {
-  .hud-leaderboard { width: clamp(180px, 20vw, 240px); }
+  .hud-leaderboard { width: clamp(200px, 22vw, 260px); }
 }
 
 /* Desktop (1025px+) */
 @media (min-width: 1025px) {
-  .hud-leaderboard { width: clamp(220px, 16vw, 280px); }
+  .hud-leaderboard { width: clamp(240px, 18vw, 300px); }
 }
 
 /* Landscape phones — compact everything vertically */
 @media (orientation: landscape) and (max-height: 500px) {
   .hud-tl { top: clamp(3px, 0.8vh, 8px); left: clamp(3px, 0.8vw, 8px); padding: clamp(2px, 0.5vw, 5px); }
-  .hud-leaderboard { top: clamp(3px, 0.8vh, 8px); right: clamp(3px, 0.8vw, 8px); font-size: clamp(0.48rem, 1.2vw, 0.62rem); width: clamp(90px, 14vw, 160px); padding: clamp(3px, 0.5vw, 6px); }
-  .hud-leaderboard h4 { font-size: clamp(0.5rem, 1.3vw, 0.64rem); margin-bottom: 1px; }
-  .hud-score { font-size: clamp(0.75rem, 2vw, 1rem); }
-  .hud-hp { height: clamp(5px, 1vh, 9px); }
-  .hud-hp-txt { font-size: 0.42rem; line-height: clamp(5px, 1vh, 9px); }
-  .touch-joystick { bottom: clamp(6px, 1.5vh, 16px); left: clamp(6px, 1vw, 14px); width: clamp(64px, 18vmin, 100px); height: clamp(64px, 18vmin, 100px); }
-  .touch-knob { width: clamp(24px, 6vmin, 38px); height: clamp(24px, 6vmin, 38px); }
-  .touch-actions { bottom: clamp(6px, 1.5vh, 16px); right: clamp(6px, 1vw, 14px); gap: clamp(3px, 0.8vh, 6px); }
-  .touch-btn { width: clamp(30px, 8vmin, 46px); height: clamp(30px, 8vmin, 46px); font-size: clamp(0.8rem, 2vw, 1.1rem); }
-  .touch-btn.zoom { width: clamp(26px, 6vmin, 38px); height: clamp(26px, 6vmin, 38px); }
+  .hud-leaderboard { top: clamp(3px, 0.8vh, 8px); right: clamp(3px, 0.8vw, 8px); font-size: clamp(0.52rem, 1.4vw, 0.68rem); width: clamp(110px, 16vw, 180px); padding: clamp(4px, 0.6vw, 8px); }
+  .hud-leaderboard h4 { font-size: clamp(0.54rem, 1.5vw, 0.7rem); margin-bottom: 2px; }
+  .hud-score { font-size: clamp(0.8rem, 2.2vw, 1.1rem); }
+  .hud-hp { height: clamp(6px, 1.2vh, 10px); }
+  .hud-hp-txt { font-size: 0.45rem; line-height: clamp(6px, 1.2vh, 10px); }
+  .touch-joystick { bottom: clamp(8px, 2vh, 18px); left: clamp(8px, 1.5vw, 16px); width: clamp(72px, 14vh, 110px); height: clamp(72px, 14vh, 110px); }
+  .touch-knob { width: clamp(28px, 5vh, 42px); height: clamp(28px, 5vh, 42px); }
+  .touch-actions { bottom: clamp(8px, 2vh, 18px); right: clamp(8px, 1.5vw, 16px); gap: clamp(4px, 1vh, 8px); }
+  .touch-btn { width: clamp(36px, 7vh, 50px); height: clamp(36px, 7vh, 50px); font-size: clamp(0.85rem, 2.2vw, 1.15rem); }
+  .touch-btn.zoom { width: clamp(30px, 6vh, 42px); height: clamp(30px, 6vh, 42px); }
   .ability-badge { display: none; }
   .hud-event { display: none; }
   .power-status { top: calc(clamp(3px, 0.8vh, 8px) + clamp(28px, 6vh, 42px)); }
