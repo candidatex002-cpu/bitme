@@ -158,6 +158,15 @@ export class GameSessionService {
     return this.config;
   }
 
+  // Stop the simulation loop (used on teardown / tests).
+  public stop() {
+    if (this.simulationInterval) { clearInterval(this.simulationInterval); this.simulationInterval = null; }
+    this.state.status = 'ended';
+  }
+
+  // Test helper: advance the simulation deterministically by one tick.
+  public stepForTest(dt: number = 1 / this.TICK_RATE) { this.updateTick(dt); }
+
   // §6 Toroidal (wrap-around) world helpers — no borders; exit one edge, appear on the other.
   private wrap(v: number): number { const w = this.WORLD_SIZE; return ((v % w) + w) % w; }
   private wrapDelta(d: number): number { const w = this.WORLD_SIZE; let r = ((d % w) + w) % w; if (r > w / 2) r -= w; return r; }

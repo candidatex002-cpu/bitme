@@ -268,63 +268,85 @@ export class Renderer {
     ctx.save();
     ctx.beginPath();
     ctx.arc(cx, cy, s.radius, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(167, 243, 208, 0.32)';
+    ctx.fillStyle = 'rgba(167, 243, 208, 0.28)';
     ctx.fill();
     ctx.strokeStyle = '#10B981';
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 4.5;
     ctx.setLineDash([14, 8]);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Sanctuary Label
-    ctx.font = 'bold 18px Outfit, sans-serif';
+    // Sanctuary Label — Rendered cleanly in the exact CENTER MIDDLE of the circle
+    ctx.fillStyle = 'rgba(6, 78, 59, 0.88)';
+    ctx.beginPath();
+    ctx.roundRect(cx - 150, cy - 18, 300, 36, 18);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(16, 185, 129, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.font = 'bold 15px Outfit, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#064E3B';
-    ctx.shadowColor = 'rgba(255, 255, 255, 0.9)';
-    ctx.shadowBlur = 6;
-    ctx.fillText(`${s.icon} ${s.label} (NO PVP / SAFE HIDE)`, cx, cy - s.radius + 32);
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(`${s.icon} ${s.label} · NO PVP SAFE ZONE`, cx, cy);
     ctx.restore();
   }
 
-  /** Render Wormhole Pothole Shortcut Portals */
+  /** Render Wormhole Pothole Shortcut Portals — High visibility glowing cosmic vortex */
   private renderPortals(portals: Array<{ id: string; targetId: string; x: number; y: number; label: string; color: string }>) {
     const ctx = this.ctx;
-    const pulse = Math.sin(this.animFrame * 0.1) * 4;
-    const spin = this.animFrame * 0.05;
+    const pulse = Math.sin(this.animFrame * 0.12) * 6;
+    const spin = this.animFrame * 0.06;
 
     for (const p of portals) {
+      const px = this.wrapNear(p.x, this.cameraPos.x);
+      const py = this.wrapNear(p.y, this.cameraPos.y);
       ctx.save();
-      ctx.translate(this.wrapNear(p.x, this.cameraPos.x), this.wrapNear(p.y, this.cameraPos.y)); // §6
+      ctx.translate(px, py);
 
-      // Swirling Portal Ring
-      ctx.rotate(spin);
+      // Outer Glowing Aura
       ctx.beginPath();
-      ctx.arc(0, 0, 30 + pulse, 0, Math.PI * 2);
-      ctx.fillStyle = p.color + '44';
+      ctx.arc(0, 0, 48 + pulse, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(139, 92, 246, 0.22)';
       ctx.fill();
 
-      ctx.strokeStyle = p.color;
-      ctx.lineWidth = 4;
+      // Swirling Portal Rings
+      ctx.rotate(spin);
+      ctx.beginPath();
+      ctx.arc(0, 0, 36 + pulse * 0.5, 0, Math.PI * 2);
+      ctx.strokeStyle = p.color || '#A78BFA';
+      ctx.lineWidth = 5;
+      ctx.setLineDash([14, 8]);
+      ctx.stroke();
+
+      ctx.rotate(-spin * 2);
+      ctx.beginPath();
+      ctx.arc(0, 0, 24 + pulse * 0.3, 0, Math.PI * 2);
+      ctx.strokeStyle = '#F472B6';
+      ctx.lineWidth = 3.5;
       ctx.setLineDash([10, 6]);
       ctx.stroke();
 
-      ctx.rotate(-spin);
-      ctx.font = '28px sans-serif';
+      // Center Vortex Icon
+      ctx.setLineDash([]);
+      ctx.font = '34px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('🌀', 0, 0);
 
-      ctx.font = 'bold 12px Outfit, sans-serif';
-      ctx.fillStyle = p.color;
-      ctx.shadowColor = 'rgba(255,255,255,0.9)';
-      ctx.shadowBlur = 4;
-      ctx.fillText(p.label, 0, 42);
+      // Bright Wormhole Title Tag
+      ctx.font = 'bold 13px Outfit, sans-serif';
+      ctx.fillStyle = '#FFFFFF';
+      ctx.shadowColor = '#8B5CF6';
+      ctx.shadowBlur = 8;
+      ctx.fillText(`🌀 ${p.label || 'Wormhole Portal'}`, 0, 52);
 
       ctx.restore();
     }
   }
 
-  /** §2 Dynamic obstacles — ponds get a water disc, everything else a shadowed emoji prop. */
+  /** §2 Dynamic obstacles — ponds get water discs + lily pads, props sit directly on terrain without circular badge borders. */
   private renderObstacles(obstacles: ObstacleData[]) {
     const ctx = this.ctx;
     for (const ob of obstacles) {
@@ -332,67 +354,71 @@ export class Renderer {
       const oy = this.wrapNear(ob.y, this.cameraPos.y);
       ctx.save();
       if (ob.type === 'pond') {
-        ctx.beginPath(); ctx.arc(ox, oy, ob.radius, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(96,165,250,0.5)'; ctx.fill();
-        ctx.strokeStyle = 'rgba(59,130,246,0.75)'; ctx.lineWidth = 3.5; ctx.stroke();
+        // Water Pond with Soft Ripples and Lily Pads
+        const r = ob.radius || 48;
+        ctx.beginPath(); ctx.arc(ox, oy, r, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(147, 197, 253, 0.65)'; ctx.fill();
+        ctx.strokeStyle = '#3B82F6'; ctx.lineWidth = 4; ctx.stroke();
+
+        // Inner Ripple Ring
+        ctx.beginPath(); ctx.arc(ox, oy, r * 0.65, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)'; ctx.lineWidth = 2; ctx.stroke();
+
+        // Lily Pads inside pond
+        ctx.font = '22px sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('🪷', ox - r * 0.3, oy - r * 0.2);
+        ctx.fillText('🪻', ox + r * 0.35, oy + r * 0.25);
       } else {
-        // Contact shadow so props sit on the ground
+        // Soft ground shadow only — NO circular background disc or outline circle!
         ctx.beginPath();
         ctx.ellipse(ox, oy + ob.radius * 0.6, ob.radius * 0.78, ob.radius * 0.32, 0, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.fill();
-        // Solid bright disc so the prop is 100% visible on any terrain
-        ctx.beginPath();
-        ctx.arc(ox, oy, ob.radius * 0.98, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(255,255,255,0.72)';
-        ctx.fill();
-        ctx.strokeStyle = ob.blocking ? 'rgba(180,110,90,0.6)' : 'rgba(120,180,140,0.55)';
-        ctx.lineWidth = 3;
-        ctx.stroke();
+        ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fill();
+
+        // Crisp Emoji / Prop directly on the ground
+        ctx.font = `${ob.radius * 2.1}px sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(ob.icon, ox, oy + ob.radius * 0.06);
       }
-      // Big crisp emoji — full opacity
-      ctx.globalAlpha = 1;
-      ctx.font = `${ob.radius * 2.1}px sans-serif`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(ob.icon, ox, oy + ob.radius * 0.06);
       ctx.restore();
     }
   }
 
   /**
-   * Crystal Clear High-Contrast Collectibles (Cherries 🍒, Apples 🍎, Frogs 🐸, Stars ⭐)
-   * Rendered on a bright white circle disc badge so they 100% pop out crisp and clear on any terrain!
+   * High-Contrast Collectibles (Cherries 🍒, Apples 🍎, Frogs 🐸, Stars ⭐, Powers 🛡️/⚡)
+   * Rendered directly on the ground without white circle disc badges or borders!
+   * Frogs feature an active jumping/hopping animation!
    */
   private renderCollectible(food: FoodData) {
     const ctx = this.ctx;
-    const fx = this.wrapNear(food.x, this.cameraPos.x); // §6 draw the nearest wrapped copy
+    const fx = this.wrapNear(food.x, this.cameraPos.x); // §6 draw nearest wrapped copy
     const fy0 = this.wrapNear(food.y, this.cameraPos.y);
-    // Moving stars must not also bob, or they read as "jumping" in place.
-    const bounce = food.type === 'star' ? 0 : Math.sin(this.animFrame * 0.08 + food.x) * 3;
-    const py = fy0 + bounce;
+
+    // Jumping frog animation for 🐸, smooth float/bounce for other food items
+    let jumpY = 0;
+    if (food.type === 'frog') {
+      // Frogs hop up and down dynamically
+      jumpY = Math.abs(Math.sin(this.animFrame * 0.15 + fx * 0.08)) * 18;
+    } else if (food.type !== 'star') {
+      jumpY = Math.sin(this.animFrame * 0.08 + food.x) * 3;
+    }
+    const py = fy0 - jumpY;
     const icon = food.icon || FOOD_ICONS[food.type] || '🍒';
 
     ctx.save();
 
-    // 1. Soft Shadow
+    // 1. Soft Ground Shadow
+    const shadowScale = food.type === 'frog' ? Math.max(0.4, 1 - jumpY / 24) : 1;
     ctx.beginPath();
-    ctx.ellipse(fx, fy0 + 12, 11, 5, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
+    ctx.ellipse(fx, fy0 + 10, 12 * shadowScale, 5 * shadowScale, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.16)';
     ctx.fill();
 
-    // 2. Bright White Circle Disc Badge behind food so it POPS out 100% clear!
-    ctx.beginPath();
-    ctx.arc(fx, py, 15, 0, Math.PI * 2);
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fill();
-    ctx.strokeStyle = '#90CDF4';
-    ctx.lineWidth = 2.5;
-    ctx.stroke();
-
-    // 3. Crisp Emoji / Icon inside disc
-    ctx.font = '20px sans-serif';
+    // 2. Crisp Icon / Emoji directly on terrain — NO circle disc badge or outline!
+    ctx.font = '28px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(icon, fx, py + 1);
+    ctx.fillText(icon, fx, py);
 
     ctx.restore();
   }

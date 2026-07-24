@@ -1,6 +1,7 @@
 import { GameClient, GameMode, GameStateTick, SnakeData, serverBase } from './game/GameClient.js';
 import { Renderer } from './game/Renderer.js';
 import { audio } from './game/AudioSystem.js';
+import { ads } from './game/AdService.js';
 
 const API = serverBase();
 
@@ -152,6 +153,12 @@ class AnacondaPark {
     // Browsers block audio until the user interacts — kick off the Home music on the
     // very first tap/click/keypress (idempotent; no-ops if music is turned off).
     ['pointerdown', 'keydown', 'touchstart'].forEach(ev => window.addEventListener(ev, () => audio.ensureMusic(), { passive: true }));
+    // §14 To enable real ads: install @capacitor-community/admob, then at startup:
+    //   import { AdMob } from '@capacitor-community/admob';
+    //   ads.attachPlugin(AdMob);
+    //   ads.configure({ enabled: true, testMode: false, appId: 'ca-app-pub-XXXX~YYYY',
+    //     units: { rewarded: '…', interstitial: '…', banner: '…', appOpen: '…' } });
+    // Until then every ad call is a no-op / the built-in simulated reward modal.
   }
 
   private toggleMusic() {
@@ -284,7 +291,7 @@ class AnacondaPark {
 
   // ------------------------------------------------------------- navigation
   private setScreen(s: Screen) { this.screen = s; this.render(); }
-  private go(p: Page) { this.page = p; this.screen = 'app'; audio.playClick(); this.render(); if (p === 'rewards') this.loadRewards(); }
+  private go(p: Page) { this.page = p; this.screen = 'app'; audio.playClick(); this.render(); if (p === 'rewards') this.loadRewards(); ads.showBanner(); /* §14 lobby-only banner */ }
 
   private async equipSkin(id: string) {
     audio.playClick(); this.selectedSkin = id; if (this.profile) this.profile.equippedSkin = id;
@@ -340,6 +347,7 @@ class AnacondaPark {
   private startMatch() {
     this.matchStart = Date.now(); this.lastAlive = true; this.visitedAreas.clear(); this.summary = null;
     this.setScreen('play'); // render() creates/attaches the renderer to the live canvas
+    ads.hideBanner(); // §14 never show ads during active gameplay
     audio.startMusic();
     this.client.onStateUpdate = (s) => this.onTick(s);
     this.client.onRespawnResult = (r) => this.onRespawn(r);
@@ -458,10 +466,14 @@ class AnacondaPark {
     this.client.disconnect(); await this.refreshProfile(); await this.fetchAux(); this.page = 'home'; this.setScreen('app');
   }
 
+  // §14 Rewarded ad — routes through AdService. Real AdMob (when configured) replaces the
+  // built-in 5s reward modal; otherwise the simulated flow below runs.
   private triggerAd(after: () => void) {
-    this.setScreen('ad-reward'); this.adTimer = 5;
-    if (this.adInterval) clearInterval(this.adInterval);
-    this.adInterval = setInterval(() => { this.adTimer--; const el = document.getElementById('ad-count'); if (el) el.innerText = String(this.adTimer); if (this.adTimer <= 0) { clearInterval(this.adInterval); after(); } }, 1000);
+    ads.showRewarded((done) => {
+      this.setScreen('ad-reward'); this.adTimer = 5;
+      if (this.adInterval) clearInterval(this.adInterval);
+      this.adInterval = setInterval(() => { this.adTimer--; const el = document.getElementById('ad-count'); if (el) el.innerText = String(this.adTimer); if (this.adTimer <= 0) { clearInterval(this.adInterval); done(); } }, 1000);
+    }).then((rewarded) => { if (rewarded) after(); });
   }
 
   private async claimMission(id: string) {
@@ -1158,7 +1170,7 @@ class AnacondaPark {
     on('rs-end', () => this.endMatch());
     on('go-ad', () => this.triggerAd(async () => { try { const r = await fetch(API + '/api/ads/claim', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } }); const d = await r.json(); if (d.profile) this.profile = d.profile; this.showToast(`🎉 ${d.message}`); } catch { /* */ } this.setScreen('gameover'); }));
     on('go-again', () => this.startMatchmaking());
-    on('go-home', () => { this.refreshProfile(); this.page = 'home'; this.setScreen('app'); });
+    on('go-home', () => { ads.showInterstitial(); /* §14 between-match interstitial */ this.refreshProfile(); this.page = 'home'; this.setScreen('app'); });
   }
 
   private toggleSetting(key: keyof Settings) {

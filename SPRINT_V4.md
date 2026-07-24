@@ -37,8 +37,11 @@ service that can't live in the repo:
 - **§15 Reward fulfilment** — the marketplace, catalog, pricing, stock and voucher issuance are
   built; hooking real gift-card / partner delivery to an **authorized provider** (and moving the
   catalog+stock into the DB for durable inventory) is the remaining integration.
-- **§14 AdMob** — respawn/ad UI hooks exist; add the Google Mobile Ads plugin + your real
-  app-id/ad-unit-ids and declare ads in the Play Console. No live ad ids ship here.
+- **§14 AdMob** — a clean **ad boundary** now exists (`frontend/src/game/AdService.ts`):
+  rewarded / interstitial / lobby-banner / app-open methods, routed through the app (rewarded
+  respawn, between-match interstitial, banner hidden during gameplay). To go live, install the
+  Google Mobile Ads Capacitor plugin, call `ads.attachPlugin()` + `ads.configure()` with your
+  real app-id/ad-unit-ids, and declare ads in the Play Console. No live ad ids ship here.
 - **§16 Performance** — client renders on a 60 FPS rAF loop, server runs 30 Hz; formal
   device profiling (Android/iPhone battery, memory, network compression) not yet measured.
 - **§17 Security** — Strong by construction: the client only ever sends *angle + boost*; the
@@ -46,7 +49,14 @@ service that can't live in the repo:
   impossible. Packet-flood limiting + malformed-input (NaN/Infinity) rejection are in place, and
   stars/score/purchases/redemptions are all server-validated. Remaining: enforce **WSS/HTTPS in
   prod**, rotate/short-TTL tokens, and a full server-side authorization audit.
-- **§11 Functional QA** — no automated test suite yet; needs a pass across every screen/flow.
+
+## 🧪 Tests (§11)
+
+`cd backend && npm test` — 17 passing (Node's built-in runner, no extra deps). Covers auth,
+economy, rewards (region/pricing/stock/guards), progression, **DB persistence round-trip**, and
+the authoritative game session (4 linked wormholes, small starting size, **head-to-head-only
+combat**, head-into-body-doesn't-kill, milestone growth gate, pause protection). Frontend E2E /
+device UI passes are still manual.
 
 ## Files touched this sprint
 
