@@ -119,8 +119,8 @@ export class Renderer {
     const h = window.innerHeight;
     this.canvas.width = Math.floor(w * dpr);
     this.canvas.height = Math.floor(h * dpr);
-    this.canvas.style.width = w + 'px';
-    this.canvas.style.height = h + 'px';
+    this.canvas.style.width = '100%';
+    this.canvas.style.height = '100%';
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
@@ -162,16 +162,23 @@ export class Renderer {
       this.cameraPos.x = this.wrapRaw(this.cameraPos.x + this.wrapDeltaRaw(camX - this.cameraPos.x) * 0.15);
       this.cameraPos.y = this.wrapRaw(this.cameraPos.y + this.wrapDeltaRaw(camY - this.cameraPos.y) * 0.15);
 
-      // Dynamic Auto-Scaling Viewport Zoom for all device sizes & resolutions:
-      // Keep the snake perfectly proportioned regardless of phone, tablet, or desktop resolution.
+      // Responsive camera zoom — continuous scaling curve for all device sizes.
+      // Replaces binary isMobile check with smooth proportional scaling from 320px to 2560px.
       const size = ((target as any).radius ?? 16) + ((target as any).length ?? 12) * 0.12;
       const minDim = Math.min(vw, vh);
-      const isMobile = minDim <= 640;
+      const maxDim = Math.max(vw, vh);
       let baseZoom = 18 / Math.max(12, size); // bigger snake → smaller zoom
-      
-      const screenScale = Math.max(0.72, Math.min(1.15, minDim / 440));
-      let targetZoom = Math.max(0.4, Math.min(1.5, baseZoom * screenScale * this.userZoom));
-      if (isMobile) targetZoom *= 0.85; // reveal more world on small screens
+
+      // Continuous screen-adaptive scale: ref 400px → 1.0, smaller → zoom out, larger → zoom in
+      const screenScale = Math.max(0.65, Math.min(1.25, minDim / 400));
+
+      // Landscape compensation — wider screens can afford to zoom in slightly more
+      const aspectRatio = maxDim / minDim;
+      const landscapeBoost = aspectRatio > 1.6 ? 0.95 : 1.0;
+
+      let targetZoom = Math.max(0.35, Math.min(1.6,
+        baseZoom * screenScale * landscapeBoost * this.userZoom
+      ));
       this.zoom += (targetZoom - this.zoom) * 0.08; // smooth interpolation, no shake
     }
 
@@ -341,9 +348,11 @@ export class Renderer {
 
     ctx.save();
 
-    // 100% Full Visibility Icon — NO ground shadow!
+    // Viewport-scaled collectible icon — proportional to screen size
+    const minDim = Math.min(window.innerWidth, window.innerHeight);
+    const iconSize = Math.max(18, Math.min(32, Math.floor(minDim * 0.05)));
     ctx.globalAlpha = 1.0;
-    ctx.font = '28px sans-serif';
+    ctx.font = `${iconSize}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(icon, fx, py);
@@ -619,9 +628,12 @@ export class Renderer {
     const maxHp = snake.maxHp ?? 100;
     const ratio = Math.max(0, Math.min(1, hp / maxHp));
 
-    const y = headY - r - 22;
+    // Scale name font with screen size: 9px on tiny phones → 20px on desktop
+    const minDim = Math.min(window.innerWidth, window.innerHeight);
+    const nameFontSize = Math.max(9, Math.min(20, 12 * (minDim / 400)));
+    const y = headY - r - (nameFontSize + 10);
     ctx.save();
-    ctx.font = 'bold 12px Outfit, sans-serif';
+    ctx.font = `bold ${nameFontSize}px Outfit, sans-serif`;
     ctx.textAlign = 'center';
 
     const label = isTarget ? `👑 ${snake.displayName}` : `${snake.displayName}`;
@@ -631,13 +643,13 @@ export class Renderer {
     ctx.fillText(label, headX, y - 4);
 
     if (ratio < 0.99) {
-      const w = Math.max(40, r * 2.5);
-      const h = 5;
+      const w = Math.max(30, r * 2.5);
+      const hpH = Math.max(3, Math.min(6, nameFontSize * 0.4));
       const x = headX - w / 2;
       ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-      ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
+      ctx.fillRect(x - 1, y - 1, w + 2, hpH + 2);
       ctx.fillStyle = ratio < 0.3 ? '#FC8181' : '#F6AD55';
-      ctx.fillRect(x, y, w * ratio, h);
+      ctx.fillRect(x, y, w * ratio, hpH);
     }
     ctx.restore();
   }
@@ -658,34 +670,35 @@ export class Renderer {
   private renderMinimap(state: GameStateTick, targetUserId: string) {
     const ctx = this.ctx;
     const vw = window.innerWidth, vh = window.innerHeight;
-    const isMobile = vw <= 640 || vh <= 540;
+    const minDim = Math.min(vw, vh);
 
-    // Dynamically auto-scale minimap size based on physical screen dimensions across any device
-    const size = isMobile 
-      ? Math.max(68, Math.min(84, Math.floor(vw * 0.2))) 
-      : Math.max(88, Math.min(114, Math.floor(vw * 0.1)));
+    // Proportional minimap: 14% of shortest viewport dimension, clamped to [60, 130]px
+    const size = Math.max(60, Math.min(130, Math.floor(minDim * 0.14)));
+    const margin = Math.max(6, Math.floor(minDim * 0.015));
 
-    const margin = isMobile ? 8 : 14;
     const x = vw - size - margin;
-    // On mobile devices, place minimap in the top-right area under leaderboard so touch controls NEVER cover it!
-    const y = isMobile ? (vh <= 500 ? 45 : 110) : vh - size - 50;
+    // Portrait phones: top-right below leaderboard. Otherwise: bottom-right.
+    const isSmallPortrait = vh > vw && minDim < 500;
+    const y = isSmallPortrait
+      ? margin + Math.max(70, Math.floor(vh * 0.12))  // below leaderboard
+      : vh - size - margin;
 
     ctx.save();
     ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
     ctx.strokeStyle = '#B5EAD7'; ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.roundRect(x, y, size, size, 12);
+    ctx.roundRect(x, y, size, size, Math.max(6, size * 0.1));
     ctx.fill(); ctx.stroke();
 
     const scale = size / 3200;
 
-    // §8 Sanctuary (always visible) — green ring on the minimap
+    // Sanctuary (always visible) — green ring on the minimap
     if (state.sanctuaryZone) {
       ctx.beginPath();
       ctx.arc(x + state.sanctuaryZone.centerX * scale, y + state.sanctuaryZone.centerY * scale, Math.max(4, state.sanctuaryZone.radius * scale), 0, Math.PI * 2);
       ctx.strokeStyle = '#10B981'; ctx.lineWidth = 1.5; ctx.stroke();
     }
-    // §7 Active wormhole — pulsing purple marker
+    // Active wormhole — pulsing purple marker
     if (state.portals) {
       for (const p of state.portals) {
         ctx.beginPath();
@@ -694,12 +707,15 @@ export class Renderer {
       }
     }
 
+    // Snake dots — proportional to minimap size
+    const dotR = Math.max(1.5, size * 0.025);
+    const myDotR = Math.max(2.5, size * 0.035);
     for (let i = 0; i < state.snakes.length; i++) {
       const s = state.snakes[i];
       if (!s.isAlive) continue;
       const isT = s.id === targetUserId;
       ctx.beginPath();
-      ctx.arc(x + s.head.x * scale, y + s.head.y * scale, isT ? 3.5 : 2, 0, Math.PI * 2);
+      ctx.arc(x + s.head.x * scale, y + s.head.y * scale, isT ? myDotR : dotR, 0, Math.PI * 2);
       ctx.fillStyle = isT ? '#FFB7B2' : '#70C1B3'; ctx.fill();
     }
     ctx.restore();
