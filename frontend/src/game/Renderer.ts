@@ -319,11 +319,11 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Render Wormhole Pothole Shortcut Portals — High visibility glowing cosmic vortex */
+  /** Render Wormhole Portals matching reference images (Floating crystal shards, magenta outer vortex, glowing pink energy ring, cyan event horizon core) */
   private renderPortals(portals: Array<{ id: string; targetId: string; x: number; y: number; label: string; color: string }>) {
     const ctx = this.ctx;
-    const pulse = Math.sin(this.animFrame * 0.12) * 6;
-    const spin = this.animFrame * 0.06;
+    const pulse = Math.sin(this.animFrame * 0.12) * 5;
+    const spin = this.animFrame * 0.05;
 
     for (const p of portals) {
       const px = this.wrapNear(p.x, this.cameraPos.x);
@@ -331,42 +331,83 @@ export class Renderer {
       ctx.save();
       ctx.translate(px, py);
 
-      // Outer Glowing Aura
+      // 1. Orbiting Floating Dark Magenta Crystal Shards (Image 2)
+      ctx.fillStyle = '#6B21A8';
+      for (let i = 0; i < 8; i++) {
+        const a = (i * Math.PI / 4) + spin * 0.7;
+        const dist = 52 + Math.sin(spin * 2 + i) * 4;
+        const sx = Math.cos(a) * dist;
+        const sy = Math.sin(a) * dist;
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate(a + Math.PI / 2);
+        ctx.beginPath();
+        ctx.moveTo(0, -6); ctx.lineTo(4, 4); ctx.lineTo(-4, 4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // 2. Outer Organic Wavy Magenta/Purple Vortex Shell (Image 1)
+      ctx.rotate(spin);
+      ctx.fillStyle = '#C026D3'; // Vibrant Magenta
       ctx.beginPath();
-      ctx.arc(0, 0, 48 + pulse, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(139, 92, 246, 0.22)';
+      const rBase = 42 + pulse;
+      for (let a = 0; a <= Math.PI * 2; a += 0.2) {
+        const rWavy = rBase + Math.sin(a * 5 + spin * 3) * 6;
+        const vx = Math.cos(a) * rWavy;
+        const vy = Math.sin(a) * rWavy;
+        if (a === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
+      }
+      ctx.closePath();
       ctx.fill();
 
-      // Swirling Portal Rings
-      ctx.rotate(spin);
+      // 3. Middle Swirling Deep Purple Contour Ring
+      ctx.fillStyle = '#7E22CE';
       ctx.beginPath();
-      ctx.arc(0, 0, 36 + pulse * 0.5, 0, Math.PI * 2);
-      ctx.strokeStyle = p.color || '#A78BFA';
-      ctx.lineWidth = 5;
-      ctx.setLineDash([14, 8]);
-      ctx.stroke();
+      const rMid = 34 + pulse * 0.6;
+      for (let a = 0; a <= Math.PI * 2; a += 0.2) {
+        const rWavy = rMid + Math.sin(-a * 4 + spin * 4) * 4;
+        const vx = Math.cos(a) * rWavy;
+        const vy = Math.sin(a) * rWavy;
+        if (a === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
+      }
+      ctx.closePath();
+      ctx.fill();
 
+      // 4. Glowing Magenta / Pink Energy Ring Highlight (Image 2)
       ctx.rotate(-spin * 2);
       ctx.beginPath();
-      ctx.arc(0, 0, 24 + pulse * 0.3, 0, Math.PI * 2);
-      ctx.strokeStyle = '#F472B6';
-      ctx.lineWidth = 3.5;
-      ctx.setLineDash([10, 6]);
+      ctx.arc(0, 0, 26, 0, Math.PI * 2);
+      ctx.strokeStyle = '#F43F5E';
+      ctx.lineWidth = 4;
       ctx.stroke();
 
-      // Center Vortex Icon
-      ctx.setLineDash([]);
-      ctx.font = '34px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('🌀', 0, 0);
+      // 5. Swirling Cyan / Aqua Event Horizon Core (Image 2)
+      ctx.beginPath();
+      ctx.arc(0, 0, 20, 0, Math.PI * 2);
+      const grad = ctx.createRadialGradient(0, 0, 2, 0, 0, 20);
+      grad.addColorStop(0, '#67E8F9'); // Light Aqua Starlight
+      grad.addColorStop(0.6, '#06B6D4'); // Cyan Core
+      grad.addColorStop(1, '#0284C7'); // Deep Ocean Edge
+      ctx.fillStyle = grad;
+      ctx.fill();
 
-      // Bright Wormhole Title Tag
+      // Core Spiral Vortex
+      ctx.beginPath();
+      ctx.arc(0, 0, 12, spin, spin + Math.PI * 1.5);
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // 6. Title Label Tag
+      ctx.rotate(spin);
       ctx.font = 'bold 13px Outfit, sans-serif';
       ctx.fillStyle = '#FFFFFF';
-      ctx.shadowColor = '#8B5CF6';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.shadowColor = '#C026D3';
       ctx.shadowBlur = 8;
-      ctx.fillText(`🌀 ${p.label || 'Wormhole Portal'}`, 0, 52);
+      ctx.fillText(`🌀 ${p.label || 'Wormhole Portal'}`, 0, 58);
 
       ctx.restore();
     }
