@@ -413,7 +413,7 @@ export class Renderer {
     }
   }
 
-  /** §2 Dynamic obstacles — custom vector tree & pond matching reference designs, 100% crisp without shadows. */
+  /** §2 Dynamic obstacles — custom vector tree, cave, facetted rock & pond matching reference designs, 100% crisp without shadows. */
   private renderObstacles(obstacles: ObstacleData[]) {
     const ctx = this.ctx;
     for (const ob of obstacles) {
@@ -424,6 +424,10 @@ export class Renderer {
         this.renderRichPond(ox, oy, ob.radius || 52);
       } else if (ob.type === 'tree' || ob.type === 'bush') {
         this.renderRichTree(ox, oy, ob.radius || 44);
+      } else if (ob.type === 'cave') {
+        this.renderRichCave(ox, oy, ob.radius || 58);
+      } else if (ob.type === 'rock' || ob.type === 'hill') {
+        this.renderFacettedRock(ox, oy, ob.radius || 34);
       } else {
         // NO ground shadow — 100% full visibility prop directly on ground
         ctx.globalAlpha = 1.0;
@@ -433,6 +437,106 @@ export class Renderer {
       }
       ctx.restore();
     }
+  }
+
+  /** Custom Rich Cave Entrance Renderer matching reference images */
+  private renderRichCave(ox: number, oy: number, radius: number) {
+    const ctx = this.ctx;
+    const r = radius || 58;
+
+    ctx.save();
+    ctx.translate(ox, oy);
+
+    // 1. Facetted Rocky Arch Structure (Outer Grey Stone Arch)
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 1.3, r * 0.95, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#616161'; // Base Grey Stone
+    ctx.fill();
+
+    // Top Light Facet
+    ctx.beginPath();
+    ctx.ellipse(0, -r * 0.35, r * 1.15, r * 0.5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#9E9E9E';
+    ctx.fill();
+
+    // 2. Dark Inner Cavern Mouth Void
+    ctx.beginPath();
+    ctx.ellipse(0, r * 0.1, r * 0.78, r * 0.62, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#0F172A'; // Deep Dark Void
+    ctx.fill();
+
+    // Glowing Inner Cavern Light (Cyan/Teal Exit Starlight)
+    ctx.beginPath();
+    ctx.ellipse(0, r * 0.22, r * 0.42, r * 0.32, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(34, 211, 238, 0.55)';
+    ctx.fill();
+
+    // 3. Hanging Sharp Stalactites from Cave Ceiling
+    ctx.fillStyle = '#BDBDBD';
+    const stalactites = [-r * 0.45, -r * 0.2, 0, r * 0.25, r * 0.5];
+    for (let i = 0; i < stalactites.length; i++) {
+      const sx = stalactites[i];
+      const h = (i % 2 === 0 ? 0.35 : 0.48) * r;
+      ctx.beginPath();
+      ctx.moveTo(sx - 5, -r * 0.2);
+      ctx.lineTo(sx + 5, -r * 0.2);
+      ctx.lineTo(sx, -r * 0.2 + h);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // 4. Overgrown Green Moss & Shrubs on Top Ledge
+    ctx.font = `${r * 0.35}px sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('🌿', -r * 0.5, -r * 0.7);
+    ctx.fillText('🌾', 0, -r * 0.82);
+    ctx.fillText('🌿', r * 0.55, -r * 0.65);
+
+    ctx.restore();
+  }
+
+  /** Custom Facetted 3D Rock/Boulder Renderer matching reference image */
+  private renderFacettedRock(ox: number, oy: number, radius: number) {
+    const ctx = this.ctx;
+    const r = radius || 34;
+
+    ctx.save();
+    ctx.translate(ox, oy);
+
+    // Facetted Rock Outer Contour
+    ctx.beginPath();
+    ctx.moveTo(-r, 0);
+    ctx.lineTo(-r * 0.6, -r * 0.8);
+    ctx.lineTo(r * 0.4, -r * 0.95);
+    ctx.lineTo(r, -r * 0.3);
+    ctx.lineTo(r * 0.8, r * 0.7);
+    ctx.lineTo(-r * 0.4, r * 0.9);
+    ctx.closePath();
+    ctx.fillStyle = '#757575'; // Main Facet Color
+    ctx.fill();
+    ctx.strokeStyle = '#374151';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Top Highlight Facet
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.6, -r * 0.8);
+    ctx.lineTo(r * 0.4, -r * 0.95);
+    ctx.lineTo(0, -r * 0.2);
+    ctx.closePath();
+    ctx.fillStyle = '#9E9E9E'; // Light Highlight
+    ctx.fill();
+
+    // Bottom Shadow Facet
+    ctx.beginPath();
+    ctx.moveTo(0, -r * 0.2);
+    ctx.lineTo(r, -r * 0.3);
+    ctx.lineTo(r * 0.8, r * 0.7);
+    ctx.closePath();
+    ctx.fillStyle = '#424242'; // Dark Shadow Facet
+    ctx.fill();
+
+    ctx.restore();
   }
 
   /** Custom Top-Down Vector Tree Renderer matching reference images (Branching wooden limbs, 3-layer leaf canopy clusters) */
@@ -588,16 +692,12 @@ export class Renderer {
     const fx = this.wrapNear(food.x, this.cameraPos.x); // §6 draw nearest wrapped copy
     const fy0 = this.wrapNear(food.y, this.cameraPos.y);
 
-    // Jumping frog animation for 🐸, smooth float/bounce for other food items
-    let jumpY = 0;
     if (food.type === 'frog') {
-      jumpY = Math.abs(Math.sin(this.animFrame * 0.15 + fx * 0.08)) * 18;
-      this.renderKawaiiFrog(fx, fy0 - jumpY);
+      this.renderKawaiiFrog(fx, fy0);
       return;
-    } else if (food.type !== 'star') {
-      jumpY = Math.sin(this.animFrame * 0.08 + food.x) * 3;
     }
-    const py = fy0 - jumpY;
+    const bounce = food.type === 'star' ? 0 : Math.sin(this.animFrame * 0.08 + food.x) * 3;
+    const py = fy0 - bounce;
     const icon = food.icon || FOOD_ICONS[food.type] || '🍒';
 
     ctx.save();
@@ -612,25 +712,41 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Custom Kawaii Vector Tree Frog Renderer matching reference image (Big glossy eyes, lime body, cream belly, smiling mouth) */
-  private renderKawaiiFrog(fx: number, py: number) {
+  /** Custom Kawaii Vector Tree Frog Renderer with Realistic Parabolic Leap Physics */
+  private renderKawaiiFrog(fx: number, fy0: number) {
     const ctx = this.ctx;
     const size = 18;
+
+    // Real Frog Parabolic Leap Cycle (Sit -> Explosive Leap Arc -> Retract & Land)
+    const time = (this.animFrame * 0.045 + (fx * 0.13)) % 2.6;
+    let jumpY = 0;
+    let leapPhase = 0; // 0 = sit crouched, 1 = max mid-air leap extension
+
+    if (time > 1.3 && time < 2.0) {
+      const leapProgress = (time - 1.3) / 0.7; // 0 to 1
+      jumpY = Math.sin(leapProgress * Math.PI) * 40; // High explosive parabolic arc!
+      leapPhase = Math.sin(leapProgress * Math.PI);
+    } else if (time >= 2.0 && time < 2.2) {
+      // Squish impact landing
+      leapPhase = -0.15;
+    }
+
+    const py = fy0 - jumpY;
 
     ctx.save();
     ctx.translate(fx, py);
 
-    // 1. Bent Hind Legs & Webbed Feet
+    // 1. Bent Hind Legs & Webbed Feet (Stretch backward during leap, retract when sitting)
     ctx.fillStyle = '#689F38'; // Darker lime green for legs
     ctx.beginPath();
-    ctx.ellipse(-size * 0.85, size * 0.28, size * 0.52, size * 0.3, -0.3, 0, Math.PI * 2);
-    ctx.ellipse(size * 0.85, size * 0.28, size * 0.52, size * 0.3, 0.3, 0, Math.PI * 2);
+    ctx.ellipse(-size * 0.85, size * (0.28 + leapPhase * 0.2), size * 0.52, size * (0.3 + leapPhase * 0.15), -0.3 - leapPhase * 0.4, 0, Math.PI * 2);
+    ctx.ellipse(size * 0.85, size * (0.28 + leapPhase * 0.2), size * 0.52, size * (0.3 + leapPhase * 0.15), 0.3 + leapPhase * 0.4, 0, Math.PI * 2);
     ctx.fill();
 
-    // 2. Main Lime Green Body & Head
-    ctx.fillStyle = '#7CB342'; // Bright tree frog green
+    // 2. Main Lime Green Body & Head (Lengthens slightly mid-air)
+    ctx.fillStyle = '#7CB342';
     ctx.beginPath();
-    ctx.ellipse(0, size * 0.08, size * 0.82, size * 0.7, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, size * 0.08, size * 0.82, size * (0.7 + leapPhase * 0.15), 0, 0, Math.PI * 2);
     ctx.fill();
 
     // 3. Light Cream/Lime Belly Patch
@@ -642,25 +758,25 @@ export class Renderer {
     // 4. Prominent Bulging Eye Sockets
     ctx.fillStyle = '#7CB342';
     ctx.beginPath();
-    ctx.arc(-size * 0.46, -size * 0.42, size * 0.4, 0, Math.PI * 2);
-    ctx.arc(size * 0.46, -size * 0.42, size * 0.4, 0, Math.PI * 2);
+    ctx.arc(-size * 0.46, -size * (0.42 + leapPhase * 0.1), size * 0.4, 0, Math.PI * 2);
+    ctx.arc(size * 0.46, -size * (0.42 + leapPhase * 0.1), size * 0.4, 0, Math.PI * 2);
     ctx.fill();
 
     // 5. Large Glossy Black Pupils & White Light Reflection Highlights
     ctx.fillStyle = '#212121'; // Black Pupil
     ctx.beginPath();
-    ctx.arc(-size * 0.46, -size * 0.42, size * 0.3, 0, Math.PI * 2);
-    ctx.arc(size * 0.46, -size * 0.42, size * 0.3, 0, Math.PI * 2);
+    ctx.arc(-size * 0.46, -size * (0.42 + leapPhase * 0.1), size * 0.3, 0, Math.PI * 2);
+    ctx.arc(size * 0.46, -size * (0.42 + leapPhase * 0.1), size * 0.3, 0, Math.PI * 2);
     ctx.fill();
 
     // White Glossy Glint
     ctx.fillStyle = '#FFFFFF';
     ctx.beginPath();
-    ctx.arc(-size * 0.54, -size * 0.5, size * 0.11, 0, Math.PI * 2);
-    ctx.arc(size * 0.38, -size * 0.5, size * 0.11, 0, Math.PI * 2);
+    ctx.arc(-size * 0.54, -size * (0.5 + leapPhase * 0.1), size * 0.11, 0, Math.PI * 2);
+    ctx.arc(size * 0.38, -size * (0.5 + leapPhase * 0.1), size * 0.11, 0, Math.PI * 2);
     ctx.fill();
 
-    // 6. Cute Smiling Mouth & Nostrils
+    // 6. Cute Smiling Mouth
     ctx.strokeStyle = '#33691E';
     ctx.lineWidth = 1.6;
     ctx.beginPath();
@@ -904,10 +1020,11 @@ export class Renderer {
     const ctx = this.ctx;
     const vw = window.innerWidth, vh = window.innerHeight;
     const mobile = vw <= 640;
-    const size = mobile ? 80 : 110;
+    const size = mobile ? 76 : 110;
     const margin = mobile ? 10 : 16;
     const x = vw - size - margin;
-    const y = vh - size - (mobile ? 90 : 55);
+    // On mobile, position minimap in the top-right area under leaderboard so touch controls NEVER cover it!
+    const y = mobile ? 115 : vh - size - 55;
 
     ctx.save();
     ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';

@@ -296,16 +296,26 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .touch-joystick.boosting { opacity: 0.8; box-shadow: 0 0 16px 4px rgba(111,224,141,0.7); border-color: #1f9d47; }
 .touch-knob { position: absolute; top: 50%; left: 50%; width: 46px; height: 46px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #6fe08d, var(--green-deep)); transform: translate(-50%,-50%); box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
 /* §4 + §5 Right-side action cluster — Boost / Ability / Zoom / Minimap */
-.touch-actions { position: absolute; bottom: 26px; right: 18px; display: none; flex-direction: column; gap: 12px; align-items: flex-end; z-index: 14; }
-.touch-row { display: flex; gap: 12px; align-items: center; }
-.touch-btn { position: relative; width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; font-size: 1.5rem; color: #fff; touch-action: none; box-shadow: var(--shadow-lg); border: 2px solid rgba(255,255,255,0.5); opacity: 0.9; }
+.touch-actions { position: absolute; bottom: calc(20px + env(safe-area-inset-bottom)); right: calc(16px + env(safe-area-inset-right)); display: none; flex-direction: column; gap: 10px; align-items: flex-end; z-index: 14; }
+.touch-row { display: flex; gap: 10px; align-items: center; }
+.touch-btn { position: relative; width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center; font-size: 1.4rem; color: #fff; touch-action: none; box-shadow: var(--shadow-lg); border: 2px solid rgba(255,255,255,0.6); opacity: 0.9; }
 .touch-btn.boost { background: radial-gradient(circle at 40% 30%, #6fe08d, #1f9d47); }
 .touch-btn.ability { background: radial-gradient(circle at 40% 30%, #b0a3f7, #6d55d6); }
-.touch-btn.zoom { width: 50px; height: 50px; font-size: 1.15rem; background: radial-gradient(circle at 40% 30%, #7fd0f5, #2f80b8); }
-.touch-btn.mini { width: 50px; height: 50px; font-size: 1.15rem; background: radial-gradient(circle at 40% 30%, #f5c77f, #b8842f); }
+.touch-btn.zoom { width: 44px; height: 44px; font-size: 1.05rem; background: radial-gradient(circle at 40% 30%, #7fd0f5, #2f80b8); }
+.touch-btn.mini { width: 44px; height: 44px; font-size: 1.05rem; background: radial-gradient(circle at 40% 30%, #f5c77f, #b8842f); }
 .touch-btn .tz-label { position: absolute; bottom: -14px; font-size: 0.5rem; font-weight: 800; color: var(--ink); background: rgba(255,255,255,0.85); border-radius: 6px; padding: 0 4px; }
 .touch-btn:active { transform: scale(0.92); }
 .touch-btn.cooling { opacity: 0.5; }
+
+/* Mobile Layout Responsive Enhancements */
+@media (max-width: 640px) {
+  .hud-leaderboard { top: 10px; right: 10px; width: 120px; padding: 6px 8px; font-size: 0.68rem; }
+  .touch-joystick { bottom: calc(16px + env(safe-area-inset-bottom)); left: calc(14px + env(safe-area-inset-left)); width: 104px; height: 104px; }
+  .touch-actions { bottom: calc(16px + env(safe-area-inset-bottom)); right: calc(14px + env(safe-area-inset-right)); gap: 8px; }
+  .touch-btn { width: 48px; height: 48px; font-size: 1.25rem; }
+  .touch-btn.zoom, .touch-btn.mini { width: 40px; height: 40px; font-size: 0.95rem; }
+}
+
 /* Minimap toggle hides the HUD panels for an unobstructed view */
 .hud.mini-hidden .hud-leaderboard, .hud.mini-hidden .hud-event, .hud.mini-hidden .team-scores { opacity: 0; pointer-events: none; }
 

@@ -110,6 +110,7 @@ const OBSTACLE_TYPES: Array<{ type: string; icon: string; radius: number; blocki
   { type: 'log', icon: '🪵', radius: 30, blocking: true },
   { type: 'pond', icon: '🪷', radius: 50, blocking: false },      // water — passable
   { type: 'hill', icon: '⛰️', radius: 46, blocking: true },
+  { type: 'cave', icon: '🕳️', radius: 58, blocking: true },      // cave entrance
 ];
 
 const BOT_NAMES = ['AlphaViper', 'KobraX', 'Slinky', 'GigaPython', 'NeonSnake', 'ShadowSerpent', 'TitanApex'];
