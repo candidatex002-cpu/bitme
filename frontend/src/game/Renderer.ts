@@ -168,14 +168,14 @@ export class Renderer {
       const maxDim = Math.max(vw, vh);
       let baseZoom = 18 / Math.max(12, size);
 
-      // Screen-adaptive scale: ref 360px → 1.0 (so phones are baseline, not zoomed out)
-      const screenScale = Math.max(0.75, Math.min(1.3, minDim / 360));
+      // Screen-adaptive scale: ref 360px → 1.0 (so mobile phones are baseline, clear and prominent)
+      const screenScale = Math.max(0.85, Math.min(1.4, minDim / 360));
 
       // Landscape compensation — wider aspect ratios zoom out slightly
       const aspectRatio = maxDim / minDim;
       const landscapeBoost = aspectRatio > 1.6 ? 0.92 : 1.0;
 
-      let targetZoom = Math.max(0.45, Math.min(1.6,
+      let targetZoom = Math.max(0.55, Math.min(1.7,
         baseZoom * screenScale * landscapeBoost * this.userZoom
       ));
       this.zoom += (targetZoom - this.zoom) * 0.08;
@@ -670,14 +670,17 @@ export class Renderer {
     const ctx = this.ctx;
     const vw = window.innerWidth, vh = window.innerHeight;
     const minDim = Math.min(vw, vh);
+    const isMobile = minDim <= 640 || ('ontouchstart' in window);
 
-    // Proportional minimap: 16% of shortest viewport dimension, clamped to [70, 140]px
-    const size = Math.max(70, Math.min(140, Math.floor(minDim * 0.16)));
-    const margin = Math.max(8, Math.floor(minDim * 0.02));
+    // Proportional minimap: 16% of shortest viewport dimension, clamped to [70, 130]px
+    const size = Math.max(70, Math.min(130, Math.floor(minDim * (isMobile ? 0.18 : 0.13))));
+    const margin = Math.max(10, Math.floor(minDim * 0.025));
 
     const x = vw - size - margin;
-    // Always bottom-right — never overlaps leaderboard (top-right)
-    const y = vh - size - margin - (vh > vw ? 20 : 0); // extra padding on portrait
+    // Mobile/touch: stacked neatly above touch buttons in bottom-right (y = vh - size - 148). Desktop: bottom-right margin.
+    const y = isMobile
+      ? vh - size - Math.max(140, Math.floor(vh * 0.18))
+      : vh - size - margin;
 
     ctx.save();
     ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
