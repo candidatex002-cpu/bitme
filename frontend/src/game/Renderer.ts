@@ -275,7 +275,7 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Render Peaceful Safe Sanctuary Zone (No PvP / Hide Safely Inside) */
+  /** Render Peaceful Safe Sanctuary Zone (No PvP / Hide Safely Inside) — Clean & Unobstructed */
   private renderSanctuaryZone(s: { centerX: number; centerY: number; radius: number; label: string; icon: string }) {
     const ctx = this.ctx;
     const cx = this.wrapNear(s.centerX, this.cameraPos.x); // §6 nearest wrapped copy
@@ -283,22 +283,8 @@ export class Renderer {
     ctx.save();
     ctx.beginPath();
     ctx.arc(cx, cy, s.radius, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(167, 243, 208, 0.28)';
+    ctx.fillStyle = 'rgba(167, 243, 208, 0.25)';
     ctx.fill();
-    // Removed thin dashed green boundary line!
-
-    // Sanctuary Label — Rendered cleanly in the exact CENTER MIDDLE of the circle
-    ctx.fillStyle = 'rgba(6, 78, 59, 0.88)';
-    ctx.beginPath();
-    ctx.roundRect(cx - 150, cy - 18, 300, 36, 18);
-    ctx.fill();
-
-    ctx.font = '800 13px Outfit, sans-serif';
-    ctx.fillStyle = '#ECFDF5';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(`${s.icon || '🛡️'} ${s.label || 'Safe Sanctuary'} · NO PVP SAFE ZONE`, cx, cy);
-
     ctx.restore();
   }
 

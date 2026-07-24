@@ -84,14 +84,5 @@ export function renderWormholeAsset(
   ctx.lineWidth = 2.5;
   ctx.stroke();
 
-  // Title Label Tag
-  ctx.rotate(spin);
-  ctx.font = 'bold 13px Outfit, sans-serif';
-  ctx.fillStyle = '#FFFFFF';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.shadowColor = '#C026D3';
-  ctx.shadowBlur = 8;
-  ctx.fillText(`🌀 ${label || 'Wormhole Portal'}`, 0, 58);
-
   ctx.restore();
 }
