@@ -483,6 +483,7 @@ export class GameClient {
           // Milestone-gated growth (matches the server): grow only past 500, small caps so
           // the snake never fills the screen. Radius jumps at 500/1500/3000/5000/8000.
           s.radius = s.score >= 8000 ? 23 : s.score >= 5000 ? 21 : s.score >= 3000 ? 19 : s.score >= 1500 ? 17 : s.score >= 500 ? 15 : 13;
+          s.stage = s.score >= 5000 ? 'Titan' : s.score >= 3000 ? 'Elite' : s.score >= 1500 ? 'Adult' : s.score >= 500 ? 'Young' : 'Baby';
           s.length = s.score < 500 ? 9 : Math.min(40, 9 + Math.floor((s.score - 500) / 220));
           while (s.body.length < s.length) {
             const last = s.body[s.body.length - 1] || s.head;
