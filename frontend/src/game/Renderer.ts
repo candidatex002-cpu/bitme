@@ -88,6 +88,11 @@ export class Renderer {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
     this.resize();
     window.addEventListener('resize', () => this.resize());
+    window.addEventListener('orientationchange', () => setTimeout(() => this.resize(), 100));
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => this.resize());
+      ro.observe(document.body);
+    }
   }
 
   // Re-bind to the current canvas element. The app rebuilds root.innerHTML on every
@@ -101,11 +106,13 @@ export class Renderer {
   }
 
   public resize() {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    this.canvas.width = window.innerWidth * dpr;
-    this.canvas.height = window.innerHeight * dpr;
-    this.canvas.style.width = window.innerWidth + 'px';
-    this.canvas.style.height = window.innerHeight + 'px';
+    const dpr = Math.min(2.5, window.devicePixelRatio || 1);
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    this.canvas.width = Math.floor(w * dpr);
+    this.canvas.height = Math.floor(h * dpr);
+    this.canvas.style.width = w + 'px';
+    this.canvas.style.height = h + 'px';
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
@@ -147,13 +154,16 @@ export class Renderer {
       this.cameraPos.x = this.wrapRaw(this.cameraPos.x + this.wrapDeltaRaw(camX - this.cameraPos.x) * 0.15);
       this.cameraPos.y = this.wrapRaw(this.cameraPos.y + this.wrapDeltaRaw(camY - this.cameraPos.y) * 0.15);
 
-      // Adaptive zoom: keep the snake a consistent, visible size on screen. As it grows
-      // (radius + length), zoom OUT so it never fills the view; zoom out further on phones.
+      // Dynamic Auto-Scaling Viewport Zoom for all device sizes & resolutions:
+      // Keep the snake perfectly proportioned regardless of phone, tablet, or desktop resolution.
       const size = ((target as any).radius ?? 16) + ((target as any).length ?? 12) * 0.12;
-      const isMobile = Math.min(window.innerWidth, window.innerHeight) <= 820;
-      let baseZoom = 17 / Math.max(12, size);   // bigger snake → smaller zoom
-      if (isMobile) baseZoom *= 0.8;            // reveal more of the world on small screens
-      const targetZoom = Math.max(0.42, Math.min(1.5, baseZoom * this.userZoom));
+      const minDim = Math.min(vw, vh);
+      const isMobile = minDim <= 640;
+      let baseZoom = 18 / Math.max(12, size); // bigger snake → smaller zoom
+      
+      const screenScale = Math.max(0.72, Math.min(1.15, minDim / 440));
+      let targetZoom = Math.max(0.4, Math.min(1.5, baseZoom * screenScale * this.userZoom));
+      if (isMobile) targetZoom *= 0.85; // reveal more world on small screens
       this.zoom += (targetZoom - this.zoom) * 0.08; // smooth interpolation, no shake
     }
 
@@ -1019,12 +1029,17 @@ export class Renderer {
   private renderMinimap(state: GameStateTick, targetUserId: string) {
     const ctx = this.ctx;
     const vw = window.innerWidth, vh = window.innerHeight;
-    const mobile = vw <= 640;
-    const size = mobile ? 76 : 110;
-    const margin = mobile ? 10 : 16;
+    const isMobile = vw <= 640 || vh <= 540;
+
+    // Dynamically auto-scale minimap size based on physical screen dimensions across any device
+    const size = isMobile 
+      ? Math.max(68, Math.min(84, Math.floor(vw * 0.2))) 
+      : Math.max(88, Math.min(114, Math.floor(vw * 0.1)));
+
+    const margin = isMobile ? 8 : 14;
     const x = vw - size - margin;
-    // On mobile, position minimap in the top-right area under leaderboard so touch controls NEVER cover it!
-    const y = mobile ? 115 : vh - size - 55;
+    // On mobile devices, place minimap in the top-right area under leaderboard so touch controls NEVER cover it!
+    const y = isMobile ? (vh <= 500 ? 45 : 110) : vh - size - 50;
 
     ctx.save();
     ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
