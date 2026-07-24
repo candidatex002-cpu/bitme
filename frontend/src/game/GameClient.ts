@@ -31,6 +31,7 @@ export interface SnakeData {
   kills: number;
   shieldTimer: number;
   speedBoostTimer: number;
+  superTimer?: number; // 🍄 super power (invincible + faster)
   abilityCooldown: number;
   abilityActiveTimer: number;
   team?: 'red' | 'blue';
@@ -103,11 +104,11 @@ const FOOD_TYPES = [
 const OBSTACLE_TYPES: Array<{ type: string; icon: string; radius: number; blocking: boolean }> = [
   { type: 'tree', icon: '🌳', radius: 34, blocking: true },
   { type: 'rock', icon: '🪨', radius: 30, blocking: true },
-  { type: 'bush', icon: '🌲', radius: 28, blocking: false },
+  { type: 'bush', icon: '🌲', radius: 28, blocking: true },
   { type: 'cactus', icon: '🌵', radius: 24, blocking: true },
-  { type: 'flowerbed', icon: '🌼', radius: 26, blocking: false },
-  { type: 'log', icon: '🪵', radius: 26, blocking: false },
-  { type: 'pond', icon: '🪷', radius: 46, blocking: false },
+  { type: 'flowerbed', icon: '🌼', radius: 26, blocking: false }, // decorative — passable
+  { type: 'log', icon: '🪵', radius: 26, blocking: true },
+  { type: 'pond', icon: '🪷', radius: 46, blocking: false },      // water — passable
   { type: 'hill', icon: '⛰️', radius: 40, blocking: true },
 ];
 
@@ -412,12 +413,22 @@ export class GameClient {
     state.tick++;
     state.timestamp = Date.now();
 
+    // Tick down power timers for every snake (§power)
+    for (const s of state.snakes) {
+      if (s.shieldTimer > 0) s.shieldTimer = Math.max(0, s.shieldTimer - 0.033);
+      if (s.speedBoostTimer > 0) s.speedBoostTimer = Math.max(0, s.speedBoostTimer - 0.033);
+      if ((s.superTimer ?? 0) > 0) s.superTimer = Math.max(0, (s.superTimer ?? 0) - 0.033);
+    }
+
     // 1. Update Player Snake Movement (frozen while the app is backgrounded — §12)
     const me = state.snakes.find(s => s.id === this.localUserId);
     if (me && me.isAlive && !this.localPaused) {
       me.angle = this.localInput.angle;
       me.boosting = this.localInput.boosting && me.score > 20;
-      const speed = me.boosting ? 7.5 : 4.0;
+      // Match the authoritative server feel (~240 u/s base, 1.7x boost) at 30 fps.
+      let speed = me.boosting ? 13.6 : 8;
+      if ((me.speedBoostTimer ?? 0) > 0) speed *= 1.4; // ⚡ speed power
+      if ((me.superTimer ?? 0) > 0) speed *= 1.5;       // 🍄 super power
       if (me.boosting) me.score = Math.max(10, me.score - 0.2);
 
       // §6 wrap-around movement — no borders
@@ -427,15 +438,28 @@ export class GameClient {
       if (me.abilityCooldown > 0) me.abilityCooldown = Math.max(0, me.abilityCooldown - 0.033);
     }
 
-    // 2. Update Bot AI Movement
+    // 2. Update Bot AI Movement — seek nearest food (toroidal), else wander
     for (const b of state.snakes) {
       if (b.id === this.localUserId || !b.isAlive) continue;
-      // Random direction change occasionally or steer towards food
-      if (Math.random() < 0.04) {
+      let tx = 0, ty = 0, best = 700 * 700, found = false;
+      for (const f of state.food) {
+        const dx = this.wrapDeltaLocal(f.x - b.head.x);
+        const dy = this.wrapDeltaLocal(f.y - b.head.y);
+        const d = dx * dx + dy * dy;
+        if (d < best) { best = d; tx = dx; ty = dy; found = true; }
+      }
+      if (found) {
+        const target = Math.atan2(ty, tx);
+        let diff = target - b.angle;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        b.angle += diff * 0.08;
+      } else if (Math.random() < 0.04) {
         b.angle += (Math.random() - 0.5) * 1.2;
       }
-      b.head.x = this.wrapLocal(b.head.x + Math.cos(b.angle) * 3.5);
-      b.head.y = this.wrapLocal(b.head.y + Math.sin(b.angle) * 3.5);
+      const bSpeed = (b.speedBoostTimer ?? 0) > 0 ? 9 : 6.5; // a touch slower than the player
+      b.head.x = this.wrapLocal(b.head.x + Math.cos(b.angle) * bSpeed);
+      b.head.y = this.wrapLocal(b.head.y + Math.sin(b.angle) * bSpeed);
       this.followBodyLocal(b);
     }
 
@@ -456,11 +480,18 @@ export class GameClient {
         const dy = this.wrapDeltaLocal(s.head.y - f.y);
         if (dx * dx + dy * dy < (s.radius + 14) * (s.radius + 14)) {
           s.score += f.value;
+          s.level = Math.floor(s.score / 250) + 1; // drives level-scaled power durations
           s.length = Math.min(60, 14 + Math.floor(s.score / 20));
           while (s.body.length < s.length) {
             const last = s.body[s.body.length - 1] || s.head;
             s.body.push({ x: last.x, y: last.y });
           }
+          // §power apply level-scaled buffs (⚡ speed, 🛡️ shield, 🍄 super) — were ignored before.
+          // 5s at level 1, +1s every 8 levels, up to 10s (matches the server formula).
+          const dur = Math.min(10, 5 + Math.floor(s.level / 8));
+          if (f.type === 'shield') s.shieldTimer = Math.max(s.shieldTimer, dur);
+          else if (f.type === 'speed') s.speedBoostTimer = Math.max(s.speedBoostTimer, dur);
+          else if (f.type === 'mushroom') s.superTimer = Math.max(s.superTimer ?? 0, dur);
           state.food.splice(i, 1);
           state.food.push(this.genFood(`f_${Date.now()}_${i}`));
         }
@@ -481,8 +512,8 @@ export class GameClient {
         const clashDist = a.radius + b.radius;
         if (dx * dx + dy * dy >= clashDist * clashDist) continue; // heads not touching
 
-        const aSafe = a.shieldTimer > 0;
-        const bSafe = b.shieldTimer > 0;
+        const aSafe = a.shieldTimer > 0 || (a.superTimer ?? 0) > 0;
+        const bSafe = b.shieldTimer > 0 || (b.superTimer ?? 0) > 0;
         if (a.score > b.score) {
           if (!bSafe) this.eliminateLocal(b, a);
         } else if (b.score > a.score) {
@@ -527,20 +558,31 @@ export class GameClient {
   private updateLocalStars(dt: number) {
     if (!this.localState) return;
     const food = this.localState.food;
+    const snakes = this.localState.snakes;
     let count = 0;
     for (const f of food) {
       if (f.type !== 'star') continue;
       count++;
-      f.wanderTimer = (f.wanderTimer ?? 0) - dt;
-      if (f.wanderTimer <= 0) {
-        if (Math.random() < 0.3) { f.vx = 0; f.vy = 0; }
-        else { const a = Math.random() * Math.PI * 2; const spd = 22 + Math.random() * 26; f.vx = Math.cos(a) * spd; f.vy = Math.sin(a) * spd; }
-        f.wanderTimer = 1.4 + Math.random() * 2.6;
+      // Evasive: dart away from the nearest snake head; otherwise drift smoothly.
+      let fleeX = 0, fleeY = 0, nearestSq = Infinity;
+      for (const s of snakes) {
+        if (!s.isAlive) continue;
+        const dx = this.wrapDeltaLocal(f.x - s.head.x);
+        const dy = this.wrapDeltaLocal(f.y - s.head.y);
+        const d = dx * dx + dy * dy;
+        if (d < nearestSq) { nearestSq = d; fleeX = dx; fleeY = dy; }
       }
-      f.x += (f.vx ?? 0) * dt; f.y += (f.vy ?? 0) * dt;
-      const m = 80;
-      if (f.x < m) { f.x = m; f.vx = Math.abs(f.vx ?? 0); } else if (f.x > 3200 - m) { f.x = 3200 - m; f.vx = -Math.abs(f.vx ?? 0); }
-      if (f.y < m) { f.y = m; f.vy = Math.abs(f.vy ?? 0); } else if (f.y > 3200 - m) { f.y = 3200 - m; f.vy = -Math.abs(f.vy ?? 0); }
+      if (nearestSq < 240 * 240 && nearestSq > 1) {
+        const dist = Math.sqrt(nearestSq);
+        f.vx = (fleeX / dist) * 5.8;  // per-tick, < player 8 → catchable
+        f.vy = (fleeY / dist) * 5.8;
+        f.wanderTimer = 0.25;
+      } else {
+        f.wanderTimer = (f.wanderTimer ?? 0) - dt;
+        if (f.wanderTimer <= 0) { const a = Math.random() * Math.PI * 2; const spd = 1.3 + Math.random() * 1.4; f.vx = Math.cos(a) * spd; f.vy = Math.sin(a) * spd; f.wanderTimer = 1.2 + Math.random() * 2; }
+      }
+      f.x = this.wrapLocal(f.x + (f.vx ?? 0));
+      f.y = this.wrapLocal(f.y + (f.vy ?? 0));
     }
     this.starCooldown -= dt;
     if (count < 16 && this.starCooldown <= 0 && count < 20) { food.push(this.genStar(`star_${Date.now()}`)); this.starCooldown = 1.5; }

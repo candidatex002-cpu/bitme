@@ -128,6 +128,7 @@ class AnacondaPark {
 
   // input
   private angle = 0; private boosting = false; private keys: Record<string, boolean> = {};
+  private keyBoost = false; private joyBoost = false; // boost sources (keyboard/mouse/button vs joystick edge)
   private sendTimer: any = null; private joyActive = false;
   // §4 fixed joystick + §5 pinch-zoom touch tracking
   private joyId: number | null = null;
@@ -170,7 +171,7 @@ class AnacondaPark {
   }
   private autoPause() {
     if (this.screen !== 'play') return;
-    this.boosting = false;
+    this.boosting = false; this.keyBoost = false; this.joyBoost = false;
     this.client.notifyPause(true);
     this.saveSession();
     this.setScreen('pause');
@@ -338,10 +339,8 @@ class AnacondaPark {
 
   private startMatch() {
     this.matchStart = Date.now(); this.lastAlive = true; this.visitedAreas.clear(); this.summary = null;
-    this.setScreen('play');
+    this.setScreen('play'); // render() creates/attaches the renderer to the live canvas
     audio.startMusic();
-    const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
-    if (canvas) this.renderer = new Renderer(canvas);
     this.client.onStateUpdate = (s) => this.onTick(s);
     this.client.onRespawnResult = (r) => this.onRespawn(r);
     const region = this.matchType === 'local' ? 'Perambur' : this.selectedRegion.replace(/^[^\w]+/, '').trim() || 'Global';
@@ -463,19 +462,19 @@ class AnacondaPark {
     if (this.sendTimer) { clearInterval(this.sendTimer); this.sendTimer = null; }
   }
   private onMouseMove = (e: MouseEvent) => { if (this.screen !== 'play' || this.joyActive || this.isWasd()) return; this.angle = Math.atan2(e.clientY - innerHeight / 2, e.clientX - innerWidth / 2); };
-  private onMouseDown = (e: MouseEvent) => { if (this.screen === 'play' && !(e.target as HTMLElement)?.closest('.hud-panel,.touch-btn,.hud-pause')) this.boosting = true; };
-  private onMouseUp = () => { this.boosting = false; };
+  private onMouseDown = (e: MouseEvent) => { if (this.screen === 'play' && !(e.target as HTMLElement)?.closest('.hud-panel,.touch-btn,.hud-pause')) this.keyBoost = true; };
+  private onMouseUp = () => { this.keyBoost = false; };
   private onWheel = (e: WheelEvent) => { if (this.screen !== 'play') return; e.preventDefault(); this.renderer?.adjustZoom(e.deltaY < 0 ? 1.08 : 0.926); };
   private onKeyDown = (e: KeyboardEvent) => {
     if (this.screen !== 'play') return;
     const k = e.key.toLowerCase();
     if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) { this.keys[k] = true; e.preventDefault(); }
-    if (k === 'shift') this.boosting = true;
+    if (k === 'shift') this.keyBoost = true;
     if (e.code === 'Space') { e.preventDefault(); this.client.activateAbility(); audio.playClick(); }
     if (k === '+' || k === '=') this.renderer?.adjustZoom(1.1);
     if (k === '-' || k === '_') this.renderer?.adjustZoom(0.9);
   };
-  private onKeyUp = (e: KeyboardEvent) => { const k = e.key.toLowerCase(); if (this.keys[k] !== undefined) this.keys[k] = false; if (k === 'shift') this.boosting = false; };
+  private onKeyUp = (e: KeyboardEvent) => { const k = e.key.toLowerCase(); if (this.keys[k] !== undefined) this.keys[k] = false; if (k === 'shift') this.keyBoost = false; };
   private isWasd() { return this.keys['w'] || this.keys['a'] || this.keys['s'] || this.keys['d'] || this.keys['arrowup'] || this.keys['arrowdown'] || this.keys['arrowleft'] || this.keys['arrowright']; }
   private pumpInput() {
     if (this.screen !== 'play') return;
@@ -485,6 +484,7 @@ class AnacondaPark {
       if (this.keys['a'] || this.keys['arrowleft']) dx -= 1; if (this.keys['d'] || this.keys['arrowright']) dx += 1;
       if (dx || dy) this.angle = Math.atan2(dy, dx);
     }
+    this.boosting = this.keyBoost || this.joyBoost; // combine all boost sources
     this.client.sendInput(this.angle, this.boosting);
   }
 
@@ -548,12 +548,17 @@ class AnacondaPark {
     const kx = Math.cos(this.angle) * clamped, ky = Math.sin(this.angle) * clamped;
     const knob = document.getElementById('touch-knob');
     if (knob) knob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
-    document.getElementById('touch-joystick')?.classList.add('active');
+    // Push the joystick to its outer edge to BOOST (mobile drag-to-go-fast).
+    this.joyBoost = clamped >= this.joyRadius * 0.9;
+    const joy = document.getElementById('touch-joystick');
+    joy?.classList.add('active');
+    joy?.classList.toggle('boosting', this.joyBoost);
   }
   private resetKnob() {
     const knob = document.getElementById('touch-knob');
     if (knob) knob.style.transform = 'translate(-50%,-50%)';
-    document.getElementById('touch-joystick')?.classList.remove('active');
+    this.joyBoost = false;
+    document.getElementById('touch-joystick')?.classList.remove('active', 'boosting');
   }
 
   // ---- On-screen action buttons (rebound on each HUD render) --------------
@@ -562,8 +567,8 @@ class AnacondaPark {
     // on-screen action buttons, which are recreated every time the HUD is rendered.
     const boost = document.getElementById('touch-boost');
     if (boost) {
-      const on = (e: Event) => { e.preventDefault(); e.stopPropagation(); this.boosting = true; };
-      const off = (e: Event) => { e.stopPropagation(); this.boosting = false; };
+      const on = (e: Event) => { e.preventDefault(); e.stopPropagation(); this.keyBoost = true; };
+      const off = (e: Event) => { e.stopPropagation(); this.keyBoost = false; };
       boost.addEventListener('touchstart', on, { passive: false });
       boost.addEventListener('touchend', off); boost.addEventListener('touchcancel', off);
       boost.addEventListener('mousedown', on); boost.addEventListener('mouseup', off);
@@ -594,6 +599,14 @@ class AnacondaPark {
     const cd = me.abilityCooldown ?? 0;
     const badge = document.getElementById('ability-badge'); const cdEl = document.getElementById('ability-cd');
     if (badge && cdEl) { badge.classList.toggle('ready', cd <= 0); cdEl.innerText = cd <= 0 ? 'READY' : `${Math.ceil(cd)}s`; }
+    // Active power status (🍄 super / 🛡️ shield / ⚡ speed) with live countdown
+    const powers: string[] = [];
+    const superT = (me as any).superTimer ?? 0;
+    if (superT > 0) powers.push(`<span class="pwr super">🍄 ${Math.ceil(superT)}s</span>`);
+    if ((me.shieldTimer ?? 0) > 0) powers.push(`<span class="pwr shield">🛡️ ${Math.ceil(me.shieldTimer)}s</span>`);
+    if ((me.speedBoostTimer ?? 0) > 0) powers.push(`<span class="pwr speed">⚡ ${Math.ceil(me.speedBoostTimer)}s</span>`);
+    const ps = document.getElementById('power-status');
+    if (ps) { if (powers.length) { ps.style.display = 'flex'; ps.innerHTML = powers.join(''); } else ps.style.display = 'none'; }
     document.getElementById('touch-ability')?.classList.toggle('cooling', cd > 0);
     const evt = document.getElementById('hud-event');
     if (evt) { if (state.currentEvent) { evt.style.display = 'block'; evt.innerText = `${state.currentEvent.icon} ${state.currentEvent.timerSeconds}s`; } else evt.style.display = 'none'; }
@@ -615,7 +628,13 @@ class AnacondaPark {
     else if (this.screen === 'ad-reward') body = this.renderAd();
     this.root.innerHTML = `<canvas id="game-canvas"></canvas>${body}`;
     this.bind();
-    if (this.screen === 'play' || this.screen === 'pause' || this.screen === 'respawn') this.bindTouch();
+    if (this.screen === 'play' || this.screen === 'pause' || this.screen === 'respawn') {
+      // innerHTML above replaced the <canvas> — re-point the renderer at the live element
+      // (or create it) so we never draw to a detached canvas (blank-screen fix).
+      const canvas = document.getElementById('game-canvas') as HTMLCanvasElement | null;
+      if (canvas) { if (this.renderer) this.renderer.attach(canvas); else this.renderer = new Renderer(canvas); }
+      this.bindTouch();
+    }
   }
 
   // ------------------------------------------------------------- APP SHELL
@@ -1008,6 +1027,7 @@ class AnacondaPark {
           <div class="hud-hp"><span class="hud-hp-fill" id="hs-health" style="width:100%"></span><span class="hud-hp-txt" id="hv-health">100</span></div>
         </div>
       </div>
+      <div class="power-status" id="power-status" style="display:none;"></div>
       <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
       <div class="team-scores" id="team-scores" style="display:none;"></div>
       <div class="hud-leaderboard hud-panel"><h4>🏆 Top 5</h4><div id="hud-lb-rows"></div></div>

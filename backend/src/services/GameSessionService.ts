@@ -21,14 +21,15 @@ interface CollectibleTemplate {
   color: string;
   weight: number;
   hpRestore?: number;
-  buff?: 'shield' | 'speed';
+  buff?: 'shield' | 'speed' | 'super';
   buffDuration?: number;
 }
 
 // Power-up table — values mirror the game design board.
 const COLLECTIBLE_TABLE: CollectibleTemplate[] = [
   { type: 'cherry', icon: '🍒', value: 10, color: '#E63950', weight: 30, hpRestore: 5 },
-  { type: 'mushroom', icon: '🍄', value: 15, color: '#E85D75', weight: 22, hpRestore: 4 },
+  // 🍄 Mushroom is the rare "super" power (Mario-style): invincible + faster for a while.
+  { type: 'mushroom', icon: '🍄', value: 15, color: '#E85D75', weight: 7, hpRestore: 4, buff: 'super', buffDuration: 6 },
   { type: 'apple', icon: '🍎', value: 25, color: '#EF3E36', weight: 20, hpRestore: 8 },
   { type: 'frog', icon: '🐸', value: 30, color: '#5FB85A', weight: 16 },
   // ⭐ stars are NOT spawned here — they are a dedicated set of moving collectibles (§3)
@@ -52,11 +53,11 @@ const STAGE_THRESHOLDS: Array<{ stage: GrowthStage; min: number; radius: number;
 const OBSTACLE_TEMPLATES: Array<{ type: ObstacleType; icon: string; radius: number; blocking: boolean }> = [
   { type: 'tree', icon: '🌳', radius: 34, blocking: true },
   { type: 'rock', icon: '🪨', radius: 30, blocking: true },
-  { type: 'bush', icon: '🌲', radius: 28, blocking: false },
+  { type: 'bush', icon: '🌲', radius: 28, blocking: true },
   { type: 'cactus', icon: '🌵', radius: 24, blocking: true },
-  { type: 'flowerbed', icon: '🌼', radius: 26, blocking: false },
-  { type: 'log', icon: '🪵', radius: 26, blocking: false },
-  { type: 'pond', icon: '🪷', radius: 46, blocking: false },
+  { type: 'flowerbed', icon: '🌼', radius: 26, blocking: false }, // decorative — passable
+  { type: 'log', icon: '🪵', radius: 26, blocking: true },
+  { type: 'pond', icon: '🪷', radius: 46, blocking: false },      // water — passable
   { type: 'hill', icon: '⛰️', radius: 40, blocking: true },
 ];
 
@@ -313,6 +314,7 @@ export class GameSessionService {
     // Tick down timers
     if (snake.shieldTimer > 0) snake.shieldTimer = Math.max(0, snake.shieldTimer - dt);
     if (snake.speedBoostTimer > 0) snake.speedBoostTimer = Math.max(0, snake.speedBoostTimer - dt);
+    if (snake.superTimer && snake.superTimer > 0) snake.superTimer = Math.max(0, snake.superTimer - dt);
     if (snake.abilityCooldown > 0) snake.abilityCooldown = Math.max(0, snake.abilityCooldown - dt);
     if (snake.abilityActiveTimer > 0) snake.abilityActiveTimer = Math.max(0, snake.abilityActiveTimer - dt);
 
@@ -332,6 +334,7 @@ export class GameSessionService {
     let speed = base;
     if (snake.boosting) speed *= this.BOOST_MULT;
     if (snake.speedBoostTimer > 0) speed *= 1.4;
+    if ((snake.superTimer ?? 0) > 0) speed *= 1.5; // 🍄 super power
     snake.speed = speed;
     snake.speedPct = Math.round(Math.min(100, (speed / 250) * 90));
 
@@ -427,7 +430,7 @@ export class GameSessionService {
 
   // Defense-aware damage. Shield or Safe Sanctuary fully negates.
   private damageSnake(snake: SnakeState, amount: number, reason: string) {
-    if (snake.shieldTimer > 0 || this.isInsideSanctuary(snake)) return;
+    if (snake.shieldTimer > 0 || (snake.superTimer ?? 0) > 0 || this.isInsideSanctuary(snake)) return;
     const reduced = amount * (1 - snake.defense / 100);
     snake.hp = Math.max(0, snake.hp - reduced);
     if (snake.hp <= 0) this.killSnake(snake, reason);
@@ -462,11 +465,21 @@ export class GameSessionService {
     }
   }
 
+  // §power Level-scaled power duration — 5s at low level, +1s every 8 levels, up to 10s
+  // (mirrors Subway-Surfers-style upgrades where power boosts last longer as you progress).
+  private powerDuration(snake: SnakeState): number {
+    let level = snake.level;
+    if (!snake.isBot) { const p = db.getProfile(snake.userId); if (p) level = p.level; }
+    return Math.min(10, 5 + Math.floor(Math.max(0, level) / 8));
+  }
+
   private applyFood(snake: SnakeState, food: FoodItem) {
     const wasHurt = snake.hp < snake.maxHp;
     if (food.hpRestore) snake.hp = Math.min(snake.maxHp, snake.hp + food.hpRestore);
-    if (food.buff === 'shield') snake.shieldTimer = Math.max(snake.shieldTimer, food.buffDuration || 8);
-    if (food.buff === 'speed') snake.speedBoostTimer = Math.max(snake.speedBoostTimer, food.buffDuration || 6);
+    const dur = this.powerDuration(snake); // duration scales with the player's level
+    if (food.buff === 'shield') snake.shieldTimer = Math.max(snake.shieldTimer, dur);
+    if (food.buff === 'speed') snake.speedBoostTimer = Math.max(snake.speedBoostTimer, dur);
+    if (food.buff === 'super') snake.superTimer = Math.max(snake.superTimer ?? 0, dur);
 
     if (food.couponData && !snake.isBot) {
       const profile = db.getProfile(snake.userId);
@@ -536,8 +549,8 @@ export class GameSessionService {
         const clashDist = a.radius + b.radius;
         if (dx * dx + dy * dy >= clashDist * clashDist) continue;
 
-        const aSafe = a.shieldTimer > 0 || this.isInsideSanctuary(a);
-        const bSafe = b.shieldTimer > 0 || this.isInsideSanctuary(b);
+        const aSafe = a.shieldTimer > 0 || (a.superTimer ?? 0) > 0 || this.isInsideSanctuary(a);
+        const bSafe = b.shieldTimer > 0 || (b.superTimer ?? 0) > 0 || this.isInsideSanctuary(b);
 
         if (a.score > b.score) {
           if (!bSafe) this.eliminateInClash(b, a); // higher score (a) survives
@@ -760,25 +773,36 @@ export class GameSessionService {
   }
 
   private moveStar(star: FoodItem, dt: number) {
-    star.wanderTimer = (star.wanderTimer ?? 0) - dt;
-    if (star.wanderTimer <= 0) {
-      if (Math.random() < 0.3) {
-        star.vx = 0; star.vy = 0;                 // occasionally stop
-      } else {
-        const a = Math.random() * Math.PI * 2;    // occasionally change direction
-        const spd = 22 + Math.random() * 26;      // slow, natural drift
+    // Evasive stars: dart away from the nearest snake head (toroidal). Flee speed is below
+    // a snake's, so they are hard to catch but always catchable. Otherwise, drift smoothly.
+    let fleeX = 0, fleeY = 0, nearestSq = Infinity;
+    for (const id in this.state.snakes) {
+      const s = this.state.snakes[id];
+      if (!s.isAlive) continue;
+      const dx = this.wrapDelta(star.x - s.head.x);
+      const dy = this.wrapDelta(star.y - s.head.y);
+      const d = dx * dx + dy * dy;
+      if (d < nearestSq) { nearestSq = d; fleeX = dx; fleeY = dy; }
+    }
+    const FLEE_RADIUS = 240;
+    if (nearestSq < FLEE_RADIUS * FLEE_RADIUS && nearestSq > 1) {
+      const dist = Math.sqrt(nearestSq);
+      const flee = 175; // < BASE_SPEED (240) → catchable
+      star.vx = (fleeX / dist) * flee;
+      star.vy = (fleeY / dist) * flee;
+      star.wanderTimer = 0.25;
+    } else {
+      star.wanderTimer = (star.wanderTimer ?? 0) - dt;
+      if (star.wanderTimer <= 0) {
+        const a = Math.random() * Math.PI * 2;
+        const spd = 40 + Math.random() * 40; // smooth continuous drift (no stopping)
         star.vx = Math.cos(a) * spd;
         star.vy = Math.sin(a) * spd;
+        star.wanderTimer = 1.2 + Math.random() * 2;
       }
-      star.wanderTimer = 1.4 + Math.random() * 2.6;
     }
-    star.x += (star.vx ?? 0) * dt;
-    star.y += (star.vy ?? 0) * dt;
-    const m = 80;
-    if (star.x < m) { star.x = m; star.vx = Math.abs(star.vx ?? 0); }
-    else if (star.x > this.WORLD_SIZE - m) { star.x = this.WORLD_SIZE - m; star.vx = -Math.abs(star.vx ?? 0); }
-    if (star.y < m) { star.y = m; star.vy = Math.abs(star.vy ?? 0); }
-    else if (star.y > this.WORLD_SIZE - m) { star.y = this.WORLD_SIZE - m; star.vy = -Math.abs(star.vy ?? 0); }
+    star.x = this.wrap(star.x + (star.vx ?? 0) * dt); // §6 stars wrap too
+    star.y = this.wrap(star.y + (star.vy ?? 0) * dt);
   }
 
   // ---------------------------------------------------------------- §7 dynamic wormholes

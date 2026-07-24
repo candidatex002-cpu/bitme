@@ -90,6 +90,16 @@ export class Renderer {
     window.addEventListener('resize', () => this.resize());
   }
 
+  // Re-bind to the current canvas element. The app rebuilds root.innerHTML on every
+  // render(), which replaces the <canvas>, so we must re-point at the live element or
+  // we'd keep drawing to a detached one (→ blank screen after pause/resume).
+  public attach(canvas: HTMLCanvasElement) {
+    if (this.canvas === canvas) return;
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d', { alpha: false })!;
+    this.resize();
+  }
+
   public resize() {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     this.canvas.width = window.innerWidth * dpr;
@@ -343,7 +353,8 @@ export class Renderer {
     const ctx = this.ctx;
     const fx = this.wrapNear(food.x, this.cameraPos.x); // §6 draw the nearest wrapped copy
     const fy0 = this.wrapNear(food.y, this.cameraPos.y);
-    const bounce = Math.sin(this.animFrame * 0.08 + food.x) * 3;
+    // Moving stars must not also bob, or they read as "jumping" in place.
+    const bounce = food.type === 'star' ? 0 : Math.sin(this.animFrame * 0.08 + food.x) * 3;
     const py = fy0 + bounce;
     const icon = food.icon || FOOD_ICONS[food.type] || '🍒';
 
@@ -410,6 +421,21 @@ export class Renderer {
     anim.tongueOut = anim.tongueTimer < 0.42;
 
     const baseRadius = Math.max(16, snake.radius);
+
+    // Power aura around the head — 🍄 super (pink) / 🛡️ shield (blue)
+    const superOn = ((snake as any).superTimer ?? 0) > 0;
+    const shieldOn = snake.shieldTimer > 0;
+    if (superOn || shieldOn) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(headX, headY, baseRadius * 1.7 + Math.sin(this.animFrame * 0.2) * 2, 0, Math.PI * 2);
+      ctx.strokeStyle = superOn ? 'rgba(232,93,117,0.85)' : 'rgba(62,146,204,0.85)';
+      ctx.lineWidth = 3.5;
+      ctx.shadowColor = ctx.strokeStyle;
+      ctx.shadowBlur = 12;
+      ctx.stroke();
+      ctx.restore();
+    }
 
     ctx.save();
     ctx.lineCap = 'round';

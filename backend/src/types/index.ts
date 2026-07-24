@@ -105,6 +105,7 @@ export interface SnakeState {
   // Active buffs / abilities (server-authoritative timers, in seconds)
   shieldTimer: number;       // invulnerability remaining
   speedBoostTimer: number;   // temporary speed buff remaining
+  superTimer?: number;       // 🍄 super power (invincible + faster) remaining
   abilityCooldown: number;   // time until ability can be used again
   abilityActiveTimer: number;// ability effect remaining
   activeBuff?: string;
@@ -141,7 +142,7 @@ export interface FoodItem {
   color: string;
   icon?: string;
   hpRestore?: number;
-  buff?: 'shield' | 'speed';   // active power-up granted on pickup
+  buff?: 'shield' | 'speed' | 'super';   // active power-up granted on pickup
   buffDuration?: number;       // seconds
   couponData?: CouponReward;
   // §3 Moving stars — slow natural drift with occasional stops / direction changes
