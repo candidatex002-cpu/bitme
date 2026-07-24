@@ -244,7 +244,9 @@ export class GameSessionService {
 
   public handlePlayerInput(userId: string, angle: number, boosting: boolean, _seq: number): void {
     const snake = this.state.snakes[userId];
-    if (!snake || !snake.isAlive) return;
+    if (!snake || !snake.isAlive || snake.isPaused) return;
+    // §17 Never trust client data — reject malformed input (NaN / Infinity angle injection).
+    if (typeof angle !== 'number' || !Number.isFinite(angle)) return;
     if (!antiCheat.validatePacketFrequency(userId)) return;
 
     snake.angle = angle;

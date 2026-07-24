@@ -41,9 +41,11 @@ service that can't live in the repo:
   app-id/ad-unit-ids and declare ads in the Play Console. No live ad ids ship here.
 - **§16 Performance** — client renders on a 60 FPS rAF loop, server runs 30 Hz; formal
   device profiling (Android/iPhone battery, memory, network compression) not yet measured.
-- **§17 Security** — `AntiCheatService` validates packet frequency and the server is
-  authoritative; short-lived tokens exist. Hardening for the full threat list (speed/teleport
-  hacks, transport encryption/WSS in prod, server-side authorization audit) still to do.
+- **§17 Security** — Strong by construction: the client only ever sends *angle + boost*; the
+  server computes **all** positions, so speed/teleport/position hacks are structurally
+  impossible. Packet-flood limiting + malformed-input (NaN/Infinity) rejection are in place, and
+  stars/score/purchases/redemptions are all server-validated. Remaining: enforce **WSS/HTTPS in
+  prod**, rotate/short-TTL tokens, and a full server-side authorization audit.
 - **§11 Functional QA** — no automated test suite yet; needs a pass across every screen/flow.
 
 ## Files touched this sprint
