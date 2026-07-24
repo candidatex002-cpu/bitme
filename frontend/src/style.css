@@ -282,18 +282,27 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .ability-badge { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); padding: 5px 12px; font-family: var(--font-title); font-weight: 800; font-size: 0.74rem; display: flex; gap: 6px; align-items: center; }
 .ability-badge .cd { color: var(--purple); } .ability-badge.ready .cd { color: var(--green-deep); }
 
-.touch-joystick { position: absolute; bottom: 22px; left: 18px; width: 118px; height: 118px; border-radius: 50%; background: rgba(255,255,255,0.45); border: 2px solid var(--line-strong); display: none; touch-action: none; }
-.touch-knob { position: absolute; top: 50%; left: 50%; width: 48px; height: 48px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #6fe08d, var(--green-deep)); transform: translate(-50%,-50%); box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
-.touch-actions { position: absolute; bottom: 24px; right: 18px; display: none; flex-direction: column; gap: 12px; }
-.touch-btn { width: 60px; height: 60px; border-radius: 50%; display: grid; place-items: center; font-size: 1.6rem; color: #fff; touch-action: none; box-shadow: var(--shadow-lg); border: 2px solid rgba(255,255,255,0.5); }
+/* §4 Fixed transparent joystick — bottom-left, always visible ~30% opacity, never covers play */
+.touch-joystick { position: absolute; bottom: 26px; left: 20px; width: 116px; height: 116px; border-radius: 50%; background: rgba(255,255,255,0.5); border: 2px solid var(--line-strong); display: none; touch-action: none; opacity: 0.3; transition: opacity 0.15s ease; z-index: 14; }
+.touch-joystick.active { opacity: 0.62; }
+.touch-knob { position: absolute; top: 50%; left: 50%; width: 46px; height: 46px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #6fe08d, var(--green-deep)); transform: translate(-50%,-50%); box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+/* §4 + §5 Right-side action cluster — Boost / Ability / Zoom / Minimap */
+.touch-actions { position: absolute; bottom: 26px; right: 18px; display: none; flex-direction: column; gap: 12px; align-items: flex-end; z-index: 14; }
+.touch-row { display: flex; gap: 12px; align-items: center; }
+.touch-btn { position: relative; width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; font-size: 1.5rem; color: #fff; touch-action: none; box-shadow: var(--shadow-lg); border: 2px solid rgba(255,255,255,0.5); opacity: 0.9; }
 .touch-btn.boost { background: radial-gradient(circle at 40% 30%, #6fe08d, #1f9d47); }
 .touch-btn.ability { background: radial-gradient(circle at 40% 30%, #b0a3f7, #6d55d6); }
+.touch-btn.zoom { width: 50px; height: 50px; font-size: 1.15rem; background: radial-gradient(circle at 40% 30%, #7fd0f5, #2f80b8); }
+.touch-btn.mini { width: 50px; height: 50px; font-size: 1.15rem; background: radial-gradient(circle at 40% 30%, #f5c77f, #b8842f); }
+.touch-btn .tz-label { position: absolute; bottom: -14px; font-size: 0.5rem; font-weight: 800; color: var(--ink); background: rgba(255,255,255,0.85); border-radius: 6px; padding: 0 4px; }
 .touch-btn:active { transform: scale(0.92); }
 .touch-btn.cooling { opacity: 0.5; }
+/* Minimap toggle hides the HUD panels for an unobstructed view */
+.hud.mini-hidden .hud-leaderboard, .hud.mini-hidden .hud-event, .hud.mini-hidden .team-scores { opacity: 0; pointer-events: none; }
 
 /* left-handed swaps controls */
-.hud.left-handed .touch-joystick { left: auto; right: 18px; }
-.hud.left-handed .touch-actions { right: auto; left: 18px; }
+.hud.left-handed .touch-joystick { left: auto; right: 20px; }
+.hud.left-handed .touch-actions { right: auto; left: 18px; align-items: flex-start; }
 
 /* ---------------------------------------------------------------- toast */
 .toast { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; border-radius: 30px; padding: 10px 20px; font-family: var(--font-title); font-weight: 700; font-size: 0.88rem; z-index: 80; box-shadow: var(--shadow-lg); pointer-events: none; animation: toastIn 0.28s cubic-bezier(0.175,0.885,0.32,1.275); }
@@ -309,14 +318,23 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 760px) { .two-col { grid-template-columns: 1fr; } }
 @media (max-width: 640px) {
-  .touch-joystick, .touch-actions { display: none !important; }
   .hud-tl-main { min-width: 96px; }
   .hud-leaderboard { width: min(136px, 40vw); }
   .ability-badge { display: none; }
 }
+/* Touch devices: SHOW the joystick + action cluster (this is the primary control). */
 @media (pointer: coarse) {
-  .touch-joystick, .touch-actions { display: none !important; }
+  .touch-joystick { display: block; }
+  .touch-actions { display: flex; }
 }
+
+/* Notch / home-indicator safe areas (Android/iOS packaged builds, viewport-fit=cover) */
+.touch-joystick { bottom: calc(26px + env(safe-area-inset-bottom)); left: calc(20px + env(safe-area-inset-left)); }
+.touch-actions { bottom: calc(26px + env(safe-area-inset-bottom)); right: calc(18px + env(safe-area-inset-right)); }
+.hud.left-handed .touch-joystick { left: auto; right: calc(20px + env(safe-area-inset-right)); }
+.hud.left-handed .touch-actions { right: auto; left: calc(18px + env(safe-area-inset-left)); }
+.hud-tl { top: calc(12px + env(safe-area-inset-top)); left: calc(12px + env(safe-area-inset-left)); }
+.hud-leaderboard { top: calc(12px + env(safe-area-inset-top)); right: calc(12px + env(safe-area-inset-right)); }
 
 /* ---------------------------------------------------------------- skin families */
 .skin-family { margin-bottom: 18px; }

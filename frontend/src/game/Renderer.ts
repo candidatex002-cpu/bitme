@@ -1,4 +1,4 @@
-import { GameStateTick, SnakeData, FoodData } from './GameClient.js';
+import { GameStateTick, SnakeData, FoodData, ObstacleData } from './GameClient.js';
 
 interface SkinPalette {
   primary: string;
@@ -60,7 +60,16 @@ export class Renderer {
   private ctx: CanvasRenderingContext2D;
   private cameraPos = { x: 1600, y: 1600 };
   private zoom = 1.0;
+  private userZoom = 1.0;            // §5 player-controlled zoom (wheel / pinch / button)
+  private readonly ZOOM_MIN = 0.6;   // most zoomed OUT — reveals nearby enemies
+  private readonly ZOOM_MAX = 1.6;   // most zoomed IN — focuses on the snake
   private animFrame = 0;
+
+  // §6 Toroidal wrap helpers — draw entities at the copy nearest the camera.
+  private readonly WORLD = 3200;
+  private wrapRaw(v: number): number { const w = this.WORLD; return ((v % w) + w) % w; }
+  private wrapDeltaRaw(d: number): number { const w = this.WORLD; let r = ((d % w) + w) % w; if (r > w / 2) r -= w; return r; }
+  private wrapNear(coord: number, ref: number): number { return ref + this.wrapDeltaRaw(coord - ref); }
 
   // LERP Position Cache
   private lerpSnakes: Map<string, InterpolatedSnake> = new Map();
@@ -124,14 +133,16 @@ export class Renderer {
       const targetLerp = this.lerpSnakes.get(target.id);
       const camX = targetLerp ? targetLerp.x : target.head.x;
       const camY = targetLerp ? targetLerp.y : target.head.y;
-      this.cameraPos.x += (camX - this.cameraPos.x) * 0.15;
-      this.cameraPos.y += (camY - this.cameraPos.y) * 0.15;
+      // §6 Ease toroidally so crossing the seam never slides the camera across the map.
+      this.cameraPos.x = this.wrapRaw(this.cameraPos.x + this.wrapDeltaRaw(camX - this.cameraPos.x) * 0.15);
+      this.cameraPos.y = this.wrapRaw(this.cameraPos.y + this.wrapDeltaRaw(camY - this.cameraPos.y) * 0.15);
 
       const stageZoom: Record<string, number> = {
         Baby: 1.15, Young: 1.1, Teen: 1.05, Adult: 1.0, Elite: 0.95, Titan: 0.9,
       };
-      const targetZoom = stageZoom[(target as any).stage] ?? 1.0;
-      this.zoom += (targetZoom - this.zoom) * 0.05;
+      // Stage auto-zoom, then fold in the player's manual zoom, then ease smoothly.
+      const targetZoom = (stageZoom[(target as any).stage] ?? 1.0) * this.userZoom;
+      this.zoom += (targetZoom - this.zoom) * 0.08; // smooth interpolation, no shake
     }
 
     this.ctx.save();
@@ -141,8 +152,9 @@ export class Renderer {
 
     this.renderTerrain(3200);
     this.renderSafeZone(state.safeZone);
-    if ((state as any).sanctuaryZone) this.renderSanctuaryZone((state as any).sanctuaryZone);
-    if ((state as any).portals) this.renderPortals((state as any).portals);
+    if (state.sanctuaryZone) this.renderSanctuaryZone(state.sanctuaryZone);
+    if (state.obstacles) this.renderObstacles(state.obstacles);
+    if (state.portals) this.renderPortals(state.portals);
 
     // Render Food (Crystal Clear Discs)
     for (let i = 0; i < state.food.length; i++) {
@@ -179,8 +191,9 @@ export class Renderer {
     }
 
     const factor = 0.35;
-    lerp.x += (snake.head.x - lerp.x) * factor;
-    lerp.y += (snake.head.y - lerp.y) * factor;
+    // §6 Interpolate toroidally and keep cached coords wrapped — no cross-map slides.
+    lerp.x = this.wrapRaw(lerp.x + this.wrapDeltaRaw(snake.head.x - lerp.x) * factor);
+    lerp.y = this.wrapRaw(lerp.y + this.wrapDeltaRaw(snake.head.y - lerp.y) * factor);
 
     let da = (snake.angle - lerp.angle) % (Math.PI * 2);
     if (da < -Math.PI) da += Math.PI * 2;
@@ -192,8 +205,8 @@ export class Renderer {
       if (!lerp.body[i]) {
         lerp.body[i] = { x: targetSeg.x, y: targetSeg.y };
       } else {
-        lerp.body[i].x += (targetSeg.x - lerp.body[i].x) * factor;
-        lerp.body[i].y += (targetSeg.y - lerp.body[i].y) * factor;
+        lerp.body[i].x = this.wrapRaw(lerp.body[i].x + this.wrapDeltaRaw(targetSeg.x - lerp.body[i].x) * factor);
+        lerp.body[i].y = this.wrapRaw(lerp.body[i].y + this.wrapDeltaRaw(targetSeg.y - lerp.body[i].y) * factor);
       }
     }
     if (lerp.body.length > snake.body.length) {
@@ -201,33 +214,35 @@ export class Renderer {
     }
   }
 
-  private renderTerrain(world: number) {
+  private renderTerrain(_world: number) {
     const ctx = this.ctx;
-    // Clean Dreamy Base without grid lines
+    const cam = this.cameraPos;
+    const R = 5000; // covers the viewport at any zoom — §6 seamless, borderless ground
+    // Clean Dreamy Base without grid lines or map edges
     ctx.fillStyle = '#E3F2FD';
-    ctx.fillRect(0, 0, world, world);
+    ctx.fillRect(cam.x - R, cam.y - R, R * 2, R * 2);
 
-    // Soft park patches
+    // Soft park patches, each drawn at its nearest wrapped copy
     ctx.fillStyle = '#E8F5E9';
     for (const [px, py, pr] of [[350, 500, 280], [2500, 700, 320], [700, 2400, 340], [2400, 2300, 300]]) {
-      ctx.beginPath(); ctx.arc(px, py, pr, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(this.wrapNear(px, cam.x), this.wrapNear(py, cam.y), pr, 0, Math.PI * 2); ctx.fill();
     }
-
-    // Boundary
-    ctx.strokeStyle = '#B39DDB'; ctx.lineWidth = 8; ctx.strokeRect(0, 0, world, world);
   }
 
   private renderSafeZone(zone: { centerX: number; centerY: number; radius: number }) {
     const ctx = this.ctx;
+    const cx = this.wrapNear(zone.centerX, this.cameraPos.x); // §6
+    const cy = this.wrapNear(zone.centerY, this.cameraPos.y);
+    const R = 5000;
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, 0, 3200, 3200);
-    ctx.arc(zone.centerX, zone.centerY, zone.radius, 0, Math.PI * 2, true);
+    ctx.rect(this.cameraPos.x - R, this.cameraPos.y - R, R * 2, R * 2);
+    ctx.arc(cx, cy, zone.radius, 0, Math.PI * 2, true);
     ctx.fillStyle = 'rgba(255, 183, 178, 0.15)';
     ctx.fill('evenodd');
 
     ctx.beginPath();
-    ctx.arc(zone.centerX, zone.centerY, zone.radius, 0, Math.PI * 2);
+    ctx.arc(cx, cy, zone.radius, 0, Math.PI * 2);
     ctx.strokeStyle = '#FFB7B2'; ctx.lineWidth = 5;
     ctx.stroke();
     ctx.restore();
@@ -236,9 +251,11 @@ export class Renderer {
   /** Render Peaceful Safe Sanctuary Zone (No PvP / Hide Safely Inside) */
   private renderSanctuaryZone(s: { centerX: number; centerY: number; radius: number; label: string; icon: string }) {
     const ctx = this.ctx;
+    const cx = this.wrapNear(s.centerX, this.cameraPos.x); // §6 nearest wrapped copy
+    const cy = this.wrapNear(s.centerY, this.cameraPos.y);
     ctx.save();
     ctx.beginPath();
-    ctx.arc(s.centerX, s.centerY, s.radius, 0, Math.PI * 2);
+    ctx.arc(cx, cy, s.radius, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(167, 243, 208, 0.32)';
     ctx.fill();
     ctx.strokeStyle = '#10B981';
@@ -253,7 +270,7 @@ export class Renderer {
     ctx.fillStyle = '#064E3B';
     ctx.shadowColor = 'rgba(255, 255, 255, 0.9)';
     ctx.shadowBlur = 6;
-    ctx.fillText(`${s.icon} ${s.label} (NO PVP / SAFE HIDE)`, s.centerX, s.centerY - s.radius + 32);
+    ctx.fillText(`${s.icon} ${s.label} (NO PVP / SAFE HIDE)`, cx, cy - s.radius + 32);
     ctx.restore();
   }
 
@@ -265,7 +282,7 @@ export class Renderer {
 
     for (const p of portals) {
       ctx.save();
-      ctx.translate(p.x, p.y);
+      ctx.translate(this.wrapNear(p.x, this.cameraPos.x), this.wrapNear(p.y, this.cameraPos.y)); // §6
 
       // Swirling Portal Ring
       ctx.rotate(spin);
@@ -295,27 +312,52 @@ export class Renderer {
     }
   }
 
+  /** §2 Dynamic obstacles — ponds get a water disc, everything else a shadowed emoji prop. */
+  private renderObstacles(obstacles: ObstacleData[]) {
+    const ctx = this.ctx;
+    for (const ob of obstacles) {
+      const ox = this.wrapNear(ob.x, this.cameraPos.x); // §6 nearest wrapped copy
+      const oy = this.wrapNear(ob.y, this.cameraPos.y);
+      ctx.save();
+      if (ob.type === 'pond') {
+        ctx.beginPath(); ctx.arc(ox, oy, ob.radius, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(96,165,250,0.32)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(59,130,246,0.5)'; ctx.lineWidth = 3; ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.ellipse(ox, oy + ob.radius * 0.55, ob.radius * 0.72, ob.radius * 0.3, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0,0,0,0.10)'; ctx.fill();
+      }
+      ctx.font = `${ob.radius * 1.85}px sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(ob.icon, ox, oy);
+      ctx.restore();
+    }
+  }
+
   /**
    * Crystal Clear High-Contrast Collectibles (Cherries 🍒, Apples 🍎, Frogs 🐸, Stars ⭐)
    * Rendered on a bright white circle disc badge so they 100% pop out crisp and clear on any terrain!
    */
   private renderCollectible(food: FoodData) {
     const ctx = this.ctx;
+    const fx = this.wrapNear(food.x, this.cameraPos.x); // §6 draw the nearest wrapped copy
+    const fy0 = this.wrapNear(food.y, this.cameraPos.y);
     const bounce = Math.sin(this.animFrame * 0.08 + food.x) * 3;
-    const py = food.y + bounce;
+    const py = fy0 + bounce;
     const icon = food.icon || FOOD_ICONS[food.type] || '🍒';
 
     ctx.save();
 
     // 1. Soft Shadow
     ctx.beginPath();
-    ctx.ellipse(food.x, food.y + 12, 11, 5, 0, 0, Math.PI * 2);
+    ctx.ellipse(fx, fy0 + 12, 11, 5, 0, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
     ctx.fill();
 
     // 2. Bright White Circle Disc Badge behind food so it POPS out 100% clear!
     ctx.beginPath();
-    ctx.arc(food.x, py, 15, 0, Math.PI * 2);
+    ctx.arc(fx, py, 15, 0, Math.PI * 2);
     ctx.fillStyle = '#FFFFFF';
     ctx.fill();
     ctx.strokeStyle = '#90CDF4';
@@ -326,7 +368,7 @@ export class Renderer {
     ctx.font = '20px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(icon, food.x, py + 1);
+    ctx.fillText(icon, fx, py + 1);
 
     ctx.restore();
   }
@@ -338,10 +380,24 @@ export class Renderer {
     const ctx = this.ctx;
     const pal = this.palette(snake.skin);
     const lerp = this.lerpSnakes.get(snake.id);
-    const headX = lerp ? lerp.x : snake.head.x;
-    const headY = lerp ? lerp.y : snake.head.y;
+    const rawHeadX = lerp ? lerp.x : snake.head.x;
+    const rawHeadY = lerp ? lerp.y : snake.head.y;
     const angle = lerp ? lerp.angle : snake.angle;
-    const body = lerp ? lerp.body : snake.body;
+    const rawBody = lerp ? lerp.body : snake.body;
+
+    // §6 Reconstruct a camera-continuous chain: head at the copy nearest the camera, then
+    // each segment placed by the short toroidal delta from the previous one (wraps seamlessly).
+    const headX = this.wrapNear(rawHeadX, this.cameraPos.x);
+    const headY = this.wrapNear(rawHeadY, this.cameraPos.y);
+    const body: Array<{ x: number; y: number }> = [];
+    let prevAbs = { x: rawHeadX, y: rawHeadY };
+    let prevDrawn = { x: headX, y: headY };
+    for (let i = 0; i < rawBody.length; i++) {
+      const seg = rawBody[i];
+      const d = { x: prevDrawn.x + this.wrapDeltaRaw(seg.x - prevAbs.x), y: prevDrawn.y + this.wrapDeltaRaw(seg.y - prevAbs.y) };
+      body.push(d);
+      prevAbs = seg; prevDrawn = d;
+    }
     const anim = this.getAnimState(snake.id);
 
     // Timers
@@ -549,6 +605,22 @@ export class Renderer {
     ctx.fill(); ctx.stroke();
 
     const scale = size / 3200;
+
+    // §8 Sanctuary (always visible) — green ring on the minimap
+    if (state.sanctuaryZone) {
+      ctx.beginPath();
+      ctx.arc(x + state.sanctuaryZone.centerX * scale, y + state.sanctuaryZone.centerY * scale, Math.max(4, state.sanctuaryZone.radius * scale), 0, Math.PI * 2);
+      ctx.strokeStyle = '#10B981'; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+    // §7 Active wormhole — pulsing purple marker
+    if (state.portals) {
+      for (const p of state.portals) {
+        ctx.beginPath();
+        ctx.arc(x + p.x * scale, y + p.y * scale, 3 + Math.sin(this.animFrame * 0.15) * 1.2, 0, Math.PI * 2);
+        ctx.fillStyle = p.color || '#8B5CF6'; ctx.fill();
+      }
+    }
+
     for (let i = 0; i < state.snakes.length; i++) {
       const s = state.snakes[i];
       if (!s.isAlive) continue;
@@ -563,5 +635,25 @@ export class Renderer {
   public triggerHappyAnim(snakeId: string) {
     const anim = this.getAnimState(snakeId);
     anim.happyTimer = 1.0;
+  }
+
+  // §5 Camera zoom controls -------------------------------------------------
+  /** Multiply zoom by a factor (mouse wheel / pinch). Clamped to focus↔reveal range. */
+  public adjustZoom(factor: number) {
+    this.userZoom = Math.max(this.ZOOM_MIN / 1.15, Math.min(this.ZOOM_MAX / 0.9, this.userZoom * factor));
+  }
+
+  /** Mobile zoom button — cycles far → normal → close. Returns a short label. */
+  public cycleZoom(): string {
+    const steps: Array<[number, string]> = [[0.7, 'Far'], [1.0, 'Normal'], [1.35, 'Close']];
+    let idx = 0;
+    let best = Infinity;
+    for (let i = 0; i < steps.length; i++) {
+      const d = Math.abs(steps[i][0] - this.userZoom);
+      if (d < best) { best = d; idx = i; }
+    }
+    const next = steps[(idx + 1) % steps.length];
+    this.userZoom = next[0];
+    return next[1];
   }
 }

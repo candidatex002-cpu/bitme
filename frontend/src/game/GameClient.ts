@@ -36,15 +36,21 @@ export interface SnakeData {
   team?: 'red' | 'blue';
   isBoss?: boolean;
   equippedAccessory?: string;
+  respawnAt?: number; // local-engine only: timestamp (ms) at which a dead bot respawns
 }
 
 export interface FoodData {
   id: string; x: number; y: number; value: number; type: string; color: string; icon?: string;
+  vx?: number; vy?: number; wanderTimer?: number; // §3 moving stars
 }
 
 export interface SafeZoneData {
   centerX: number; centerY: number; radius: number; targetRadius: number; damagePerSecond: number;
 }
+
+export interface SanctuaryZoneData { centerX: number; centerY: number; radius: number; label: string; icon: string; }
+export interface PortalData { id: string; targetId: string; x: number; y: number; label: string; color: string; timerSeconds?: number; wormhole?: boolean; }
+export interface ObstacleData { id: string; type: string; x: number; y: number; radius: number; icon: string; blocking: boolean; }
 
 export interface WorldEventData {
   id: string; type: string; title: string; description: string; active: boolean; timerSeconds: number; icon: string;
@@ -57,6 +63,9 @@ export interface GameStateTick {
   snakes: SnakeData[];
   food: FoodData[];
   safeZone: SafeZoneData;
+  sanctuaryZone?: SanctuaryZoneData;
+  portals?: PortalData[];
+  obstacles?: ObstacleData[];
   leaderboard: Array<{ id: string; name: string; score: number; kills: number; team?: 'red' | 'blue' }>;
   teamScores?: { red: number; blue: number };
   currentEvent?: WorldEventData;
@@ -70,7 +79,13 @@ export interface ModeConfig {
 export function serverBase(): string {
   const override = new URLSearchParams(location.search).get('server');
   if (override) return override;
+  // Packaged (Capacitor/Play Store) build: point at a hosted backend via a meta tag.
+  // <meta name="anaconda-server" content="https://your-backend.example.com">
+  const meta = document.querySelector('meta[name="anaconda-server"]')?.getAttribute('content');
+  if (meta) return meta;
   if (location.port === '3000' || location.port === '5173') return `${location.protocol}//${location.hostname}:4000`;
+  // capacitor:// or file:// origins can't reach a server → the offline local engine takes over.
+  if (location.protocol === 'capacitor:' || location.protocol === 'file:') return '';
   return location.origin;
 }
 
@@ -79,9 +94,21 @@ const FOOD_TYPES = [
   { type: 'apple', val: 15, icon: '🍎', color: '#ff3333' },
   { type: 'mushroom', val: 20, icon: '🍄', color: '#ff9933' },
   { type: 'frog', val: 25, icon: '🐸', color: '#33cc33' },
-  { type: 'star', val: 50, icon: '⭐', color: '#ffcc00' },
+  // ⭐ stars are a dedicated moving set (§3), not part of the random food roll
   { type: 'shield', val: 30, icon: '🛡️', color: '#3399ff' },
   { type: 'speed', val: 30, icon: '⚡', color: '#ff66cc' },
+];
+
+// §2 obstacle palette for the local engine (mirrors the server table)
+const OBSTACLE_TYPES: Array<{ type: string; icon: string; radius: number; blocking: boolean }> = [
+  { type: 'tree', icon: '🌳', radius: 34, blocking: true },
+  { type: 'rock', icon: '🪨', radius: 30, blocking: true },
+  { type: 'bush', icon: '🌲', radius: 28, blocking: false },
+  { type: 'cactus', icon: '🌵', radius: 24, blocking: true },
+  { type: 'flowerbed', icon: '🌼', radius: 26, blocking: false },
+  { type: 'log', icon: '🪵', radius: 26, blocking: false },
+  { type: 'pond', icon: '🪷', radius: 46, blocking: false },
+  { type: 'hill', icon: '⛰️', radius: 40, blocking: true },
 ];
 
 const BOT_NAMES = ['AlphaViper', 'KobraX', 'Slinky', 'GigaPython', 'NeonSnake', 'ShadowSerpent', 'TitanApex'];
@@ -107,6 +134,13 @@ export class GameClient {
   private fallbackTimer: any = null;
   private localState: GameStateTick | null = null;
   private localInput = { angle: 0, boosting: false };
+  private localPaused = false; // §12 freeze the local player while backgrounded
+  // §3/§7/§8 local-engine timers (seconds)
+  private starCooldown = 0;
+  private wormholeActive = false;
+  private wormholeLife = 0;
+  private wormholePhase = 45;   // first wormhole ~45s into a local match
+  private sanctuaryTimer = 90;  // relocate sanctuary periodically in the local sim
 
   constructor() {
     this.localUserId = 'usr_' + Math.random().toString(36).substring(2, 9);
@@ -180,6 +214,13 @@ export class GameClient {
       this.inputSeq++;
       this.socket.emit('client_input', { seq: this.inputSeq, angle, boosting });
     }
+  }
+
+  // §12 Tell the server we've backgrounded/foregrounded so it can mark us inactive
+  // (invisible, no damage) and resume us cleanly. No-op under the local engine.
+  public notifyPause(paused: boolean) {
+    this.localPaused = paused;
+    if (this.socket && this.isConnected) this.socket.emit(paused ? 'player_pause' : 'player_resume');
   }
 
   public activateAbility() {
@@ -273,7 +314,8 @@ export class GameClient {
       };
     });
 
-    const foodItems: FoodData[] = Array.from({ length: 140 }, (_, i) => this.genFood(`f_${i}`));
+    const foodItems: FoodData[] = Array.from({ length: 120 }, (_, i) => this.genFood(`f_${i}`));
+    for (let i = 0; i < 16; i++) foodItems.push(this.genStar(`star_${i}`)); // §3 moving stars
 
     this.localState = {
       tick: 1,
@@ -282,6 +324,9 @@ export class GameClient {
       snakes: [me, ...bots],
       food: foodItems,
       safeZone: { centerX: 1600, centerY: 1600, radius: 1500, targetRadius: 1500, damagePerSecond: 2 },
+      sanctuaryZone: { centerX: 1600, centerY: 1600, radius: 320, label: '🛡️ Safe Sanctuary', icon: '🛡️' }, // §8
+      portals: [], // §7 dynamic wormholes spawn in here
+      obstacles: this.genObstacles(14), // §2
       leaderboard: [],
     };
 
@@ -321,38 +366,64 @@ export class GameClient {
     };
   }
 
+  // §6 Toroidal wrap helpers for the local engine (world = 3200).
+  private wrapLocal(v: number): number { return ((v % 3200) + 3200) % 3200; }
+  private wrapDeltaLocal(d: number): number { let r = ((d % 3200) + 3200) % 3200; if (r > 1600) r -= 3200; return r; }
+  private followBodyLocal(s: SnakeData) {
+    let prev = { x: s.head.x, y: s.head.y };
+    for (let i = 0; i < s.body.length; i++) {
+      const seg = s.body[i];
+      const dx = this.wrapDeltaLocal(prev.x - seg.x);
+      const dy = this.wrapDeltaLocal(prev.y - seg.y);
+      const dist = Math.hypot(dx, dy);
+      if (dist > 10) {
+        seg.x = this.wrapLocal(seg.x + (dx / dist) * (dist - 10));
+        seg.y = this.wrapLocal(seg.y + (dy / dist) * (dist - 10));
+      }
+      prev = { x: seg.x, y: seg.y };
+    }
+  }
+
+  // §3 A slow-drifting star collectible.
+  private genStar(id: string): FoodData {
+    return { id, x: 200 + Math.random() * 2800, y: 200 + Math.random() * 2800, value: 50, type: 'star', icon: '⭐', color: '#ffcc00', vx: 0, vy: 0, wanderTimer: Math.random() * 2 };
+  }
+
+  // §2 Scatter obstacles with wide lanes and a clear centre spawn.
+  private genObstacles(count: number): ObstacleData[] {
+    const list: ObstacleData[] = [];
+    let guard = 0;
+    while (list.length < count && guard++ < 140) {
+      const t = OBSTACLE_TYPES[Math.floor(Math.random() * OBSTACLE_TYPES.length)];
+      const x = 240 + Math.random() * 2720;
+      const y = 240 + Math.random() * 2720;
+      const dcx = x - 1600, dcy = y - 1600;
+      if (dcx * dcx + dcy * dcy < 460 * 460) continue; // keep the centre spawn clear
+      let ok = true;
+      for (const o of list) { const dx = x - o.x, dy = y - o.y, gap = t.radius + o.radius + 140; if (dx * dx + dy * dy < gap * gap) { ok = false; break; } }
+      if (ok) list.push({ id: `ob_${list.length}`, type: t.type, icon: t.icon, x, y, radius: t.radius, blocking: t.blocking });
+    }
+    return list;
+  }
+
   private updateLocalEngine() {
     if (!this.localState) return;
     const state = this.localState;
     state.tick++;
     state.timestamp = Date.now();
 
-    // 1. Update Player Snake Movement
+    // 1. Update Player Snake Movement (frozen while the app is backgrounded — §12)
     const me = state.snakes.find(s => s.id === this.localUserId);
-    if (me && me.isAlive) {
+    if (me && me.isAlive && !this.localPaused) {
       me.angle = this.localInput.angle;
       me.boosting = this.localInput.boosting && me.score > 20;
       const speed = me.boosting ? 7.5 : 4.0;
       if (me.boosting) me.score = Math.max(10, me.score - 0.2);
 
-      me.head.x += Math.cos(me.angle) * speed;
-      me.head.y += Math.sin(me.angle) * speed;
-      me.head.x = Math.max(50, Math.min(3150, me.head.x));
-      me.head.y = Math.max(50, Math.min(3150, me.head.y));
-
-      // Update Body segments LERP
-      let prev = { ...me.head };
-      for (let i = 0; i < me.body.length; i++) {
-        const seg = me.body[i];
-        const dx = prev.x - seg.x;
-        const dy = prev.y - seg.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist > 10) {
-          seg.x += (dx / dist) * (dist - 10);
-          seg.y += (dy / dist) * (dist - 10);
-        }
-        prev = { ...seg };
-      }
+      // §6 wrap-around movement — no borders
+      me.head.x = this.wrapLocal(me.head.x + Math.cos(me.angle) * speed);
+      me.head.y = this.wrapLocal(me.head.y + Math.sin(me.angle) * speed);
+      this.followBodyLocal(me);
       if (me.abilityCooldown > 0) me.abilityCooldown = Math.max(0, me.abilityCooldown - 0.033);
     }
 
@@ -363,32 +434,26 @@ export class GameClient {
       if (Math.random() < 0.04) {
         b.angle += (Math.random() - 0.5) * 1.2;
       }
-      b.head.x += Math.cos(b.angle) * 3.5;
-      b.head.y += Math.sin(b.angle) * 3.5;
-      b.head.x = Math.max(80, Math.min(3120, b.head.x));
-      b.head.y = Math.max(80, Math.min(3120, b.head.y));
-
-      let prev = { ...b.head };
-      for (let i = 0; i < b.body.length; i++) {
-        const seg = b.body[i];
-        const dx = prev.x - seg.x;
-        const dy = prev.y - seg.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist > 10) {
-          seg.x += (dx / dist) * (dist - 10);
-          seg.y += (dy / dist) * (dist - 10);
-        }
-        prev = { ...seg };
-      }
+      b.head.x = this.wrapLocal(b.head.x + Math.cos(b.angle) * 3.5);
+      b.head.y = this.wrapLocal(b.head.y + Math.sin(b.angle) * 3.5);
+      this.followBodyLocal(b);
     }
+
+    // 2.5 World systems — moving stars, wormhole lifecycle, sanctuary relocation,
+    // obstacle soft-collision, and wormhole teleport (§2, §3, §7, §8)
+    this.updateLocalStars(0.033);
+    this.updateLocalWormhole(0.033);
+    this.updateLocalSanctuary(0.033);
+    this.resolveLocalObstacles();
+    this.resolveLocalWormholeTeleport();
 
     // 3. Check Food Collisions & Spawning
     for (const s of state.snakes) {
       if (!s.isAlive) continue;
       for (let i = state.food.length - 1; i >= 0; i--) {
         const f = state.food[i];
-        const dx = s.head.x - f.x;
-        const dy = s.head.y - f.y;
+        const dx = this.wrapDeltaLocal(s.head.x - f.x);
+        const dy = this.wrapDeltaLocal(s.head.y - f.y);
         if (dx * dx + dy * dy < (s.radius + 14) * (s.radius + 14)) {
           s.score += f.value;
           s.length = Math.min(60, 14 + Math.floor(s.score / 20));
@@ -402,6 +467,52 @@ export class GameClient {
       }
     }
 
+    // 3b. Head-to-Head Snake Combat (Sprint V4 Section 1) — only heads colliding eliminate a
+    // snake; the higher score survives, an exact tie destroys both. Body contact never kills.
+    for (let i = 0; i < state.snakes.length; i++) {
+      const a = state.snakes[i];
+      if (!a.isAlive) continue;
+      for (let j = i + 1; j < state.snakes.length; j++) {
+        const b = state.snakes[j];
+        if (!b.isAlive) continue;
+        if (this.localPaused && (a.id === this.localUserId || b.id === this.localUserId)) continue; // §12
+        const dx = this.wrapDeltaLocal(a.head.x - b.head.x);
+        const dy = this.wrapDeltaLocal(a.head.y - b.head.y);
+        const clashDist = a.radius + b.radius;
+        if (dx * dx + dy * dy >= clashDist * clashDist) continue; // heads not touching
+
+        const aSafe = a.shieldTimer > 0;
+        const bSafe = b.shieldTimer > 0;
+        if (a.score > b.score) {
+          if (!bSafe) this.eliminateLocal(b, a);
+        } else if (b.score > a.score) {
+          if (!aSafe) this.eliminateLocal(a, b);
+        } else {
+          if (!aSafe) this.eliminateLocal(a, null);
+          if (!bSafe) this.eliminateLocal(b, null);
+        }
+        if (!a.isAlive) break; // a eliminated — stop scanning its opponents
+      }
+    }
+
+    // 3c. Respawn eliminated bots after a short delay so the world stays lively.
+    for (const s of state.snakes) {
+      if (s.isAlive || s.id === this.localUserId) continue;
+      s.respawnAt = s.respawnAt ?? state.timestamp + 4000;
+      if (state.timestamp >= s.respawnAt) {
+        const bx = 300 + Math.random() * 2600;
+        const by = 300 + Math.random() * 2600;
+        s.isAlive = true;
+        s.head = { x: bx, y: by };
+        s.body = Array.from({ length: 12 }, (_, i) => ({ x: bx - i * 10, y: by }));
+        s.score = Math.floor(100 + Math.random() * 400);
+        s.length = 12;
+        s.radius = 18;
+        s.shieldTimer = 1.5; // brief spawn protection
+        s.respawnAt = undefined;
+      }
+    }
+
     // 4. Update Leaderboard
     state.leaderboard = state.snakes
       .filter(s => s.isAlive)
@@ -410,5 +521,114 @@ export class GameClient {
 
     // 5. Emit State Update Tick
     this.onStateUpdate?.(state);
+  }
+
+  // §3 Move + maintain the dedicated set of drifting stars.
+  private updateLocalStars(dt: number) {
+    if (!this.localState) return;
+    const food = this.localState.food;
+    let count = 0;
+    for (const f of food) {
+      if (f.type !== 'star') continue;
+      count++;
+      f.wanderTimer = (f.wanderTimer ?? 0) - dt;
+      if (f.wanderTimer <= 0) {
+        if (Math.random() < 0.3) { f.vx = 0; f.vy = 0; }
+        else { const a = Math.random() * Math.PI * 2; const spd = 22 + Math.random() * 26; f.vx = Math.cos(a) * spd; f.vy = Math.sin(a) * spd; }
+        f.wanderTimer = 1.4 + Math.random() * 2.6;
+      }
+      f.x += (f.vx ?? 0) * dt; f.y += (f.vy ?? 0) * dt;
+      const m = 80;
+      if (f.x < m) { f.x = m; f.vx = Math.abs(f.vx ?? 0); } else if (f.x > 3200 - m) { f.x = 3200 - m; f.vx = -Math.abs(f.vx ?? 0); }
+      if (f.y < m) { f.y = m; f.vy = Math.abs(f.vy ?? 0); } else if (f.y > 3200 - m) { f.y = 3200 - m; f.vy = -Math.abs(f.vy ?? 0); }
+    }
+    this.starCooldown -= dt;
+    if (count < 16 && this.starCooldown <= 0 && count < 20) { food.push(this.genStar(`star_${Date.now()}`)); this.starCooldown = 1.5; }
+  }
+
+  // §7 Wormhole lifecycle — active 1 min, then a gap, repeating.
+  private updateLocalWormhole(dt: number) {
+    if (!this.localState) return;
+    if (this.wormholeActive) {
+      this.wormholeLife -= dt;
+      const wh = this.localState.portals?.[0];
+      if (wh) wh.timerSeconds = Math.max(0, Math.ceil(this.wormholeLife));
+      if (this.wormholeLife <= 0) { this.localState.portals = []; this.wormholeActive = false; this.wormholePhase = 240; }
+    } else {
+      this.wormholePhase -= dt;
+      if (this.wormholePhase <= 0) {
+        const x = 350 + Math.random() * 2500, y = 350 + Math.random() * 2500;
+        this.localState.portals = [{ id: 'wormhole_active', targetId: 'random_safe', x, y, label: '🌀 Wormhole', color: '#8B5CF6', wormhole: true, timerSeconds: 60 }];
+        this.wormholeActive = true; this.wormholeLife = 60;
+      }
+    }
+  }
+
+  // §8 Relocate the sanctuary periodically.
+  private updateLocalSanctuary(dt: number) {
+    if (!this.localState?.sanctuaryZone) return;
+    this.sanctuaryTimer -= dt;
+    if (this.sanctuaryTimer <= 0) {
+      this.sanctuaryTimer = 300;
+      const s = this.localState.sanctuaryZone;
+      s.centerX = s.radius + Math.random() * (3200 - 2 * s.radius);
+      s.centerY = s.radius + Math.random() * (3200 - 2 * s.radius);
+    }
+  }
+
+  // §2 Blocking obstacles soft-push snake heads out (never kills).
+  private resolveLocalObstacles() {
+    const obs = this.localState?.obstacles;
+    if (!obs?.length) return;
+    for (const s of this.localState!.snakes) {
+      if (!s.isAlive) continue;
+      for (const ob of obs) {
+        if (!ob.blocking) continue;
+        const dx = s.head.x - ob.x, dy = s.head.y - ob.y;
+        const minDist = ob.radius + s.radius, distSq = dx * dx + dy * dy;
+        if (distSq < minDist * minDist && distSq > 0.01) {
+          const dist = Math.sqrt(distSq), push = minDist - dist;
+          s.head.x += (dx / dist) * push; s.head.y += (dy / dist) * push;
+        }
+      }
+    }
+  }
+
+  // §7 Entering an active wormhole jumps a snake to a random location + short cooldown.
+  private resolveLocalWormholeTeleport() {
+    const wh = this.localState?.portals?.[0];
+    if (!wh) return;
+    for (const s of this.localState!.snakes) {
+      if (!s.isAlive) continue;
+      if ((s as any).teleportCd > 0) { (s as any).teleportCd -= 0.033; continue; }
+      const dx = s.head.x - wh.x, dy = s.head.y - wh.y;
+      if (dx * dx + dy * dy < 42 * 42) {
+        const nx = 250 + Math.random() * 2700, ny = 250 + Math.random() * 2700;
+        const offX = nx - s.head.x, offY = ny - s.head.y;
+        s.head.x = nx; s.head.y = ny;
+        s.body.forEach(seg => { seg.x += offX; seg.y += offY; });
+        (s as any).teleportCd = 3.0;
+      }
+    }
+  }
+
+  // Local-engine elimination: mark the loser dead, reward the winner, scatter a little food.
+  private eliminateLocal(loser: SnakeData, winner: SnakeData | null) {
+    if (!loser.isAlive) return;
+    loser.isAlive = false;
+    if (winner) {
+      winner.kills++;
+      winner.score += 200 + Math.floor(loser.score * 0.25);
+    }
+    if (!this.localState) return;
+    for (let k = 0; k < loser.body.length; k += 4) {
+      const seg = loser.body[k];
+      this.localState.food.push({
+        id: `drop_${Date.now()}_${k}_${Math.random().toString(36).slice(2, 5)}`,
+        x: seg.x + (Math.random() - 0.5) * 20,
+        y: seg.y + (Math.random() - 0.5) * 20,
+        value: 15, type: 'apple', color: '#ff3333', icon: '🍎',
+      });
+    }
   }
 }

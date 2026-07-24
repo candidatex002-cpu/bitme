@@ -28,22 +28,32 @@ Production build: `npm run build` (backend → `backend/dist`, frontend → `fro
 
 | Action  | PC                        | Mobile                 |
 |---------|---------------------------|------------------------|
-| Move    | Mouse aim **or** WASD / arrows | Drag the on-screen joystick |
-| Boost   | Hold **Shift** or left mouse | **BOOST** button       |
-| Ability | **Space** (Coil Guard)    | **ABILITY** button     |
-| Pause   | **Esc**                   | Pause chip (top-left)  |
+| Move    | Mouse aim **or** WASD / arrows | Fixed joystick (bottom-left) — the *only* movement input |
+| Boost   | Hold **Shift** or left mouse | **⚡ Boost** button (bottom-right) |
+| Ability | **Space** (Coil Guard)    | **🌀 Ability** button   |
+| Zoom    | Mouse wheel or **+ / −**  | Pinch, or the **🔍 Zoom** button |
+| Pause   | **Esc**                   | Pause chip (top-left) — also auto-pauses when backgrounded |
+
+The whole screen no longer steers — touches outside the joystick don't move the snake.
 
 ## Game design
 
 - **Growth stages** — Baby → Young → Adult → Elite → Titan. Higher score = bigger snake, more Defense.
 - **Stats** — Health (100), Score, Defense (damage reduction), Speed %.
 - **Power-ups** — 🍒 Cherry +10 · 🍄 Mushroom +15 · 🍎 Apple +25 · 🐸 Frog +30 · ⭐ Star +50 · 🥚 Egg (big prize) · 🛡️ Shield (invulnerable) · ⚡ Speed (boost).
-- **Combat rule** — hit a snake with a *lower* score and you eat it; if a *higher*-score snake hits you, you lose health. Defense softens it, Shield blocks it.
+- **Combat rule** — elimination happens **only** when two snakes' *heads* collide; the *higher*-score head survives and the *lower*-score head dies (an exact tie kills both). Body contact of any kind — head→body, body→head, body→body — never kills. A Shield or the Safe Sanctuary makes your head immune.
 - **Ability** — *Coil Guard*: a short dash + protective shield on a 12s cooldown.
 - **Respawn options** — Stars (20⭐) · Watch Ad (free) · Wait 25s (free) · Ticket (instant).
 - **Game modes** — Classic (FFA) · Battle Royale (shrinking storm) · Team (4v4) · Event (world events).
 - **Missions** — Daily / Weekly / Event, plus **Achievements**, all tracked server-side.
 - **World events** — Rain Storm, Volcano, Titan Boss Raid, Treasure Box Drop.
+- **Living world (v4)** — **infinite wrap-around map** (no borders), **drifting stars**, **dynamic obstacles** (trees/rocks/ponds… that block but never kill), **timed wormholes**, and a **moving Safe Sanctuary** (heal + no-PvP). All shown on the minimap.
+
+## 📱 Android / Play Store
+
+Packaged with **Capacitor** — the web build runs in a native WebView. See **[ANDROID.md](ANDROID.md)** for the full flow (`npm run android:init` → `android:sync` → `android:open`, then a signed AAB). The app is playable offline via the local engine; set a `<meta name="anaconda-server">` for online multiplayer.
+
+See **[SPRINT_V4.md](SPRINT_V4.md)** for the complete Sprint V4 status (done vs. needs-infrastructure).
 
 ## Progression (v2)
 

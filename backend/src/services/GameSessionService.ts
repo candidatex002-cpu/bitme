@@ -8,6 +8,8 @@ import {
   GameMode,
   GameModeConfig,
   GrowthStage,
+  Obstacle,
+  ObstacleType,
 } from '../types';
 import { db } from '../db/Database';
 import { antiCheat } from './AntiCheatService';
@@ -29,7 +31,7 @@ const COLLECTIBLE_TABLE: CollectibleTemplate[] = [
   { type: 'mushroom', icon: '🍄', value: 15, color: '#E85D75', weight: 22, hpRestore: 4 },
   { type: 'apple', icon: '🍎', value: 25, color: '#EF3E36', weight: 20, hpRestore: 8 },
   { type: 'frog', icon: '🐸', value: 30, color: '#5FB85A', weight: 16 },
-  { type: 'star', icon: '⭐', value: 50, color: '#FFC93C', weight: 12 },
+  // ⭐ stars are NOT spawned here — they are a dedicated set of moving collectibles (§3)
   { type: 'shield', icon: '🛡️', value: 15, color: '#3E92CC', weight: 5, buff: 'shield', buffDuration: 8 },
   { type: 'speed', icon: '⚡', value: 15, color: '#FFD23F', weight: 5, buff: 'speed', buffDuration: 6 },
   { type: 'egg', icon: '🥚', value: 500, color: '#F4E9CD', weight: 2, hpRestore: 25 },
@@ -44,6 +46,18 @@ const STAGE_THRESHOLDS: Array<{ stage: GrowthStage; min: number; radius: number;
   { stage: 'Adult', min: 1500, radius: 26, defense: 22, growthFactor: 0.3  }, // slow
   { stage: 'Elite', min: 2000, radius: 30, defense: 32, growthFactor: 0.15 }, // very slow
   { stage: 'Titan', min: 2500, radius: 34, defense: 40, growthFactor: 0.05 }, // almost stops — Titan cap
+];
+
+// §2 Obstacle palette — blocking props soft-push snakes; cosmetic ones are decoration only.
+const OBSTACLE_TEMPLATES: Array<{ type: ObstacleType; icon: string; radius: number; blocking: boolean }> = [
+  { type: 'tree', icon: '🌳', radius: 34, blocking: true },
+  { type: 'rock', icon: '🪨', radius: 30, blocking: true },
+  { type: 'bush', icon: '🌲', radius: 28, blocking: false },
+  { type: 'cactus', icon: '🌵', radius: 24, blocking: true },
+  { type: 'flowerbed', icon: '🌼', radius: 26, blocking: false },
+  { type: 'log', icon: '🪵', radius: 26, blocking: false },
+  { type: 'pond', icon: '🪷', radius: 46, blocking: false },
+  { type: 'hill', icon: '⛰️', radius: 40, blocking: true },
 ];
 
 const MODE_CONFIGS: Record<GameMode, GameModeConfig> = {
@@ -66,6 +80,17 @@ export class GameSessionService {
   private readonly BASE_SPEED = 240; // Faster, smooth, responsive movement
   private readonly BOOST_MULT = 1.7;
   private readonly MAX_LENGTH = 220;
+
+  // §3 moving stars
+  private readonly STAR_MAX = 20;
+  private readonly STAR_TARGET = 16;
+  private starCooldown = 0;
+  // §7 dynamic wormhole lifecycle (active 1 min, then a 4 min gap → 5 min cadence)
+  private wormholeActive = false;
+  private wormholeLife = 0;
+  private wormholePhaseTimer = 60; // first wormhole appears ~1 min into the match
+  // §8 dynamic safe/sanctuary zone relocation
+  private sanctuaryTimer = 300;
 
   private eventTimer = 180;
   private currentEventIndex = 0;
@@ -101,13 +126,9 @@ export class GameSessionService {
         label: '🛡️ Safe Sanctuary',
         icon: '🛡️',
       },
-      // Pothole Shortcut Tunnel Portals
-      portals: [
-        { id: 'portal_1_a', targetId: 'portal_1_b', x: 600, y: 600, label: 'Shortcut A', color: '#8B5CF6' },
-        { id: 'portal_1_b', targetId: 'portal_1_a', x: 2600, y: 2600, label: 'Shortcut A Exit', color: '#8B5CF6' },
-        { id: 'portal_2_a', targetId: 'portal_2_b', x: 600, y: 2600, label: 'Shortcut B', color: '#EC4899' },
-        { id: 'portal_2_b', targetId: 'portal_2_a', x: 2600, y: 600, label: 'Shortcut B Exit', color: '#EC4899' },
-      ],
+      // §7 Dynamic wormholes spawn into this array on a timed cycle (starts empty)
+      portals: [],
+      obstacles: [],
       snakes: {},
       food: {},
       leaderboard: [],
@@ -116,6 +137,8 @@ export class GameSessionService {
     };
 
     this.spawnInitialCollectibles(60); // Clean, lesser food count
+    this.spawnMovingStars(this.STAR_TARGET); // §3
+    this.spawnObstacles(); // §2
     this.spawnBotSnakes(this.config.botCount);
     this.startLoop();
   }
@@ -132,6 +155,10 @@ export class GameSessionService {
   public getConfig(): GameModeConfig {
     return this.config;
   }
+
+  // §6 Toroidal (wrap-around) world helpers — no borders; exit one edge, appear on the other.
+  private wrap(v: number): number { const w = this.WORLD_SIZE; return ((v % w) + w) % w; }
+  private wrapDelta(d: number): number { const w = this.WORLD_SIZE; let r = ((d % w) + w) % w; if (r > w / 2) r -= w; return r; }
 
   // ---------------------------------------------------------------- stage math
   private computeStage(score: number): { stage: GrowthStage; radius: number; defense: number; growthFactor: number } {
@@ -262,16 +289,21 @@ export class GameSessionService {
       this.state.safeZone.radius -= this.state.safeZone.shrinkRate * dt;
     }
 
+    this.updateStars(dt);      // §3
+    this.updateWormhole(dt);   // §7
+    this.updateSanctuary(dt);  // §8
+
     // Movement + hazards
     for (const id in this.state.snakes) {
       const snake = this.state.snakes[id];
-      if (!snake.isAlive) continue;
+      if (!snake.isAlive || snake.isPaused) continue; // §12 paused players are frozen
       this.updateSnake(snake, dt);
     }
 
     this.resolveFoodPickups();
     this.resolveCombat();
     this.maintainCollectibles();
+    if (this.state.tick % 900 === 0) this.maintainObstacles(); // §2 re-scale ~every 30s
     this.updateLeaderboard();
   }
 
@@ -307,75 +339,78 @@ export class GameSessionService {
       snake.score = Math.max(0, snake.score - 1);
     }
 
-    const nextX = snake.head.x + Math.cos(snake.angle) * speed * dt;
-    const nextY = snake.head.y + Math.sin(snake.angle) * speed * dt;
+    const moveX = Math.cos(snake.angle) * speed * dt;
+    const moveY = Math.sin(snake.angle) * speed * dt;
+    snake.distanceTravelled += Math.sqrt(moveX * moveX + moveY * moveY) / 100;
 
-    const clampedX = Math.max(snake.radius, Math.min(this.WORLD_SIZE - snake.radius, nextX));
-    const clampedY = Math.max(snake.radius, Math.min(this.WORLD_SIZE - snake.radius, nextY));
+    // §6 Infinite wrap-around world — no borders, no wall damage.
+    snake.head.x = this.wrap(snake.head.x + moveX);
+    snake.head.y = this.wrap(snake.head.y + moveY);
 
-    if (clampedX !== nextX || clampedY !== nextY) {
-      snake.angle += Math.PI * 0.5;
-      if (snake.shieldTimer <= 0) {
-        this.damageSnake(snake, 15 * dt * 5, 'Wall collision');
-        if (!snake.isAlive) return;
-      }
-    }
-
-    const dxMove = clampedX - snake.head.x;
-    const dyMove = clampedY - snake.head.y;
-    snake.distanceTravelled += Math.sqrt(dxMove * dxMove + dyMove * dyMove) / 100;
-
-    snake.head.x = clampedX;
-    snake.head.y = clampedY;
-
-    // Pothole Shortcut Teleport Check
-    if (this.state.portals) {
+    // §7 Wormhole teleport — entering an active wormhole jumps to a random SAFE location.
+    if (this.state.portals && this.state.portals.length) {
       if ((snake as any).teleportCooldown > 0) {
         (snake as any).teleportCooldown -= dt;
       } else {
-        for (const portal of this.state.portals) {
-          const dx = snake.head.x - portal.x;
-          const dy = snake.head.y - portal.y;
-          if (dx * dx + dy * dy < 38 * 38) {
-            const targetPortal = this.state.portals.find(p => p.id === portal.targetId);
-            if (targetPortal) {
-              // Instantly teleport head and body to shortcut exit!
-              const offsetX = targetPortal.x - snake.head.x;
-              const offsetY = targetPortal.y - snake.head.y;
-              snake.head.x = targetPortal.x;
-              snake.head.y = targetPortal.y;
-              snake.body.forEach(seg => {
-                seg.x += offsetX;
-                seg.y += offsetY;
-              });
-              (snake as any).teleportCooldown = 3.0; // 3s cooldown
-              break;
-            }
+        for (const wh of this.state.portals) {
+          const dx = snake.head.x - wh.x;
+          const dy = snake.head.y - wh.y;
+          if (dx * dx + dy * dy < 42 * 42) {
+            const dest = this.randomSafeLocation(snake);
+            const offsetX = dest.x - snake.head.x;
+            const offsetY = dest.y - snake.head.y;
+            snake.head.x = dest.x;
+            snake.head.y = dest.y;
+            snake.body.forEach(seg => { seg.x += offsetX; seg.y += offsetY; });
+            (snake as any).teleportCooldown = 3.0; // short cooldown after teleport
+            break;
           }
         }
       }
     }
-    // Body follows head
-    let prev = { ...snake.head };
+
+    // §2 Soft obstacle collision — blocking props gently push the head out (never kills).
+    if (this.state.obstacles) {
+      for (const ob of this.state.obstacles) {
+        if (!ob.blocking) continue;
+        const dx = snake.head.x - ob.x;
+        const dy = snake.head.y - ob.y;
+        const minDist = ob.radius + snake.radius;
+        const distSq = dx * dx + dy * dy;
+        if (distSq < minDist * minDist && distSq > 0.01) {
+          const dist = Math.sqrt(distSq);
+          const push = (minDist - dist);
+          snake.head.x += (dx / dist) * push;
+          snake.head.y += (dy / dist) * push;
+        }
+      }
+    }
+    // Body follows head — §6 uses the shortest toroidal delta so it wraps across the seam.
+    let prev = { x: snake.head.x, y: snake.head.y };
     const spacing = 14;
     for (let i = 0; i < snake.body.length; i++) {
       const seg = snake.body[i];
-      const dx = prev.x - seg.x;
-      const dy = prev.y - seg.y;
+      const dx = this.wrapDelta(prev.x - seg.x);
+      const dy = this.wrapDelta(prev.y - seg.y);
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist > spacing) {
         const ratio = (dist - spacing) / dist;
-        seg.x += dx * ratio;
-        seg.y += dy * ratio;
+        seg.x = this.wrap(seg.x + dx * ratio);
+        seg.y = this.wrap(seg.y + dy * ratio);
       }
-      prev = { ...seg };
+      prev = { x: seg.x, y: seg.y };
     }
 
-    // Storm damage outside the safe zone
-    const dCx = snake.head.x - this.state.safeZone.centerX;
-    const dCy = snake.head.y - this.state.safeZone.centerY;
+    // Storm damage outside the safe zone (toroidal distance)
+    const dCx = this.wrapDelta(snake.head.x - this.state.safeZone.centerX);
+    const dCy = this.wrapDelta(snake.head.y - this.state.safeZone.centerY);
     if (Math.sqrt(dCx * dCx + dCy * dCy) > this.state.safeZone.radius && snake.shieldTimer <= 0) {
       this.damageSnake(snake, this.state.safeZone.damagePerSecond * dt, 'Caught in the storm');
+    }
+
+    // §8 Healing inside the Safe Sanctuary (moving zone) — temporary protection + regen.
+    if (this.isInsideSanctuary(snake) && snake.hp < snake.maxHp) {
+      snake.hp = Math.min(snake.maxHp, snake.hp + 12 * dt);
     }
   }
 
@@ -383,8 +418,8 @@ export class GameSessionService {
   private isInsideSanctuary(snake: SnakeState): boolean {
     if (!this.state.sanctuaryZone) return false;
     const s = this.state.sanctuaryZone;
-    const dx = snake.head.x - s.centerX;
-    const dy = snake.head.y - s.centerY;
+    const dx = this.wrapDelta(snake.head.x - s.centerX);
+    const dy = this.wrapDelta(snake.head.y - s.centerY);
     return (dx * dx + dy * dy) < (s.radius * s.radius);
   }
 
@@ -399,12 +434,12 @@ export class GameSessionService {
   private resolveFoodPickups() {
     for (const snakeId in this.state.snakes) {
       const snake = this.state.snakes[snakeId];
-      if (!snake.isAlive) continue;
+      if (!snake.isAlive || snake.isPaused) continue;
 
       for (const foodId in this.state.food) {
         const food = this.state.food[foodId];
-        const dx = snake.head.x - food.x;
-        const dy = snake.head.y - food.y;
+        const dx = this.wrapDelta(snake.head.x - food.x);
+        const dy = this.wrapDelta(snake.head.y - food.y);
         const distSq = dx * dx + dy * dy;
 
         // Pickup collision check (radius + 20)
@@ -415,11 +450,11 @@ export class GameSessionService {
           continue;
         }
 
-        // Magnet Catch Effect: If food is nearby (within 55px), vacuum/pull food towards head!
+        // Magnet Catch Effect: nearby food is vacuumed toward the head (toroidal direction).
         const magnetRadius = snake.radius + 55;
         if (distSq < magnetRadius * magnetRadius) {
-          food.x += (snake.head.x - food.x) * 0.22;
-          food.y += (snake.head.y - food.y) * 0.22;
+          food.x = this.wrap(food.x + dx * 0.22);
+          food.y = this.wrap(food.y + dy * 0.22);
         }
       }
     }
@@ -477,74 +512,57 @@ export class GameSessionService {
     snake.length = snake.body.length;
   }
 
-  // Classic Head Collision Rules:
-  // 1. Head-to-Body: If Snake A's HEAD hits Snake B's BODY, Snake A (the hitting head) dies/takes damage!
-  // 2. Head-to-Head: If Snake A's HEAD hits Snake B's HEAD, the smaller snake dies!
+  // Sprint V4 collision rule (Section 1) — ONLY a head-to-head collision eliminates a
+  // snake. The higher-score snake survives; the lower-score snake dies outright. An exact
+  // score tie destroys both heads. Body contact of ANY kind (head→body, body→head,
+  // body→body) never kills anyone. A Shield or the Safe Sanctuary makes a head immune.
   private resolveCombat() {
     const ids = Object.keys(this.state.snakes);
-    for (const idA of ids) {
-      const a = this.state.snakes[idA];
-      if (!a.isAlive || a.shieldTimer > 0 || this.isInsideSanctuary(a)) continue;
+    for (let i = 0; i < ids.length; i++) {
+      const a = this.state.snakes[ids[i]];
+      if (!a || !a.isAlive || a.isPaused) continue;
 
-      for (const idB of ids) {
-        if (idA === idB) continue;
-        const b = this.state.snakes[idB];
-        if (!b.isAlive) continue;
+      // Pair each snake with each other snake exactly once (j starts at i + 1).
+      for (let j = i + 1; j < ids.length; j++) {
+        const b = this.state.snakes[ids[j]];
+        if (!b || !b.isAlive || b.isPaused) continue;
         if (this.config.teamsEnabled && a.team && a.team === b.team) continue; // no friendly fire
 
-        // Check A: Head-to-Head Collision
-        const headDx = a.head.x - b.head.x;
-        const headDy = a.head.y - b.head.y;
-        const headDistSq = headDx * headDx + headDy * headDy;
-        const headCollisionDist = a.radius + b.radius;
+        // Heads must actually be touching — this is the ONLY collision that matters (toroidal).
+        const dx = this.wrapDelta(a.head.x - b.head.x);
+        const dy = this.wrapDelta(a.head.y - b.head.y);
+        const clashDist = a.radius + b.radius;
+        if (dx * dx + dy * dy >= clashDist * clashDist) continue;
 
-        if (headDistSq < headCollisionDist * headCollisionDist) {
-          if (this.isInsideSanctuary(b) || b.shieldTimer > 0) continue;
-          // Head-to-Head Clash: Lower score snake takes damage/dies
-          const loser = a.score >= b.score ? b : a;
-          const winner = loser === a ? b : a;
-          this.damageSnake(loser, 60, `Head-on clash with ${winner.displayName}`);
-          if (!loser.isAlive) {
-            winner.kills++;
-            winner.score += 200 + Math.floor(loser.score * 0.25);
-            this.applyGrowth(winner, 0);
-            if (this.config.teamsEnabled && winner.team && this.state.teamScores) {
-              this.state.teamScores[winner.team] += 1;
-            }
-            if (!winner.isBot) db.incrementCollectible(winner.userId, 'kill');
-          }
-          break;
+        const aSafe = a.shieldTimer > 0 || this.isInsideSanctuary(a);
+        const bSafe = b.shieldTimer > 0 || this.isInsideSanctuary(b);
+
+        if (a.score > b.score) {
+          if (!bSafe) this.eliminateInClash(b, a); // higher score (a) survives
+        } else if (b.score > a.score) {
+          if (!aSafe) this.eliminateInClash(a, b); // higher score (b) survives
+        } else {
+          // Exact score tie — both unprotected heads are destroyed, no kill credit.
+          if (!aSafe) this.killSnake(a, `Head-on clash with ${b.displayName}`);
+          if (!bSafe) this.killSnake(b, `Head-on clash with ${a.displayName}`);
         }
 
-        // Check B: Head-to-Body Collision (Snake A's HEAD hits Snake B's BODY)
-        let hitBody = false;
-        for (let i = 2; i < b.body.length; i += 2) {
-          const seg = b.body[i];
-          const dx = a.head.x - seg.x;
-          const dy = a.head.y - seg.y;
-          const bodyCollisionDist = a.radius + 6;
-          if (dx * dx + dy * dy < bodyCollisionDist * bodyCollisionDist) {
-            hitBody = true;
-            break;
-          }
-        }
-
-        if (hitBody) {
-          // Snake A crashed its head into Snake B's body -> Snake A dies!
-          this.damageSnake(a, 100, `Crashed head into ${b.displayName}'s body`);
-          if (!a.isAlive) {
-            b.kills++;
-            b.score += 150 + Math.floor(a.score * 0.2);
-            this.applyGrowth(b, 0);
-            if (this.config.teamsEnabled && b.team && this.state.teamScores) {
-              this.state.teamScores[b.team] += 1;
-            }
-            if (!b.isBot) db.incrementCollectible(b.userId, 'kill');
-          }
-          break;
-        }
+        if (!a.isAlive) break; // A was eliminated — stop scanning its remaining opponents.
       }
     }
+  }
+
+  // Eliminate the lower-score snake in a head-to-head clash and reward the winner.
+  private eliminateInClash(loser: SnakeState, winner: SnakeState) {
+    this.killSnake(loser, `Head-on clash with ${winner.displayName}`);
+    if (loser.isAlive) return; // defensive: sanctuary/shield already filtered by the caller
+    winner.kills++;
+    winner.score += 200 + Math.floor(loser.score * 0.25);
+    this.applyGrowth(winner, 0);
+    if (this.config.teamsEnabled && winner.team && this.state.teamScores) {
+      this.state.teamScores[winner.team] += 1;
+    }
+    if (!winner.isBot) db.incrementCollectible(winner.userId, 'kill');
   }
 
   private killSnake(snake: SnakeState, reason: string) {
@@ -612,8 +630,8 @@ export class GameSessionService {
 
     for (const fId in this.state.food) {
       const food = this.state.food[fId];
-      const dx = food.x - snake.head.x;
-      const dy = food.y - snake.head.y;
+      const dx = this.wrapDelta(food.x - snake.head.x);
+      const dy = this.wrapDelta(food.y - snake.head.y);
       const d = dx * dx + dy * dy;
       if (d < minDist) { minDist = d; target = { x: food.x, y: food.y }; }
     }
@@ -623,15 +641,15 @@ export class GameSessionService {
       const other = this.state.snakes[id];
       if (id === snake.id || !other.isAlive) continue;
       if (other.score < snake.score * 0.7) {
-        const dx = other.head.x - snake.head.x;
-        const dy = other.head.y - snake.head.y;
+        const dx = this.wrapDelta(other.head.x - snake.head.x);
+        const dy = this.wrapDelta(other.head.y - snake.head.y);
         const d = dx * dx + dy * dy;
         if (d < 320 * 320 && d < minDist) { minDist = d; target = { x: other.head.x, y: other.head.y }; }
       }
     }
 
     if (target) {
-      const targetAngle = Math.atan2(target.y - snake.head.y, target.x - snake.head.x);
+      const targetAngle = Math.atan2(this.wrapDelta(target.y - snake.head.y), this.wrapDelta(target.x - snake.head.x));
       let diff = targetAngle - snake.angle;
       while (diff < -Math.PI) diff += Math.PI * 2;
       while (diff > Math.PI) diff -= Math.PI * 2;
@@ -699,6 +717,183 @@ export class GameSessionService {
     for (let i = 0; i < count; i++) {
       this.registerPlayer(`bot_${i + 1}`, names[i % names.length], skins[i % skins.length], true);
     }
+  }
+
+  // ---------------------------------------------------------------- §3 moving stars
+  private spawnMovingStars(count: number) {
+    for (let i = 0; i < count && this.starCount() < this.STAR_MAX; i++) this.spawnMovingStar();
+  }
+
+  private starCount(): number {
+    let n = 0;
+    for (const id in this.state.food) if (this.state.food[id].type === 'star') n++;
+    return n;
+  }
+
+  private spawnMovingStar() {
+    const id = `star_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    this.state.food[id] = {
+      id,
+      x: 200 + Math.random() * (this.WORLD_SIZE - 400),
+      y: 200 + Math.random() * (this.WORLD_SIZE - 400),
+      value: 50, type: 'star', icon: '⭐', color: '#FFC93C',
+      vx: 0, vy: 0, wanderTimer: Math.random() * 2,
+    };
+  }
+
+  private updateStars(dt: number) {
+    let count = 0;
+    for (const id in this.state.food) {
+      const f = this.state.food[id];
+      if (f.type !== 'star') continue;
+      count++;
+      this.moveStar(f, dt);
+    }
+    // Respawn toward the target with a short delay after a star is collected (§3).
+    this.starCooldown -= dt;
+    if (count < this.STAR_TARGET && this.starCooldown <= 0 && this.starCount() < this.STAR_MAX) {
+      this.spawnMovingStar();
+      this.starCooldown = 1.5;
+    }
+  }
+
+  private moveStar(star: FoodItem, dt: number) {
+    star.wanderTimer = (star.wanderTimer ?? 0) - dt;
+    if (star.wanderTimer <= 0) {
+      if (Math.random() < 0.3) {
+        star.vx = 0; star.vy = 0;                 // occasionally stop
+      } else {
+        const a = Math.random() * Math.PI * 2;    // occasionally change direction
+        const spd = 22 + Math.random() * 26;      // slow, natural drift
+        star.vx = Math.cos(a) * spd;
+        star.vy = Math.sin(a) * spd;
+      }
+      star.wanderTimer = 1.4 + Math.random() * 2.6;
+    }
+    star.x += (star.vx ?? 0) * dt;
+    star.y += (star.vy ?? 0) * dt;
+    const m = 80;
+    if (star.x < m) { star.x = m; star.vx = Math.abs(star.vx ?? 0); }
+    else if (star.x > this.WORLD_SIZE - m) { star.x = this.WORLD_SIZE - m; star.vx = -Math.abs(star.vx ?? 0); }
+    if (star.y < m) { star.y = m; star.vy = Math.abs(star.vy ?? 0); }
+    else if (star.y > this.WORLD_SIZE - m) { star.y = this.WORLD_SIZE - m; star.vy = -Math.abs(star.vy ?? 0); }
+  }
+
+  // ---------------------------------------------------------------- §7 dynamic wormholes
+  private updateWormhole(dt: number) {
+    if (this.wormholeActive) {
+      this.wormholeLife -= dt;
+      const wh = this.state.portals?.[0];
+      if (wh) wh.timerSeconds = Math.max(0, Math.ceil(this.wormholeLife));
+      if (this.wormholeLife <= 0) {
+        this.state.portals = [];
+        this.wormholeActive = false;
+        this.wormholePhaseTimer = 240; // 4 min gap → 5 min spawn cadence
+      }
+    } else {
+      this.wormholePhaseTimer -= dt;
+      if (this.wormholePhaseTimer <= 0) {
+        this.spawnWormhole();
+        this.wormholeActive = true;
+        this.wormholeLife = 60; // active for 1 minute
+      }
+    }
+  }
+
+  private spawnWormhole() {
+    const x = 350 + Math.random() * (this.WORLD_SIZE - 700);
+    const y = 350 + Math.random() * (this.WORLD_SIZE - 700);
+    this.state.portals = [
+      { id: 'wormhole_active', targetId: 'random_safe', x, y, label: '🌀 Wormhole', color: '#8B5CF6', wormhole: true, timerSeconds: 60 },
+    ];
+  }
+
+  private randomSafeLocation(exclude: SnakeState): Vector2D {
+    for (let tries = 0; tries < 24; tries++) {
+      const x = 250 + Math.random() * (this.WORLD_SIZE - 500);
+      const y = 250 + Math.random() * (this.WORLD_SIZE - 500);
+      let ok = true;
+      for (const id in this.state.snakes) {
+        const o = this.state.snakes[id];
+        if (o.id === exclude.id || !o.isAlive) continue;
+        const dx = o.head.x - x, dy = o.head.y - y;
+        if (dx * dx + dy * dy < 260 * 260) { ok = false; break; }
+      }
+      if (ok) return { x, y };
+    }
+    return { x: this.state.safeZone.centerX, y: this.state.safeZone.centerY };
+  }
+
+  // ---------------------------------------------------------------- §8 dynamic sanctuary
+  private updateSanctuary(dt: number) {
+    if (!this.state.sanctuaryZone) return;
+    this.sanctuaryTimer -= dt;
+    if (this.sanctuaryTimer <= 0) {
+      this.sanctuaryTimer = 300; // relocate every 5 minutes
+      const r = this.state.sanctuaryZone.radius;
+      this.state.sanctuaryZone.centerX = r + Math.random() * (this.WORLD_SIZE - 2 * r);
+      this.state.sanctuaryZone.centerY = r + Math.random() * (this.WORLD_SIZE - 2 * r);
+    }
+  }
+
+  // ---------------------------------------------------------------- §2 dynamic obstacles
+  private desiredObstacleCount(): number {
+    const avg = this.averageScore();
+    const tier = avg >= 1000 ? 2 : avg >= 200 ? 1 : 0; // scales with avg lobby progression
+    return [10, 18, 26][tier];
+  }
+
+  private averageScore(): number {
+    let sum = 0, n = 0;
+    for (const id in this.state.snakes) { const s = this.state.snakes[id]; if (s.isAlive) { sum += s.score; n++; } }
+    return n ? sum / n : 0;
+  }
+
+  private spawnObstacles() {
+    this.state.obstacles = [];
+    this.addObstaclesUpTo(this.desiredObstacleCount());
+  }
+
+  // Adds obstacles as the lobby levels up; never removes them (avoids props popping out).
+  private maintainObstacles() {
+    this.addObstaclesUpTo(this.desiredObstacleCount());
+  }
+
+  private addObstaclesUpTo(target: number) {
+    const obstacles = this.state.obstacles ?? (this.state.obstacles = []);
+    let guard = 0;
+    while (obstacles.length < target && guard++ < 80) {
+      const t = OBSTACLE_TEMPLATES[Math.floor(Math.random() * OBSTACLE_TEMPLATES.length)];
+      const pos = this.openSpot(t.radius, obstacles);
+      if (!pos) continue;
+      obstacles.push({ id: `ob_${obstacles.length}_${Math.random().toString(36).slice(2, 6)}`, type: t.type, icon: t.icon, x: pos.x, y: pos.y, radius: t.radius, blocking: t.blocking });
+    }
+  }
+
+  // Find an open spot that guarantees a navigable path — props keep wide lanes between them.
+  private openSpot(radius: number, existing: Obstacle[]): Vector2D | null {
+    for (let tries = 0; tries < 30; tries++) {
+      const x = 220 + Math.random() * (this.WORLD_SIZE - 440);
+      const y = 220 + Math.random() * (this.WORLD_SIZE - 440);
+      const sc = this.state.sanctuaryZone;
+      if (sc) { const dx = x - sc.centerX, dy = y - sc.centerY; if (dx * dx + dy * dy < (sc.radius + 120) * (sc.radius + 120)) continue; }
+      let ok = true;
+      for (const o of existing) {
+        const dx = x - o.x, dy = y - o.y;
+        const gap = radius + o.radius + 140; // wide spacing → always a lane between props
+        if (dx * dx + dy * dy < gap * gap) { ok = false; break; }
+      }
+      if (ok) return { x, y };
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------- §12 pause protection
+  public setPlayerInactive(userId: string, inactive: boolean): void {
+    const snake = this.state.snakes[userId];
+    if (!snake) return;
+    snake.isPaused = inactive;
+    if (inactive) snake.boosting = false;
   }
 
   private updateLeaderboard() {

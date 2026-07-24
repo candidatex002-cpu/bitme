@@ -125,6 +125,11 @@ class AnacondaPark {
   // input
   private angle = 0; private boosting = false; private keys: Record<string, boolean> = {};
   private sendTimer: any = null; private joyActive = false;
+  // §4 fixed joystick + §5 pinch-zoom touch tracking
+  private joyId: number | null = null;
+  private joyCenter = { x: 0, y: 0 };
+  private readonly joyRadius = 52;
+  private pinchDist = 0;
 
   // match state
   private matchStart = 0; private lastAlive = true; private lastSnake: SnakeData | null = null;
@@ -138,6 +143,33 @@ class AnacondaPark {
     this.initGuest();
     window.addEventListener('resize', () => this.renderer?.resize());
     window.addEventListener('keydown', (e) => { if (e.code === 'Escape' && (this.screen === 'play' || this.screen === 'pause')) this.togglePause(); });
+    this.bindLifecycle();
+  }
+
+  // §12 Mobile pause — home button, incoming call, lock screen, backgrounding all
+  // fire visibilitychange/blur. We auto-pause, tell the server to mark us inactive
+  // (no damage), and persist a resumable session snapshot.
+  private bindLifecycle() {
+    document.addEventListener('visibilitychange', () => { if (document.hidden) this.autoPause(); });
+    window.addEventListener('blur', () => this.autoPause());
+    window.addEventListener('pagehide', () => this.saveSession());
+  }
+  private autoPause() {
+    if (this.screen !== 'play') return;
+    this.boosting = false;
+    this.client.notifyPause(true);
+    this.saveSession();
+    this.setScreen('pause');
+  }
+  private saveSession() {
+    if (this.screen !== 'play' && this.screen !== 'pause') return;
+    try {
+      localStorage.setItem('ap_session', JSON.stringify({
+        at: Date.now(), mode: this.selectedMode, skin: this.selectedSkin,
+        matchType: this.matchType, region: this.selectedRegion,
+        score: Math.round(this.lastSnake?.score || 0),
+      }));
+    } catch { /* */ }
   }
 
   // ------------------------------------------------------------- settings
@@ -155,17 +187,32 @@ class AnacondaPark {
   private animFrameId: number | null = null;
 
   // ------------------------------------------------------------- data
+  // §10 Persist the session locally so progress survives app close / restart / offline.
+  private persistSession() {
+    try { if (this.token && this.profile) localStorage.setItem('ap_profile_cache', JSON.stringify({ token: this.token, profile: this.profile })); } catch { /* */ }
+  }
+  private loadCachedSession(): { token: string; profile: any } | null {
+    try { const raw = localStorage.getItem('ap_profile_cache'); if (!raw) return null; const d = JSON.parse(raw); return d?.token && d?.profile ? d : null; } catch { return null; }
+  }
+
   private async initGuest() {
+    // Restore any cached session first so the player sees their progress instantly, even offline.
+    const cached = this.loadCachedSession();
+    if (cached) { this.token = cached.token; this.profile = cached.profile; this.selectedSkin = cached.profile?.equippedSkin || this.selectedSkin; this.render(); }
     try {
-      const res = await fetch(API + '/api/auth/guest', { method: 'POST' });
-      const data = await res.json();
-      this.token = data.token;
-      this.profile = data.profile;
-      this.selectedSkin = data.profile?.equippedSkin || 'Forest';
+      if (!this.token) {
+        const res = await fetch(API + '/api/auth/guest', { method: 'POST' });
+        const data = await res.json();
+        this.token = data.token;
+        this.profile = data.profile;
+      }
+      this.selectedSkin = this.profile?.equippedSkin || 'Forest';
       await this.refreshProfile();
       await this.fetchAux();
+      this.persistSession();
       this.render();
     } catch {
+      if (this.profile) { this.persistSession(); this.render(); return; }
       this.token = 'guest_local_token';
       this.profile = {
         id: 'guest_1',
@@ -200,7 +247,13 @@ class AnacondaPark {
   }
 
   private async refreshProfile() {
-    try { const res = await fetch(API + '/api/player/profile', { headers: { Authorization: `Bearer ${this.token}` } }); this.profile = (await res.json()).profile; } catch { /* */ }
+    // Only overwrite the cached profile when the server actually returns one (§10 — a 401
+    // or an offline fetch must not wipe locally-persisted progress).
+    try {
+      const res = await fetch(API + '/api/player/profile', { headers: { Authorization: `Bearer ${this.token}` } });
+      const data = await res.json();
+      if (data?.profile) { this.profile = data.profile; this.persistSession(); }
+    } catch { /* keep cached profile */ }
   }
 
   private rank() { return this.profile?.rank || { label: 'Bronze III', color: '#b45309', tier: 'Bronze' }; }
@@ -331,10 +384,15 @@ class AnacondaPark {
       if (data.profile) this.profile = data.profile;
       if (data.levelsGained > 0) this.showLevelUp(data.profile.level);
     } catch { this.summary = { score: Math.round(snake?.score || 0), kills: snake?.kills || 0, placement, survival, earnedStars: 0, earnedXP: 0, earnedEvoXP: 0, levelsGained: 0 }; }
+    this.persistSession(); // §10 keep earned stars/XP across restarts
     await this.fetchAux(); this.client.disconnect(); this.setScreen('gameover');
   }
 
-  private togglePause() { audio.playClick(); if (this.screen === 'play') this.setScreen('pause'); else if (this.screen === 'pause') { this.setScreen('play'); this.setupInput(); } }
+  private togglePause() {
+    audio.playClick();
+    if (this.screen === 'play') { this.client.notifyPause(true); this.saveSession(); this.setScreen('pause'); }
+    else if (this.screen === 'pause') { this.client.notifyPause(false); this.setScreen('play'); this.setupInput(); }
+  }
 
   private async abandon() {
     audio.playClick(); this.teardownInput(); this.clearRespawnTimers();
@@ -362,23 +420,37 @@ class AnacondaPark {
     this.teardownInput();
     window.addEventListener('mousemove', this.onMouseMove); window.addEventListener('mousedown', this.onMouseDown); window.addEventListener('mouseup', this.onMouseUp);
     window.addEventListener('keydown', this.onKeyDown); window.addEventListener('keyup', this.onKeyUp);
-    this.bindTouch();
+    window.addEventListener('wheel', this.onWheel, { passive: false });
+    // §4 fixed-joystick + §5 pinch — window-level so a drag that leaves the base still tracks
+    window.addEventListener('touchstart', this.onTouchStart, { passive: false });
+    window.addEventListener('touchmove', this.onTouchMove, { passive: false });
+    window.addEventListener('touchend', this.onTouchEnd);
+    window.addEventListener('touchcancel', this.onTouchEnd);
     if (!this.sendTimer) this.sendTimer = setInterval(() => this.pumpInput(), 33);
   }
   private teardownInput() {
     window.removeEventListener('mousemove', this.onMouseMove); window.removeEventListener('mousedown', this.onMouseDown); window.removeEventListener('mouseup', this.onMouseUp);
     window.removeEventListener('keydown', this.onKeyDown); window.removeEventListener('keyup', this.onKeyUp);
+    window.removeEventListener('wheel', this.onWheel);
+    window.removeEventListener('touchstart', this.onTouchStart);
+    window.removeEventListener('touchmove', this.onTouchMove);
+    window.removeEventListener('touchend', this.onTouchEnd);
+    window.removeEventListener('touchcancel', this.onTouchEnd);
+    this.joyId = null; this.joyActive = false; this.pinchDist = 0;
     if (this.sendTimer) { clearInterval(this.sendTimer); this.sendTimer = null; }
   }
   private onMouseMove = (e: MouseEvent) => { if (this.screen !== 'play' || this.joyActive || this.isWasd()) return; this.angle = Math.atan2(e.clientY - innerHeight / 2, e.clientX - innerWidth / 2); };
-  private onMouseDown = () => { if (this.screen === 'play') this.boosting = true; };
+  private onMouseDown = (e: MouseEvent) => { if (this.screen === 'play' && !(e.target as HTMLElement)?.closest('.hud-panel,.touch-btn,.hud-pause')) this.boosting = true; };
   private onMouseUp = () => { this.boosting = false; };
+  private onWheel = (e: WheelEvent) => { if (this.screen !== 'play') return; e.preventDefault(); this.renderer?.adjustZoom(e.deltaY < 0 ? 1.08 : 0.926); };
   private onKeyDown = (e: KeyboardEvent) => {
     if (this.screen !== 'play') return;
     const k = e.key.toLowerCase();
     if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) { this.keys[k] = true; e.preventDefault(); }
     if (k === 'shift') this.boosting = true;
     if (e.code === 'Space') { e.preventDefault(); this.client.activateAbility(); audio.playClick(); }
+    if (k === '+' || k === '=') this.renderer?.adjustZoom(1.1);
+    if (k === '-' || k === '_') this.renderer?.adjustZoom(0.9);
   };
   private onKeyUp = (e: KeyboardEvent) => { const k = e.key.toLowerCase(); if (this.keys[k] !== undefined) this.keys[k] = false; if (k === 'shift') this.boosting = false; };
   private isWasd() { return this.keys['w'] || this.keys['a'] || this.keys['s'] || this.keys['d'] || this.keys['arrowup'] || this.keys['arrowdown'] || this.keys['arrowleft'] || this.keys['arrowright']; }
@@ -392,22 +464,97 @@ class AnacondaPark {
     }
     this.client.sendInput(this.angle, this.boosting);
   }
+
+  // ---- §4 Fixed joystick (movement) + §5 pinch-zoom -----------------------
+  private touchIsOnControl(x: number, y: number): boolean {
+    const el = document.elementFromPoint(x, y) as HTMLElement | null;
+    return !!(el && el.closest('.touch-btn, .hud-panel, .hud-pause, .overlay, .ability-badge'));
+  }
+  private joystickHit(x: number, y: number): DOMRect | null {
+    const el = document.getElementById('touch-joystick');
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const dx = x - cx, dy = y - cy;
+    const reach = r.width * 0.95; // generous grab radius around the fixed base
+    return dx * dx + dy * dy < reach * reach ? r : null;
+  }
+  private onTouchStart = (e: TouchEvent) => {
+    if (this.screen !== 'play') return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      if (this.touchIsOnControl(t.clientX, t.clientY)) continue; // buttons handle themselves
+      const rect = this.joyId === null ? this.joystickHit(t.clientX, t.clientY) : null;
+      if (rect) {
+        this.joyId = t.identifier;
+        this.joyCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        this.joyActive = true;
+        this.updateJoy(t.clientX, t.clientY);
+        e.preventDefault();
+      }
+      // Touches outside the joystick do NOT steer the snake (§4 requirement).
+    }
+    if (e.touches.length === 2) this.pinchDist = this.touchSpread(e.touches);
+  };
+  private onTouchMove = (e: TouchEvent) => {
+    if (this.screen !== 'play') return;
+    if (e.touches.length >= 2) {
+      const d = this.touchSpread(e.touches);
+      if (this.pinchDist > 0 && d > 0) this.renderer?.adjustZoom(d / this.pinchDist);
+      this.pinchDist = d;
+    }
+    if (this.joyId !== null) {
+      for (let i = 0; i < e.touches.length; i++) {
+        const t = e.touches[i];
+        if (t.identifier === this.joyId) { this.updateJoy(t.clientX, t.clientY); e.preventDefault(); break; }
+      }
+    }
+  };
+  private onTouchEnd = (e: TouchEvent) => {
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === this.joyId) { this.joyId = null; this.joyActive = false; this.resetKnob(); }
+    }
+    if (e.touches.length < 2) this.pinchDist = 0;
+  };
+  private touchSpread(t: TouchList): number { return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY); }
+  private updateJoy(x: number, y: number) {
+    const dx = x - this.joyCenter.x, dy = y - this.joyCenter.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 4) this.angle = Math.atan2(dy, dx);
+    const clamped = Math.min(dist, this.joyRadius);
+    const kx = Math.cos(this.angle) * clamped, ky = Math.sin(this.angle) * clamped;
+    const knob = document.getElementById('touch-knob');
+    if (knob) knob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
+    document.getElementById('touch-joystick')?.classList.add('active');
+  }
+  private resetKnob() {
+    const knob = document.getElementById('touch-knob');
+    if (knob) knob.style.transform = 'translate(-50%,-50%)';
+    document.getElementById('touch-joystick')?.classList.remove('active');
+  }
+
+  // ---- On-screen action buttons (rebound on each HUD render) --------------
   private bindTouch() {
-    const handleTouch = (t: Touch) => {
-      const cx = window.innerWidth / 2;
-      const cy = window.innerHeight / 2;
-      this.angle = Math.atan2(t.clientY - cy, t.clientX - cx);
-    };
-
-    window.addEventListener('touchstart', (e) => {
-      if (this.screen !== 'play') return;
-      if (e.touches.length > 0) handleTouch(e.touches[0]);
-    }, { passive: true });
-
-    window.addEventListener('touchmove', (e) => {
-      if (this.screen !== 'play') return;
-      if (e.touches.length > 0) handleTouch(e.touches[0]);
-    }, { passive: true });
+    // Window-level joystick/pinch handlers live in setupInput(); here we (re)bind the
+    // on-screen action buttons, which are recreated every time the HUD is rendered.
+    const boost = document.getElementById('touch-boost');
+    if (boost) {
+      const on = (e: Event) => { e.preventDefault(); e.stopPropagation(); this.boosting = true; };
+      const off = (e: Event) => { e.stopPropagation(); this.boosting = false; };
+      boost.addEventListener('touchstart', on, { passive: false });
+      boost.addEventListener('touchend', off); boost.addEventListener('touchcancel', off);
+      boost.addEventListener('mousedown', on); boost.addEventListener('mouseup', off);
+    }
+    const ability = document.getElementById('touch-ability');
+    if (ability) ability.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); this.client.activateAbility(); audio.playClick(); }, { passive: false });
+    const zoom = document.getElementById('touch-zoom');
+    if (zoom) {
+      const cyc = (e: Event) => { e.preventDefault(); e.stopPropagation(); const label = this.renderer?.cycleZoom(); const l = document.getElementById('touch-zoom-label'); if (l && label) l.innerText = label; };
+      zoom.addEventListener('touchstart', cyc, { passive: false });
+      zoom.addEventListener('click', cyc);
+    }
+    const mini = document.getElementById('touch-mini');
+    if (mini) mini.addEventListener('click', (e) => { e.stopPropagation(); document.querySelector('.hud')?.classList.toggle('mini-hidden'); });
   }
 
   // ------------------------------------------------------------- HUD
@@ -771,7 +918,16 @@ class AnacondaPark {
       <div class="hud-leaderboard hud-panel"><h4>🏆 Top 5</h4><div id="hud-lb-rows"></div></div>
       <div class="ability-badge hud-panel ready" id="ability-badge">🌀 <span class="cd" id="ability-cd">READY</span></div>
       <div class="touch-joystick" id="touch-joystick"><div class="touch-knob" id="touch-knob"></div></div>
-      <div class="touch-actions"><div class="touch-btn ability" id="touch-ability">🌀</div><div class="touch-btn boost" id="touch-boost">⚡</div></div>
+      <div class="touch-actions">
+        <div class="touch-row">
+          <div class="touch-btn mini" id="touch-mini" title="Toggle HUD / minimap">🗺️</div>
+          <div class="touch-btn zoom" id="touch-zoom" title="Zoom">🔍<span class="tz-label" id="touch-zoom-label">Normal</span></div>
+        </div>
+        <div class="touch-row">
+          <div class="touch-btn ability" id="touch-ability" title="Ability / Shield">🌀</div>
+          <div class="touch-btn boost" id="touch-boost" title="Boost">⚡</div>
+        </div>
+      </div>
     </div>`;
   }
 

@@ -1,0 +1,13 @@
+{
+  "appId": "com.myheroarc.anacondapark",
+  "appName": "Anaconda Park",
+  "webDir": "frontend/dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#D4EEF9",
+    "allowMixedContent": false
+  },
+  "backgroundColor": "#D4EEF9"
+}

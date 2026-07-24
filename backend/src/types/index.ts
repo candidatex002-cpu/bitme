@@ -112,6 +112,7 @@ export interface SnakeState {
   distanceTravelled: number; // metres (world units / 100)
   isBot?: boolean;
   isBoss?: boolean;
+  isPaused?: boolean;        // §12 backgrounded player — frozen, invisible, takes no damage
 }
 
 export type CollectibleType =
@@ -143,6 +144,23 @@ export interface FoodItem {
   buff?: 'shield' | 'speed';   // active power-up granted on pickup
   buffDuration?: number;       // seconds
   couponData?: CouponReward;
+  // §3 Moving stars — slow natural drift with occasional stops / direction changes
+  vx?: number;
+  vy?: number;
+  wanderTimer?: number;
+}
+
+// §2 Dynamic obstacles — decorative + soft-collision props that never fully block the map
+export type ObstacleType = 'tree' | 'rock' | 'bush' | 'cactus' | 'flowerbed' | 'log' | 'pond' | 'hill';
+
+export interface Obstacle {
+  id: string;
+  type: ObstacleType;
+  x: number;
+  y: number;
+  radius: number;
+  icon: string;
+  blocking: boolean; // true = soft-pushes snakes out (rock/tree/hill); false = purely cosmetic
 }
 
 export interface SafeZone {
@@ -231,6 +249,8 @@ export interface PortalShortcut {
   y: number;
   label: string;
   color: string;
+  timerSeconds?: number; // §7 remaining lifetime of a dynamic wormhole
+  wormhole?: boolean;    // §7 dynamic wormhole (vs. legacy paired shortcut)
 }
 
 export interface GameWorldState {
@@ -243,6 +263,7 @@ export interface GameWorldState {
   safeZone: SafeZone;
   sanctuaryZone?: SanctuaryZone;
   portals?: PortalShortcut[];
+  obstacles?: Obstacle[];
   snakes: Record<string, SnakeState>;
   food: Record<string, FoodItem>;
   leaderboard: Array<{ id: string; name: string; score: number; kills: number; team?: 'red' | 'blue' }>;

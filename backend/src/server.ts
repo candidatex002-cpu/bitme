@@ -258,6 +258,16 @@ io.on('connection', (socket) => {
     socket.emit('respawn_result', { success: true, snake, profile: withRank(updatedProfile), method });
   });
 
+  // §12 Mobile pause — client backgrounded (home/lock/call): mark inactive, no damage.
+  socket.on('player_pause', () => {
+    const user = connectedSockets.get(socket.id);
+    if (user) sessionManager.getSession(user.mode).setPlayerInactive(user.userId, true);
+  });
+  socket.on('player_resume', () => {
+    const user = connectedSockets.get(socket.id);
+    if (user) sessionManager.getSession(user.mode).setPlayerInactive(user.userId, false);
+  });
+
   socket.on('disconnect', () => {
     const user = connectedSockets.get(socket.id);
     if (user) {
@@ -278,6 +288,9 @@ setInterval(() => {
       snakes: Object.values(state.snakes),
       food: Object.values(state.food),
       safeZone: state.safeZone,
+      sanctuaryZone: state.sanctuaryZone,
+      portals: state.portals,
+      obstacles: state.obstacles,
       leaderboard: state.leaderboard,
       teamScores: state.teamScores,
       currentEvent: state.currentEvent,
