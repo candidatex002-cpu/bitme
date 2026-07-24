@@ -1,4 +1,12 @@
 import { GameStateTick, SnakeData, FoodData, ObstacleData } from './GameClient.js';
+import {
+  renderTreeAsset,
+  renderPondAsset,
+  renderCaveAsset,
+  renderRockAsset,
+  renderFrogAsset,
+  renderWormholeAsset,
+} from './assets/index.js';
 
 interface SkinPalette {
   primary: string;
@@ -241,38 +249,13 @@ export class Renderer {
     const cam = this.cameraPos;
     const R = 5000; // covers the viewport at any zoom — §6 seamless, borderless ground
 
-    // 1. Light Dreamy Base (Light Sky/Meadow pastel ground)
+    // 1. Light Dreamy Uniform Pastel Base (No red/blue/yellow stroke lines)
     ctx.fillStyle = '#EBF5FB';
     ctx.fillRect(cam.x - R, cam.y - R, R * 2, R * 2);
 
-    // 2. Soft Winding Sandy Paths (Lightly visible pastel sandy dirt trail)
-    ctx.strokeStyle = 'rgba(253, 230, 138, 0.42)';
-    ctx.lineWidth = 90;
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    ctx.beginPath();
-    ctx.moveTo(this.wrapNear(200, cam.x), this.wrapNear(300, cam.y));
-    ctx.bezierCurveTo(
-      this.wrapNear(800, cam.x), this.wrapNear(1200, cam.y),
-      this.wrapNear(1800, cam.x), this.wrapNear(600, cam.y),
-      this.wrapNear(2800, cam.x), this.wrapNear(1800, cam.y)
-    );
-    ctx.stroke();
-
-    // 3. Soft Light Blue River Curves with Sandy Shores
-    ctx.strokeStyle = 'rgba(186, 230, 253, 0.55)';
-    ctx.lineWidth = 60;
-    ctx.beginPath();
-    ctx.moveTo(this.wrapNear(2800, cam.x), this.wrapNear(200, cam.y));
-    ctx.bezierCurveTo(
-      this.wrapNear(2000, cam.x), this.wrapNear(1000, cam.y),
-      this.wrapNear(1200, cam.x), this.wrapNear(2200, cam.y),
-      this.wrapNear(300, cam.x), this.wrapNear(2800, cam.y)
-    );
-    ctx.stroke();
-
-    // 4. Soft Park Meadow Patches
-    ctx.fillStyle = 'rgba(220, 252, 231, 0.45)';
-    for (const [px, py, pr] of [[350, 500, 320], [2500, 700, 360], [700, 2400, 380], [2400, 2300, 340]]) {
+    // 2. Soft Park Meadow Patches (Organic subtle filled patches without border lines)
+    ctx.fillStyle = 'rgba(220, 252, 231, 0.42)';
+    for (const [px, py, pr] of [[350, 500, 340], [2500, 700, 380], [700, 2400, 400], [2400, 2300, 360]]) {
       ctx.beginPath(); ctx.arc(this.wrapNear(px, cam.x), this.wrapNear(py, cam.y), pr, 0, Math.PI * 2); ctx.fill();
     }
   }
@@ -286,13 +269,9 @@ export class Renderer {
     ctx.beginPath();
     ctx.rect(this.cameraPos.x - R, this.cameraPos.y - R, R * 2, R * 2);
     ctx.arc(cx, cy, zone.radius, 0, Math.PI * 2, true);
-    ctx.fillStyle = 'rgba(255, 183, 178, 0.15)';
+    ctx.fillStyle = 'rgba(255, 183, 178, 0.12)';
     ctx.fill('evenodd');
-
-    ctx.beginPath();
-    ctx.arc(cx, cy, zone.radius, 0, Math.PI * 2);
-    ctx.strokeStyle = '#FFB7B2'; ctx.lineWidth = 5;
-    ctx.stroke();
+    // Removed thin red/pink boundary stroke line as requested!
     ctx.restore();
   }
 
@@ -306,140 +285,48 @@ export class Renderer {
     ctx.arc(cx, cy, s.radius, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(167, 243, 208, 0.28)';
     ctx.fill();
-    ctx.strokeStyle = '#10B981';
-    ctx.lineWidth = 4.5;
-    ctx.setLineDash([14, 8]);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    // Removed thin dashed green boundary line!
 
     // Sanctuary Label — Rendered cleanly in the exact CENTER MIDDLE of the circle
     ctx.fillStyle = 'rgba(6, 78, 59, 0.88)';
     ctx.beginPath();
     ctx.roundRect(cx - 150, cy - 18, 300, 36, 18);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(16, 185, 129, 0.6)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
 
-    ctx.font = 'bold 15px Outfit, sans-serif';
+    ctx.font = '800 13px Outfit, sans-serif';
+    ctx.fillStyle = '#ECFDF5';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillText(`${s.icon} ${s.label} · NO PVP SAFE ZONE`, cx, cy);
+    ctx.fillText(`${s.icon || '🛡️'} ${s.label || 'Safe Sanctuary'} · NO PVP SAFE ZONE`, cx, cy);
+
     ctx.restore();
   }
 
-  /** Render Wormhole Portals matching reference images (Floating crystal shards, magenta outer vortex, glowing pink energy ring, cyan event horizon core) */
+  /** Render Wormhole Portals — Delegated to ./assets/powers.ts asset registry */
   private renderPortals(portals: Array<{ id: string; targetId: string; x: number; y: number; label: string; color: string }>) {
-    const ctx = this.ctx;
-    const pulse = Math.sin(this.animFrame * 0.12) * 5;
-    const spin = this.animFrame * 0.05;
-
     for (const p of portals) {
       const px = this.wrapNear(p.x, this.cameraPos.x);
       const py = this.wrapNear(p.y, this.cameraPos.y);
-      ctx.save();
-      ctx.translate(px, py);
-
-      // 1. Orbiting Floating Dark Magenta Crystal Shards (Image 2)
-      ctx.fillStyle = '#6B21A8';
-      for (let i = 0; i < 8; i++) {
-        const a = (i * Math.PI / 4) + spin * 0.7;
-        const dist = 52 + Math.sin(spin * 2 + i) * 4;
-        const sx = Math.cos(a) * dist;
-        const sy = Math.sin(a) * dist;
-        ctx.save();
-        ctx.translate(sx, sy);
-        ctx.rotate(a + Math.PI / 2);
-        ctx.beginPath();
-        ctx.moveTo(0, -6); ctx.lineTo(4, 4); ctx.lineTo(-4, 4);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-      }
-
-      // 2. Outer Organic Wavy Magenta/Purple Vortex Shell (Image 1)
-      ctx.rotate(spin);
-      ctx.fillStyle = '#C026D3'; // Vibrant Magenta
-      ctx.beginPath();
-      const rBase = 42 + pulse;
-      for (let a = 0; a <= Math.PI * 2; a += 0.2) {
-        const rWavy = rBase + Math.sin(a * 5 + spin * 3) * 6;
-        const vx = Math.cos(a) * rWavy;
-        const vy = Math.sin(a) * rWavy;
-        if (a === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
-      }
-      ctx.closePath();
-      ctx.fill();
-
-      // 3. Middle Swirling Deep Purple Contour Ring
-      ctx.fillStyle = '#7E22CE';
-      ctx.beginPath();
-      const rMid = 34 + pulse * 0.6;
-      for (let a = 0; a <= Math.PI * 2; a += 0.2) {
-        const rWavy = rMid + Math.sin(-a * 4 + spin * 4) * 4;
-        const vx = Math.cos(a) * rWavy;
-        const vy = Math.sin(a) * rWavy;
-        if (a === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
-      }
-      ctx.closePath();
-      ctx.fill();
-
-      // 4. Glowing Magenta / Pink Energy Ring Highlight (Image 2)
-      ctx.rotate(-spin * 2);
-      ctx.beginPath();
-      ctx.arc(0, 0, 26, 0, Math.PI * 2);
-      ctx.strokeStyle = '#F43F5E';
-      ctx.lineWidth = 4;
-      ctx.stroke();
-
-      // 5. Swirling Cyan / Aqua Event Horizon Core (Image 2)
-      ctx.beginPath();
-      ctx.arc(0, 0, 20, 0, Math.PI * 2);
-      const grad = ctx.createRadialGradient(0, 0, 2, 0, 0, 20);
-      grad.addColorStop(0, '#67E8F9'); // Light Aqua Starlight
-      grad.addColorStop(0.6, '#06B6D4'); // Cyan Core
-      grad.addColorStop(1, '#0284C7'); // Deep Ocean Edge
-      ctx.fillStyle = grad;
-      ctx.fill();
-
-      // Core Spiral Vortex
-      ctx.beginPath();
-      ctx.arc(0, 0, 12, spin, spin + Math.PI * 1.5);
-      ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = 2.5;
-      ctx.stroke();
-
-      // 6. Title Label Tag
-      ctx.rotate(spin);
-      ctx.font = 'bold 13px Outfit, sans-serif';
-      ctx.fillStyle = '#FFFFFF';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.shadowColor = '#C026D3';
-      ctx.shadowBlur = 8;
-      ctx.fillText(`🌀 ${p.label || 'Wormhole Portal'}`, 0, 58);
-
-      ctx.restore();
+      renderWormholeAsset(this.ctx, px, py, this.animFrame, p.label);
     }
   }
 
-  /** §2 Dynamic obstacles — custom vector tree, cave, facetted rock & pond matching reference designs, 100% crisp without shadows. */
+  /** Dynamic obstacles — Delegated to ./assets/objects.ts asset registry */
   private renderObstacles(obstacles: ObstacleData[]) {
     const ctx = this.ctx;
     for (const ob of obstacles) {
-      const ox = this.wrapNear(ob.x, this.cameraPos.x); // §6 nearest wrapped copy
+      const ox = this.wrapNear(ob.x, this.cameraPos.x);
       const oy = this.wrapNear(ob.y, this.cameraPos.y);
       ctx.save();
       if (ob.type === 'pond') {
-        this.renderRichPond(ox, oy, ob.radius || 52);
+        renderPondAsset(ctx, ox, oy, ob.radius || 52, this.animFrame);
       } else if (ob.type === 'tree' || ob.type === 'bush') {
-        this.renderRichTree(ox, oy, ob.radius || 44);
+        renderTreeAsset(ctx, ox, oy, ob.radius || 44);
       } else if (ob.type === 'cave') {
-        this.renderRichCave(ox, oy, ob.radius || 58);
+        renderCaveAsset(ctx, ox, oy, ob.radius || 58);
       } else if (ob.type === 'rock' || ob.type === 'hill') {
-        this.renderFacettedRock(ox, oy, ob.radius || 34);
+        renderRockAsset(ctx, ox, oy, ob.radius || 34);
       } else {
-        // NO ground shadow — 100% full visibility prop directly on ground
         ctx.globalAlpha = 1.0;
         ctx.font = `${ob.radius * 2.1}px sans-serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -449,261 +336,17 @@ export class Renderer {
     }
   }
 
-  /** Custom Rich Cave Entrance Renderer matching reference images */
-  private renderRichCave(ox: number, oy: number, radius: number) {
-    const ctx = this.ctx;
-    const r = radius || 58;
-
-    ctx.save();
-    ctx.translate(ox, oy);
-
-    // 1. Facetted Rocky Arch Structure (Outer Grey Stone Arch)
-    ctx.beginPath();
-    ctx.ellipse(0, 0, r * 1.3, r * 0.95, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#616161'; // Base Grey Stone
-    ctx.fill();
-
-    // Top Light Facet
-    ctx.beginPath();
-    ctx.ellipse(0, -r * 0.35, r * 1.15, r * 0.5, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#9E9E9E';
-    ctx.fill();
-
-    // 2. Dark Inner Cavern Mouth Void
-    ctx.beginPath();
-    ctx.ellipse(0, r * 0.1, r * 0.78, r * 0.62, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#0F172A'; // Deep Dark Void
-    ctx.fill();
-
-    // Glowing Inner Cavern Light (Cyan/Teal Exit Starlight)
-    ctx.beginPath();
-    ctx.ellipse(0, r * 0.22, r * 0.42, r * 0.32, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(34, 211, 238, 0.55)';
-    ctx.fill();
-
-    // 3. Hanging Sharp Stalactites from Cave Ceiling
-    ctx.fillStyle = '#BDBDBD';
-    const stalactites = [-r * 0.45, -r * 0.2, 0, r * 0.25, r * 0.5];
-    for (let i = 0; i < stalactites.length; i++) {
-      const sx = stalactites[i];
-      const h = (i % 2 === 0 ? 0.35 : 0.48) * r;
-      ctx.beginPath();
-      ctx.moveTo(sx - 5, -r * 0.2);
-      ctx.lineTo(sx + 5, -r * 0.2);
-      ctx.lineTo(sx, -r * 0.2 + h);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    // 4. Overgrown Green Moss & Shrubs on Top Ledge
-    ctx.font = `${r * 0.35}px sans-serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('🌿', -r * 0.5, -r * 0.7);
-    ctx.fillText('🌾', 0, -r * 0.82);
-    ctx.fillText('🌿', r * 0.55, -r * 0.65);
-
-    ctx.restore();
-  }
-
-  /** Custom Facetted 3D Rock/Boulder Renderer matching reference image */
-  private renderFacettedRock(ox: number, oy: number, radius: number) {
-    const ctx = this.ctx;
-    const r = radius || 34;
-
-    ctx.save();
-    ctx.translate(ox, oy);
-
-    // Facetted Rock Outer Contour
-    ctx.beginPath();
-    ctx.moveTo(-r, 0);
-    ctx.lineTo(-r * 0.6, -r * 0.8);
-    ctx.lineTo(r * 0.4, -r * 0.95);
-    ctx.lineTo(r, -r * 0.3);
-    ctx.lineTo(r * 0.8, r * 0.7);
-    ctx.lineTo(-r * 0.4, r * 0.9);
-    ctx.closePath();
-    ctx.fillStyle = '#757575'; // Main Facet Color
-    ctx.fill();
-    ctx.strokeStyle = '#374151';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // Top Highlight Facet
-    ctx.beginPath();
-    ctx.moveTo(-r * 0.6, -r * 0.8);
-    ctx.lineTo(r * 0.4, -r * 0.95);
-    ctx.lineTo(0, -r * 0.2);
-    ctx.closePath();
-    ctx.fillStyle = '#9E9E9E'; // Light Highlight
-    ctx.fill();
-
-    // Bottom Shadow Facet
-    ctx.beginPath();
-    ctx.moveTo(0, -r * 0.2);
-    ctx.lineTo(r, -r * 0.3);
-    ctx.lineTo(r * 0.8, r * 0.7);
-    ctx.closePath();
-    ctx.fillStyle = '#424242'; // Dark Shadow Facet
-    ctx.fill();
-
-    ctx.restore();
-  }
-
-  /** Custom Top-Down Vector Tree Renderer matching reference images (Branching wooden limbs, 3-layer leaf canopy clusters) */
-  private renderRichTree(ox: number, oy: number, radius: number) {
-    const ctx = this.ctx;
-    const r = radius || 44;
-
-    ctx.save();
-    ctx.translate(ox, oy);
-
-    // 1. Central Dark Wooden Trunk & Radiating Branch Limbs
-    ctx.strokeStyle = '#3E2723';
-    ctx.lineWidth = Math.max(3.5, r * 0.16);
-    ctx.lineCap = 'round';
-    
-    // Core trunk base
-    ctx.beginPath();
-    ctx.arc(0, 0, r * 0.16, 0, Math.PI * 2);
-    ctx.fillStyle = '#3E2723';
-    ctx.fill();
-
-    // Spreading Primary Branches
-    const branches = [
-      [0, 0, -r * 0.55, -r * 0.35],
-      [0, 0, r * 0.5, -r * 0.4],
-      [0, 0, -r * 0.6, r * 0.3],
-      [0, 0, r * 0.55, r * 0.45],
-      [0, 0, 0, -r * 0.65],
-    ];
-    for (const [x1, y1, x2, y2] of branches) {
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.quadraticCurveTo(x1 + (x2 - x1) * 0.5, y1 + (y2 - y1) * 0.5 + 4, x2, y2);
-      ctx.stroke();
-    }
-
-    // 2. Layered Leaf Canopy Clusters (3 Tone Layers for Depth)
-    const clusters = [
-      { x: -r * 0.4, y: -r * 0.3, size: r * 0.55 },
-      { x: r * 0.45, y: -r * 0.35, size: r * 0.5 },
-      { x: -r * 0.45, y: r * 0.35, size: r * 0.52 },
-      { x: r * 0.4, y: r * 0.4, size: r * 0.48 },
-      { x: 0, y: -r * 0.5, size: r * 0.52 },
-      { x: 0, y: r * 0.45, size: r * 0.48 },
-      { x: 0, y: 0, size: r * 0.6 },
-    ];
-
-    // Layer 1: Dark Forest Green Base
-    ctx.fillStyle = '#1B5E20';
-    for (const c of clusters) {
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, c.size, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Layer 2: Vibrant Mid-Leaf Green
-    ctx.fillStyle = '#4CAF50';
-    for (const c of clusters) {
-      ctx.beginPath();
-      ctx.arc(c.x - c.size * 0.12, c.y - c.size * 0.12, c.size * 0.85, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Layer 3: Top Highlight Bright Lime Green
-    ctx.fillStyle = '#8BC34A';
-    for (const c of clusters) {
-      ctx.beginPath();
-      ctx.arc(c.x - c.size * 0.22, c.y - c.size * 0.22, c.size * 0.65, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    ctx.restore();
-  }
-
-  /** Custom Rich Water Pond Renderer matching reference images (Stone rim, swimming koi, lily pads, water lilies, reeds) */
-  private renderRichPond(ox: number, oy: number, radius: number) {
-    const ctx = this.ctx;
-    const r = radius || 52;
-    const time = this.animFrame * 0.04;
-
-    ctx.save();
-    ctx.translate(ox, oy);
-
-    // 1. Earthy Stone Rim Base (Organic Curved Shape)
-    ctx.beginPath();
-    ctx.ellipse(0, 0, r * 1.28, r * 0.96, 0.08, 0, Math.PI * 2);
-    ctx.fillStyle = '#785438'; // Terracotta / Earthy Stone Rim
-    ctx.fill();
-
-    // 2. Cobblestones / Rocks around Border
-    ctx.fillStyle = '#5A3E27';
-    for (let a = 0; a < Math.PI * 2; a += Math.PI / 6) {
-      const rx = Math.cos(a) * r * 1.18;
-      const ry = Math.sin(a) * r * 0.88;
-      ctx.beginPath();
-      ctx.arc(rx, ry, r * 0.18, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // 3. Sandy Shore Edge
-    ctx.beginPath();
-    ctx.ellipse(0, 0, r * 1.08, r * 0.82, 0.08, 0, Math.PI * 2);
-    ctx.fillStyle = '#FACC15';
-    ctx.fill();
-
-    // 4. Deep Cyan / Turquoise Water Body
-    ctx.beginPath();
-    ctx.ellipse(0, 0, r * 0.98, r * 0.74, 0.08, 0, Math.PI * 2);
-    const grad = ctx.createRadialGradient(0, 0, r * 0.2, 0, 0, r);
-    grad.addColorStop(0, '#38BDF8'); // Vibrant Light Aqua
-    grad.addColorStop(1, '#0284C7'); // Deep Ocean Blue
-    ctx.fillStyle = grad;
-    ctx.fill();
-
-    // 5. Water Ripples (Animated Light Reflection)
-    ctx.beginPath();
-    ctx.ellipse(-r * 0.15, -r * 0.12, r * 0.58, r * 0.38, 0.08 + Math.sin(time) * 0.05, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
-    ctx.lineWidth = 2.2;
-    ctx.stroke();
-
-    // 6. Lily Pads & Lotus Flowers
-    ctx.font = `${r * 0.42}px sans-serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('🪷', -r * 0.35, -r * 0.18);
-    ctx.fillText('🌸', r * 0.32, r * 0.22);
-
-    // 7. Animated Swimming Koi Fish inside Pond
-    const fishAngle = time * 0.8;
-    const fishX = Math.cos(fishAngle) * r * 0.44;
-    const fishY = Math.sin(fishAngle) * r * 0.30;
-    ctx.save();
-    ctx.translate(fishX, fishY);
-    ctx.rotate(fishAngle + Math.PI / 2);
-    ctx.font = `${r * 0.36}px sans-serif`;
-    ctx.fillText('🐟', 0, 0);
-    ctx.restore();
-
-    // 8. Reeds Sprouting from Stone Rim
-    ctx.font = `${r * 0.38}px sans-serif`;
-    ctx.fillText('🌿', -r * 0.92, -r * 0.48);
-    ctx.fillText('🌾', r * 0.88, -r * 0.42);
-
-    ctx.restore();
-  }
-
   /**
    * High-Contrast Collectibles (Cherries 🍒, Apples 🍎, Frogs 🐸, Stars ⭐, Powers 🛡️/⚡)
    * Rendered 100% crisp and fully visible directly on terrain WITHOUT ground shadows!
    */
   private renderCollectible(food: FoodData) {
     const ctx = this.ctx;
-    const fx = this.wrapNear(food.x, this.cameraPos.x); // §6 draw nearest wrapped copy
+    const fx = this.wrapNear(food.x, this.cameraPos.x);
     const fy0 = this.wrapNear(food.y, this.cameraPos.y);
 
     if (food.type === 'frog') {
-      this.renderKawaiiFrog(fx, fy0);
+      renderFrogAsset(ctx, fx, fy0, this.animFrame);
       return;
     }
     const bounce = food.type === 'star' ? 0 : Math.sin(this.animFrame * 0.08 + food.x) * 3;
