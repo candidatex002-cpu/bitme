@@ -152,7 +152,7 @@ export interface FoodItem {
 }
 
 // §2 Dynamic obstacles — decorative + soft-collision props that never fully block the map
-export type ObstacleType = 'tree' | 'rock' | 'bush' | 'cactus' | 'flowerbed' | 'log' | 'pond' | 'hill';
+export type ObstacleType = 'tree' | 'rock' | 'bush' | 'cactus' | 'flowerbed' | 'log' | 'pond' | 'hill' | 'lava' | 'poison';
 
 export interface Obstacle {
   id: string;
@@ -162,6 +162,7 @@ export interface Obstacle {
   radius: number;
   icon: string;
   blocking: boolean; // true = soft-pushes snakes out (rock/tree/hill); false = purely cosmetic
+  damage?: number;   // §3 hazard damage per second dealt on contact (cactus/lava/poison)
 }
 
 export interface SafeZone {

@@ -326,6 +326,17 @@ export class Renderer {
         renderCaveAsset(ctx, ox, oy, ob.radius || 58);
       } else if (ob.type === 'rock' || ob.type === 'hill') {
         renderRockAsset(ctx, ox, oy, ob.radius || 34);
+      } else if (ob.type === 'lava' || ob.type === 'poison') {
+        // §3 hazard pool — pulsing warning glow behind the icon
+        const c1 = ob.type === 'lava' ? 'rgba(255,90,30,0.5)' : 'rgba(150,70,210,0.45)';
+        const c2 = ob.type === 'lava' ? 'rgba(200,40,10,0.85)' : 'rgba(96,32,150,0.8)';
+        const pulse = 1 + Math.sin(this.animFrame * 0.12 + ob.x) * 0.06;
+        ctx.beginPath(); ctx.arc(ox, oy, ob.radius * pulse, 0, Math.PI * 2);
+        ctx.fillStyle = c1; ctx.fill();
+        ctx.strokeStyle = c2; ctx.lineWidth = 3; ctx.stroke();
+        ctx.font = `${ob.radius * 1.3}px sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(ob.icon, ox, oy);
       } else {
         ctx.globalAlpha = 1.0;
         ctx.font = `${ob.radius * 2.1}px sans-serif`;

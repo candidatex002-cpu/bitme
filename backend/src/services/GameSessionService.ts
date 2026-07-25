@@ -51,15 +51,17 @@ const STAGE_THRESHOLDS: Array<{ stage: GrowthStage; min: number; radius: number;
 ];
 
 // §2 Obstacle palette — blocking props soft-push snakes; cosmetic ones are decoration only.
-const OBSTACLE_TEMPLATES: Array<{ type: ObstacleType; icon: string; radius: number; blocking: boolean }> = [
+const OBSTACLE_TEMPLATES: Array<{ type: ObstacleType; icon: string; radius: number; blocking: boolean; damage?: number }> = [
   { type: 'tree', icon: '🌳', radius: 44, blocking: true },
   { type: 'rock', icon: '🪨', radius: 34, blocking: true },
   { type: 'bush', icon: '🌲', radius: 32, blocking: true },
-  { type: 'cactus', icon: '🌵', radius: 30, blocking: true },
+  { type: 'cactus', icon: '🌵', radius: 30, blocking: true, damage: 10 },  // thorns hurt on contact
   { type: 'flowerbed', icon: '🌼', radius: 28, blocking: false }, // decorative — passable
   { type: 'log', icon: '🪵', radius: 30, blocking: true },
   { type: 'pond', icon: '🪷', radius: 50, blocking: false },      // water — passable
   { type: 'hill', icon: '⛰️', radius: 46, blocking: true },
+  { type: 'lava', icon: '🔥', radius: 42, blocking: false, damage: 26 },   // §3 heavy burn, passable
+  { type: 'poison', icon: '☠️', radius: 36, blocking: false, damage: 14 }, // §3 toxic pool, passable
 ];
 
 const MODE_CONFIGS: Record<GameMode, GameModeConfig> = {
@@ -396,19 +398,23 @@ export class GameSessionService {
       }
     }
 
-    // §2 Soft obstacle collision — blocking props gently push the head out (never kills).
+    // §2/§3 Obstacle collision — blocking props push the head out; hazards deal damage.
     if (this.state.obstacles) {
       for (const ob of this.state.obstacles) {
-        if (!ob.blocking) continue;
         const dx = snake.head.x - ob.x;
         const dy = snake.head.y - ob.y;
         const minDist = ob.radius + snake.radius;
         const distSq = dx * dx + dy * dy;
-        if (distSq < minDist * minDist && distSq > 0.01) {
+        if (distSq >= minDist * minDist) continue;
+        if (ob.blocking && distSq > 0.01) {
           const dist = Math.sqrt(distSq);
           const push = (minDist - dist);
           snake.head.x += (dx / dist) * push;
           snake.head.y += (dy / dist) * push;
+        }
+        if (ob.damage) { // §3 environmental hazard
+          this.damageSnake(snake, ob.damage * dt, `Hurt by ${ob.type}`);
+          if (!snake.isAlive) return;
         }
       }
     }
@@ -895,7 +901,7 @@ export class GameSessionService {
       const t = OBSTACLE_TEMPLATES[Math.floor(Math.random() * OBSTACLE_TEMPLATES.length)];
       const pos = this.openSpot(t.radius, obstacles);
       if (!pos) continue;
-      obstacles.push({ id: `ob_${obstacles.length}_${Math.random().toString(36).slice(2, 6)}`, type: t.type, icon: t.icon, x: pos.x, y: pos.y, radius: t.radius, blocking: t.blocking });
+      obstacles.push({ id: `ob_${obstacles.length}_${Math.random().toString(36).slice(2, 6)}`, type: t.type, icon: t.icon, x: pos.x, y: pos.y, radius: t.radius, blocking: t.blocking, damage: t.damage });
     }
   }
 

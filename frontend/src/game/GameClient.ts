@@ -51,7 +51,7 @@ export interface SafeZoneData {
 
 export interface SanctuaryZoneData { centerX: number; centerY: number; radius: number; label: string; icon: string; }
 export interface PortalData { id: string; targetId: string; x: number; y: number; label: string; color: string; timerSeconds?: number; wormhole?: boolean; }
-export interface ObstacleData { id: string; type: string; x: number; y: number; radius: number; icon: string; blocking: boolean; }
+export interface ObstacleData { id: string; type: string; x: number; y: number; radius: number; icon: string; blocking: boolean; damage?: number; }
 
 export interface WorldEventData {
   id: string; type: string; title: string; description: string; active: boolean; timerSeconds: number; icon: string;
@@ -102,18 +102,23 @@ const FOOD_TYPES = [
   { type: 'speed', val: 30, icon: '⚡', color: '#ff66cc' },
 ];
 
-// §2 obstacle palette for the local engine (mirrors the server table)
-const OBSTACLE_TYPES: Array<{ type: string; icon: string; radius: number; blocking: boolean }> = [
+// §2/§3 obstacle palette for the local engine (mirrors the server table)
+const OBSTACLE_TYPES: Array<{ type: string; icon: string; radius: number; blocking: boolean; damage?: number }> = [
   { type: 'tree', icon: '🌳', radius: 44, blocking: true },
   { type: 'rock', icon: '🪨', radius: 34, blocking: true },
   { type: 'bush', icon: '🌲', radius: 32, blocking: true },
-  { type: 'cactus', icon: '🌵', radius: 30, blocking: true },
+  { type: 'cactus', icon: '🌵', radius: 30, blocking: true, damage: 10 }, // §3 thorns hurt
   { type: 'flowerbed', icon: '🌼', radius: 28, blocking: false }, // decorative — passable
   { type: 'log', icon: '🪵', radius: 30, blocking: true },
   { type: 'pond', icon: '🪷', radius: 50, blocking: false },      // water — passable
   { type: 'hill', icon: '⛰️', radius: 46, blocking: true },
   { type: 'cave', icon: '🕳️', radius: 58, blocking: true },      // cave entrance
+  { type: 'lava', icon: '🔥', radius: 42, blocking: false, damage: 26 },   // §3 burn
+  { type: 'poison', icon: '☠️', radius: 36, blocking: false, damage: 14 }, // §3 toxic
 ];
+
+// §3 hp restored per food type (local engine health loop)
+const LOCAL_HEAL: Record<string, number> = { cherry: 5, apple: 8, mushroom: 4, frog: 3, egg: 25 };
 
 const BOT_NAMES = ['AlphaViper', 'KobraX', 'Slinky', 'GigaPython', 'NeonSnake', 'ShadowSerpent', 'TitanApex'];
 const BOT_SKINS = ['Jungle', 'Ocean', 'Fire', 'Ice', 'Galaxy', 'Golden', 'Shadow'];
@@ -434,7 +439,7 @@ export class GameClient {
       if (dcx * dcx + dcy * dcy < 460 * 460) continue; // keep the centre spawn clear
       let ok = true;
       for (const o of list) { const dx = x - o.x, dy = y - o.y, gap = t.radius + o.radius + 140; if (dx * dx + dy * dy < gap * gap) { ok = false; break; } }
-      if (ok) list.push({ id: `ob_${list.length}`, type: t.type, icon: t.icon, x, y, radius: t.radius, blocking: t.blocking });
+      if (ok) list.push({ id: `ob_${list.length}`, type: t.type, icon: t.icon, x, y, radius: t.radius, blocking: t.blocking, damage: t.damage });
     }
     return list;
   }
@@ -526,6 +531,7 @@ export class GameClient {
         const dy = this.wrapDeltaLocal(s.head.y - f.y);
         if (dx * dx + dy * dy < (s.radius + 14) * (s.radius + 14)) {
           s.score += f.value;
+          if (LOCAL_HEAL[f.type]) s.hp = Math.min(s.maxHp ?? 100, (s.hp ?? 100) + LOCAL_HEAL[f.type]); // §3 heal
           s.level = Math.floor(s.score / 250) + 1; // drives level-scaled power durations
           // Milestone-gated growth (matches the server): grow only past 500, small caps so
           // the snake never fills the screen. Radius jumps at 500/1500/3000/5000/8000.
@@ -678,13 +684,18 @@ export class GameClient {
     if (!obs?.length) return;
     for (const s of this.localState!.snakes) {
       if (!s.isAlive) continue;
+      if ((s.superTimer ?? 0) > 0 || s.shieldTimer > 0) continue; // §3 invincible power ignores hazards
       for (const ob of obs) {
-        if (!ob.blocking) continue;
         const dx = s.head.x - ob.x, dy = s.head.y - ob.y;
         const minDist = ob.radius + s.radius, distSq = dx * dx + dy * dy;
-        if (distSq < minDist * minDist && distSq > 0.01) {
+        if (distSq >= minDist * minDist) continue;
+        if (ob.blocking && distSq > 0.01) {
           const dist = Math.sqrt(distSq), push = minDist - dist;
           s.head.x += (dx / dist) * push; s.head.y += (dy / dist) * push;
+        }
+        if (ob.damage) { // §3 environmental hazard — burns hp; 0 hp eliminates
+          s.hp = Math.max(0, (s.hp ?? 100) - ob.damage * 0.033);
+          if (s.hp <= 0) { this.eliminateLocal(s, null); break; }
         }
       }
     }
