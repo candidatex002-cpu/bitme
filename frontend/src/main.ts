@@ -133,7 +133,7 @@ const LANDMARKS = [
   { name: 'College', x: 2365, y: 2245 }, { name: 'Bridge', x: 1565, y: 2445 },
 ];
 
-interface Settings { sfx: boolean; music: boolean; largeText: boolean; reduceMotion: boolean; highContrast: boolean; controlSide: 'right' | 'left'; }
+interface Settings { sfx: boolean; music: boolean; largeText: boolean; reduceMotion: boolean; highContrast: boolean; controlSide?: 'right' | 'left'; controlPos: 'left' | 'center' | 'right'; }
 
 class AnacondaPark {
   private root: HTMLElement;
@@ -188,7 +188,7 @@ class AnacondaPark {
   private isEditingProfile = false;
   private editingAvatar = '🐍';
 
-  private settings: Settings = { sfx: true, music: true, largeText: false, reduceMotion: false, highContrast: false, controlSide: 'right' };
+  private settings: Settings = { sfx: true, music: true, largeText: false, reduceMotion: false, highContrast: false, controlPos: 'right' };
 
   // input
   private angle = 0; private boosting = false; private keys: Record<string, boolean> = {};
@@ -1689,8 +1689,15 @@ class AnacondaPark {
         <div class="toggle"><span class="t-label">Music</span>${sw(this.settings.music, 'music')}</div>
       </div>
       <div class="card"><div class="section-title" style="font-size:0.9rem;">🎮 Controls</div>
-        <div class="toggle"><span class="t-label">Control Side (touch)</span><button class="btn btn-ghost" id="side-btn" style="padding:6px 14px;font-size:0.8rem;">${this.settings.controlSide === 'right' ? 'Right-handed' : 'Left-handed'}</button></div>
-        <div class="muted" style="font-size:0.76rem;padding-top:8px;">PC: Mouse or WASD to steer · Shift to boost · Space for ability.</div>
+        <div class="toggle" style="flex-direction:column;align-items:flex-start;gap:6px;">
+          <span class="t-label">🕹️ Controller Position</span>
+          <div class="seg" style="width:100%;">
+            <button class="${(this.settings.controlPos || 'right') === 'left' ? 'active' : ''}" data-cpos="left">Left</button>
+            <button class="${(this.settings.controlPos || 'right') === 'center' ? 'active' : ''}" data-cpos="center">Center</button>
+            <button class="${(this.settings.controlPos || 'right') === 'right' ? 'active' : ''}" data-cpos="right">Right</button>
+          </div>
+        </div>
+        <div class="muted" style="font-size:0.76rem;padding-top:8px;">PC: Mouse or WASD to steer · Shift / Joystick push to boost.</div>
       </div>
       <div class="card"><div class="section-title" style="font-size:0.9rem;">♿ Accessibility</div>
         <div class="toggle"><span class="t-label">Large Text</span>${sw(this.settings.largeText, 'largeText')}</div>
@@ -1709,15 +1716,22 @@ class AnacondaPark {
   // ---------- GAME OVERLAYS ----------
   private renderMatchmaking() {
     const mm = this.modeDef;
-    const where = this.matchType === 'local' ? `📍 ${this.localCity || 'Local region'}` : '🌎 Best server';
-    return `<div class="overlay"><div class="modal" style="text-align:center;"><div class="section-title" style="justify-content:center;">${mm.icon} ${mm.name}</div>
-      <div class="countdown-num" id="mm-count">3</div><div class="muted">${where} · connecting to the 30 Hz world…</div>
-      <div class="chip" style="margin-top:14px;">💡 Eat 🍒 to heal · grab 🛡️ & ⚡ power-ups</div></div></div>`;
+    return `<div class="overlay"><div class="modal mm-modal">
+      <div class="mm-header">
+        <span class="mm-icon">${mm.icon}</span>
+        <div class="mm-title">${mm.name}</div>
+      </div>
+      <div class="mm-countdown-wrap">
+        <div class="mm-pulse-ring"></div>
+        <div class="countdown-num" id="mm-count">3</div>
+      </div>
+      <div class="chip mm-tip">💡 Eat 🍒 to heal & grow · Outgrow rivals</div>
+    </div></div>`;
   }
 
   private renderHUD() {
-    const lh = this.settings.controlSide === 'left' ? ' left-handed' : '';
-    return `<div class="hud${lh}">
+    const cpos = this.settings.controlPos || 'right';
+    return `<div class="hud ctrl-${cpos}">
       <div class="hud-tl hud-panel">
         <button id="nav-pause" class="hud-pause">⏸</button>
         <div class="hud-tl-main">
@@ -1729,16 +1743,11 @@ class AnacondaPark {
       <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
       <div class="team-scores" id="team-scores" style="display:none;"></div>
       <div class="hud-leaderboard hud-panel"><h4>🏆 Top 5</h4><div id="hud-lb-rows"></div></div>
-      <div class="ability-badge hud-panel ready" id="ability-badge">🌀 <span class="cd" id="ability-cd">READY</span></div>
       <div class="touch-joystick" id="touch-joystick"><div class="touch-knob" id="touch-knob"></div></div>
       <div class="touch-actions">
         <div class="touch-row">
+          <div class="touch-btn zoom" id="touch-zoom" title="Zoom">🔍<span class="tz-label" id="touch-zoom-label">Far</span></div>
           <div class="touch-btn mini" id="touch-mini" title="Toggle HUD / minimap">🗺️</div>
-          <div class="touch-btn zoom" id="touch-zoom" title="Zoom">🔍<span class="tz-label" id="touch-zoom-label">Normal</span></div>
-        </div>
-        <div class="touch-row">
-          <div class="touch-btn ability" id="touch-ability" title="Ability / Shield">🌀</div>
-          <div class="touch-btn boost" id="touch-boost" title="Boost">⚡</div>
         </div>
       </div>
     </div>`;
@@ -1746,10 +1755,17 @@ class AnacondaPark {
 
   private renderPause() {
     const sw = (on: boolean, key: string) => `<button class="switch ${on ? 'on' : ''}" data-pset="${key}"></button>`;
-    // §1.1 In-game settings — apply live, gameplay resumes without restarting, controls never disabled.
+    const cpos = this.settings.controlPos || 'right';
     return `<div class="overlay"><div class="modal" style="text-align:center;max-width:400px;"><div class="section-title" style="justify-content:center;">⏸️ Paused</div>
       <div class="pause-settings">
-        <div class="toggle"><span class="t-label">🖐️ Control Side</span><button class="btn btn-ghost" id="pause-hand" style="padding:6px 14px;font-size:0.8rem;">${this.settings.controlSide === 'right' ? 'Right-handed' : 'Left-handed'}</button></div>
+        <div class="toggle" style="flex-direction:column;align-items:flex-start;gap:6px;">
+          <span class="t-label">🕹️ Controller Position</span>
+          <div class="seg" style="width:100%;">
+            <button class="${cpos === 'left' ? 'active' : ''}" data-cpos="left">Left</button>
+            <button class="${cpos === 'center' ? 'active' : ''}" data-cpos="center">Center</button>
+            <button class="${cpos === 'right' ? 'active' : ''}" data-cpos="right">Right</button>
+          </div>
+        </div>
         <div class="toggle"><span class="t-label">🔊 Sound Effects</span>${sw(this.settings.sfx, 'sfx')}</div>
         <div class="toggle"><span class="t-label">🎵 Music</span>${sw(this.settings.music, 'music')}</div>
       </div>
@@ -1821,6 +1837,7 @@ class AnacondaPark {
     document.getElementById('replay-story')?.addEventListener('click', () => { audio.playClick(); this.showLegend(); });
     document.getElementById('replay-tutorial')?.addEventListener('click', () => { audio.playClick(); this.showTutorial(); });
     document.querySelectorAll('[data-set]').forEach(b => b.addEventListener('click', () => this.toggleSetting((b as HTMLElement).dataset.set as keyof Settings)));
+    document.querySelectorAll('[data-cpos]').forEach(b => b.addEventListener('click', () => { audio.playClick(); this.settings.controlPos = (b as HTMLElement).dataset.cpos as any; this.saveSettings(); this.render(); }));
 
     on('music-toggle', () => this.toggleMusic());
     on('notif-btn', () => this.showToast('🔔 No new notifications'));

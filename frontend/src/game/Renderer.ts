@@ -67,10 +67,10 @@ export class Renderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private cameraPos = { x: WORLD / 2, y: WORLD / 2 };
-  private zoom = 1.0;
-  private userZoom = 1.0;            // §5 player-controlled zoom (wheel / pinch / button)
-  private readonly ZOOM_MIN = 0.6;   // most zoomed OUT — reveals nearby enemies
-  private readonly ZOOM_MAX = 1.6;   // most zoomed IN — focuses on the snake
+  private zoom = 0.7;
+  private userZoom = 0.7;            // §5 player-controlled zoom (default: Far view 0.7)
+  private readonly ZOOM_MIN = 0.55;  // most zoomed OUT (Far)
+  private readonly ZOOM_MAX = 1.5;   // most zoomed IN (Close)
   private animFrame = 0;
 
   // §6 Toroidal wrap helpers — draw entities at the copy nearest the camera (§8 world = WORLD).
