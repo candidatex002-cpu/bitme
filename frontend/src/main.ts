@@ -111,6 +111,17 @@ const TUTORIAL_SLIDES = [
   { icon: '🎁', title: 'Missions & Rewards', text: 'Finish story quests for XP and stars, then redeem stars in the Rewards marketplace. Now — go reclaim the crown!' },
 ];
 
+// §7 Local Explorer — Country → State → City hierarchy for local matchmaking.
+const LOCATIONS: Record<string, Record<string, string[]>> = {
+  'India': { 'Tamil Nadu': ['Chennai', 'Coimbatore', 'Madurai'], 'Maharashtra': ['Mumbai', 'Pune'], 'Karnataka': ['Bengaluru', 'Mysuru'], 'Delhi': ['New Delhi'] },
+  'United States': { 'California': ['Los Angeles', 'San Francisco'], 'New York': ['New York City', 'Buffalo'], 'Texas': ['Austin', 'Dallas'] },
+  'United Kingdom': { 'England': ['London', 'Manchester'], 'Scotland': ['Edinburgh', 'Glasgow'] },
+  'Brazil': { 'São Paulo': ['São Paulo', 'Campinas'], 'Rio de Janeiro': ['Rio de Janeiro'] },
+  'Japan': { 'Tokyo': ['Tokyo'], 'Osaka': ['Osaka'] },
+  'Germany': { 'Bavaria': ['Munich'], 'Berlin': ['Berlin'] },
+  'Australia': { 'New South Wales': ['Sydney'], 'Victoria': ['Melbourne'] },
+};
+
 // §5 onboarding options
 const ONB_COUNTRIES = ['India', 'United States', 'United Kingdom', 'Brazil', 'Japan', 'Germany', 'France', 'Australia', 'Canada', 'Nigeria', 'Indonesia', 'Other'];
 const ONB_LANGUAGES = ['English', 'हिन्दी', 'Español', 'Português', '日本語', 'Deutsch', 'Français', 'Bahasa', 'العربية', '中文'];
@@ -146,6 +157,9 @@ class AnacondaPark {
   private equippedAccessory = '';
   private matchType: 'global' | 'local' = 'global';
   private selectedRegion = '🌍 Quick Match';
+  // §7 Local Explorer location
+  private localCountry = ''; private localState = ''; private localCity = '';
+  private globalPing = 0;
 
   // §15 Rewards marketplace
   private rewards: any[] = [];
@@ -624,7 +638,7 @@ class AnacondaPark {
     audio.startMusic();
     this.client.onStateUpdate = (s) => this.onTick(s);
     this.client.onRespawnResult = (r) => this.onRespawn(r);
-    const region = this.matchType === 'local' ? 'Perambur' : this.selectedRegion.replace(/^[^\w]+/, '').trim() || 'Global';
+    const region = this.matchType === 'local' ? (this.localCity || 'Local') : 'Global'; // §7
     // §2 Each mode carries its own rules/flags into the engine (solo, story, timed).
     this.client.setModeFlags({ ui: this.selectedUIMode, solo: !!this.modeDef.solo, story: !!this.modeDef.story });
     this.client.connect(this.token, this.selectedSkin, this.modeDef.backend, region, this.matchType);
@@ -1110,16 +1124,43 @@ class AnacondaPark {
   }
 
   // ---------- PLAY (modes + matchmaking only) ----------
+  // §7 Global Adventure — one option, no country picking; auto best server.
+  private renderGlobalMatch() {
+    if (!this.globalPing) this.globalPing = 22 + Math.floor(Math.random() * 26);
+    return `<div class="mm-global">
+      <div class="mm-server">
+        <span class="mm-dot"></span>
+        <div style="flex:1;"><div style="font-weight:800;">Best available server</div><div class="muted" style="font-size:0.76rem;">Auto-selected by latency, load &amp; match quality</div></div>
+        <div class="mm-ping">${this.globalPing}ms</div>
+      </div>
+      <div class="muted" style="font-size:0.8rem;margin-top:8px;">Global Adventure connects you to the strongest worldwide server automatically — nothing to pick.</div>
+    </div>`;
+  }
+
+  // §7 Local Explorer — Country → State → City; auto-joins your local region, browsable.
+  private ensureLocalLocation() {
+    if (this.localCountry && LOCATIONS[this.localCountry]) return;
+    const pc = this.profile?.country;
+    this.localCountry = (pc && LOCATIONS[pc]) ? pc : 'India';
+    this.localState = Object.keys(LOCATIONS[this.localCountry])[0];
+    this.localCity = LOCATIONS[this.localCountry][this.localState][0];
+  }
+  private renderLocalMatch() {
+    this.ensureLocalLocation();
+    const states = Object.keys(LOCATIONS[this.localCountry] || {});
+    const cities = LOCATIONS[this.localCountry]?.[this.localState] || [];
+    return `<div class="mm-local">
+      <div class="muted" style="font-size:0.8rem;margin-bottom:8px;">Auto-joining players near you — browse to explore another location. Your exact GPS is never shared.</div>
+      <div class="mm-loc-grid">
+        <label class="mm-loc"><span>Country</span><select id="loc-country">${Object.keys(LOCATIONS).map(c => `<option ${c === this.localCountry ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
+        <label class="mm-loc"><span>State</span><select id="loc-state">${states.map(s => `<option ${s === this.localState ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
+        <label class="mm-loc"><span>City</span><select id="loc-city">${cities.map(ci => `<option ${ci === this.localCity ? 'selected' : ''}>${ci}</option>`).join('')}</select></label>
+      </div>
+      <div class="mm-here">📍 Joining <b>${this.localCity}, ${this.localState}, ${this.localCountry}</b></div>
+    </div>`;
+  }
+
   private pagePlay() {
-    const regionButtons = [
-      { id: 'Quick Match', icon: icons.regionQuick(18), label: 'Quick Match' },
-      { id: 'India', icon: icons.flagIndia(18), label: 'India' },
-      { id: 'USA', icon: icons.flagUSA(18), label: 'USA' },
-      { id: 'Japan', icon: icons.flagJapan(18), label: 'Japan' },
-      { id: 'Brazil', icon: icons.flagBrazil(18), label: 'Brazil' },
-      { id: 'Europe', icon: icons.flagEurope(18), label: 'Europe' },
-      { id: 'Australia', icon: icons.flagAustralia(18), label: 'Australia' }
-    ];
     return `
       <div class="page">
         <div class="card">
@@ -1128,9 +1169,7 @@ class AnacondaPark {
             <button class="${this.matchType === 'global' ? 'active' : ''}" data-mt="global">${icons.globe(16)} Global Adventure</button>
             <button class="${this.matchType === 'local' ? 'active' : ''}" data-mt="local">${icons.pin(16)} Local Explorer</button>
           </div>
-          ${this.matchType === 'global'
-            ? `<div class="region-grid">${regionButtons.map(rg => `<div class="region-btn ${this.selectedRegion.includes(rg.id) ? 'active' : ''}" data-region="${rg.id}">${rg.icon} <span>${rg.label}</span></div>`).join('')}</div>`
-            : `<div class="muted" style="font-size:0.85rem;">You'll be matched into a game region near your approximate location (neighbourhood level only). Your exact GPS is never shared with other players.</div>`}
+          ${this.matchType === 'global' ? this.renderGlobalMatch() : this.renderLocalMatch()}
         </div>
 
         <div class="card">
@@ -1630,7 +1669,7 @@ class AnacondaPark {
   // ---------- GAME OVERLAYS ----------
   private renderMatchmaking() {
     const mm = this.modeDef;
-    const where = this.matchType === 'local' ? '📍 Local region' : this.selectedRegion;
+    const where = this.matchType === 'local' ? `📍 ${this.localCity || 'Local region'}` : '🌎 Best server';
     return `<div class="overlay"><div class="modal" style="text-align:center;"><div class="section-title" style="justify-content:center;">${mm.icon} ${mm.name}</div>
       <div class="countdown-num" id="mm-count">3</div><div class="muted">${where} · connecting to the 30 Hz world…</div>
       <div class="chip" style="margin-top:14px;">💡 Eat 🍒 to heal · grab 🛡️ & ⚡ power-ups</div></div></div>`;
@@ -1726,6 +1765,10 @@ class AnacondaPark {
     document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { audio.playClick(); const m = (b as HTMLElement).dataset.mode as UIMode; if (UI_MODES[m]) { this.selectedUIMode = m; this.render(); } }));
     document.querySelectorAll('[data-mt]').forEach(b => b.addEventListener('click', () => { this.matchType = (b as HTMLElement).dataset.mt as any; audio.playClick(); this.render(); }));
     document.querySelectorAll('[data-region]').forEach(b => b.addEventListener('click', () => { this.selectedRegion = (b as HTMLElement).dataset.region!; audio.playClick(); this.render(); }));
+    // §7 Local Explorer cascading location selectors
+    document.getElementById('loc-country')?.addEventListener('change', (e) => { this.localCountry = (e.target as HTMLSelectElement).value; this.localState = Object.keys(LOCATIONS[this.localCountry])[0]; this.localCity = LOCATIONS[this.localCountry][this.localState][0]; audio.playClick(); this.render(); });
+    document.getElementById('loc-state')?.addEventListener('change', (e) => { this.localState = (e.target as HTMLSelectElement).value; this.localCity = LOCATIONS[this.localCountry][this.localState][0]; this.render(); });
+    document.getElementById('loc-city')?.addEventListener('change', (e) => { this.localCity = (e.target as HTMLSelectElement).value; this.render(); });
     document.querySelectorAll('[data-skin]').forEach(b => b.addEventListener('click', () => this.equipSkin((b as HTMLElement).dataset.skin!)));
     document.querySelectorAll('[data-evo]').forEach(b => b.addEventListener('click', () => this.equipEvolution((b as HTMLElement).dataset.evo!)));
     document.querySelectorAll('[data-acc]').forEach(b => b.addEventListener('click', () => this.equipAccessory((b as HTMLElement).dataset.acc!)));

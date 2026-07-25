@@ -645,6 +645,17 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .mode-card.disabled { opacity: 0.5; }
 .mode-rules { font-size: 0.82rem; margin: 12px 2px; line-height: 1.45; }
 
+/* §7 matchmaking */
+.mm-server { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--card-2); border: 1px solid var(--line); border-radius: var(--r-md); }
+.mm-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px rgba(47,191,91,0.18); flex-shrink: 0; }
+.mm-ping { font-family: var(--font-title); font-weight: 800; color: var(--green-deep); font-size: 0.9rem; }
+.mm-loc-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.mm-loc { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.mm-loc > span { font-family: var(--font-title); font-weight: 800; font-size: 0.68rem; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+.mm-loc select { width: 100%; padding: 8px 6px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: #fff; font-size: 0.82rem; color: var(--ink); }
+.mm-here { margin-top: 10px; font-size: 0.85rem; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 6px; }
+@media (max-width: 400px) { .mm-loc-grid { grid-template-columns: 1fr; } }
+
 /* §4 Home redesign */
 .avatar-btn { display: grid; place-items: center; font-family: var(--font-title); font-weight: 900; color: #fff; background: linear-gradient(160deg,#58c06b,#2fa354); border-color: #2fa354; }
 .home-welcome { padding: 16px; }
