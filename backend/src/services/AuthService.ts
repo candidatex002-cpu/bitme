@@ -4,7 +4,48 @@ import { db } from '../db/Database';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'anaconda_park_super_secret_jwt_key_2026';
 
+// §5 Username rules — reserved handles + a small profanity guard (extend as needed).
+const RESERVED_NAMES = new Set(['admin', 'administrator', 'root', 'system', 'moderator', 'mod', 'staff', 'support', 'anacondapark', 'anaconda', 'official', 'server', 'null', 'undefined', 'guest', 'player', 'you']);
+const PROFANITY = ['fuck', 'shit', 'bitch', 'cunt', 'nigger', 'faggot', 'asshole', 'dick', 'porn', 'rape'];
+
 export class AuthService {
+  // §5 Validate a username against the rules (length, charset, reserved, profanity).
+  public static validateUsername(name: string): { ok: boolean; reason?: string } {
+    const n = (name || '').trim();
+    if (n.length < 3) return { ok: false, reason: 'At least 3 characters' };
+    if (n.length > 16) return { ok: false, reason: 'At most 16 characters' };
+    if (!/^[A-Za-z0-9_]+$/.test(n)) return { ok: false, reason: 'Use letters, numbers and _ only' };
+    const lower = n.toLowerCase();
+    if (RESERVED_NAMES.has(lower)) return { ok: false, reason: 'This name is reserved' };
+    if (PROFANITY.some(w => lower.includes(w))) return { ok: false, reason: 'Please choose a friendlier name' };
+    return { ok: true };
+  }
+
+  // §5 Availability = valid AND not already taken. Suggests alternatives when taken.
+  public static checkUsername(name: string): { available: boolean; reason?: string; suggestions?: string[] } {
+    const v = this.validateUsername(name);
+    if (!v.ok) return { available: false, reason: v.reason, suggestions: this.suggestUsernames(name) };
+    if (db.getUserByUsername(name.trim())) return { available: false, reason: 'Username already taken', suggestions: this.suggestUsernames(name) };
+    return { available: true };
+  }
+
+  public static suggestUsernames(name: string): string[] {
+    const base = (name || 'Snake').replace(/[^A-Za-z0-9_]/g, '').slice(0, 12) || 'Snake';
+    const cands = [`${base}_${Math.floor(10 + Math.random() * 89)}`, `${base}_Play`, `${base}_Pro`, `${base}_${Math.floor(100 + Math.random() * 899)}`, `${base}X`];
+    return cands.filter(c => this.validateUsername(c).ok && !db.getUserByUsername(c)).slice(0, 3);
+  }
+
+  // §5 Create a named guest during first-time onboarding (unique username enforced).
+  public static onboardGuest(name: string, country?: string, language?: string): { token: string; user: any; profile: any } | { error: string; suggestions?: string[] } {
+    const check = this.checkUsername(name);
+    if (!check.available) return { error: check.reason || 'Username unavailable', suggestions: check.suggestions };
+    const clean = name.trim();
+    const { user, profile } = db.createUser(clean, `${clean.toLowerCase()}@guest.local`, '', true);
+    db.updateProfile(user.id, { country, language } as any); // country/language stored loosely
+    const token = jwt.sign({ userId: user.id, username: user.username, isGuest: true }, JWT_SECRET, { expiresIn: '30d' });
+    return { token, user: { id: user.id, username: user.username, email: user.email }, profile: db.getProfile(user.id) };
+  }
+
   public static async login(username: string, passwordHashOrPlain: string): Promise<{ token: string; user: any; profile: any } | { error: string }> {
     const user = db.getUserByUsername(username);
     if (!user) {

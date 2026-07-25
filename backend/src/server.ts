@@ -61,6 +61,16 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/auth/guest', (req, res) => res.json(AuthService.createGuestAccount()));
 
+// §5 Username availability + first-time onboarding
+app.get('/api/auth/username-check', (req, res) => res.json(AuthService.checkUsername(String(req.query.name || ''))));
+
+app.post('/api/auth/onboard', (req, res) => {
+  const { name, country, language } = req.body || {};
+  const result = AuthService.onboardGuest(name, country, language);
+  if ('error' in result) return res.status(400).json(result);
+  res.json({ ...result, profile: withRank(result.profile) });
+});
+
 const withRank = (profile: any) => profile ? { ...profile, rank: ProgressionService.getRank(profile.level, profile.prestige), xpToNext: ProgressionService.xpToNext(profile.level), nextEvolution: ProgressionService.nextEvolution(profile.level, profile.evolutionXp, profile.prestige) } : profile;
 
 app.get('/api/player/profile', (req, res) => {

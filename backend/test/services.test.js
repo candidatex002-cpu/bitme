@@ -132,3 +132,22 @@ test('Auth: register + login + token verify; guest', async () => {
   const guest = AuthService.createGuestAccount();
   assert.equal(AuthService.verifyToken(guest.token).isGuest, true);
 });
+
+// §5 username system
+test('Auth: username validation, availability, suggestions, onboarding', () => {
+  assert.equal(AuthService.validateUsername('ab').ok, false);        // too short
+  assert.equal(AuthService.validateUsername('admin').ok, false);      // reserved
+  assert.equal(AuthService.validateUsername('bad name').ok, false);   // spaces
+  assert.equal(AuthService.validateUsername('Good_Name9').ok, true);
+  assert.equal(AuthService.checkUsername('FreshUniqueName').available, true);
+
+  AuthService.onboardGuest('TakenHandle', 'India', 'English');
+  const taken = AuthService.checkUsername('TakenHandle');
+  assert.equal(taken.available, false);
+  assert.ok(Array.isArray(taken.suggestions) && taken.suggestions.length >= 1);
+
+  const onb = AuthService.onboardGuest('BrandNewGuest', 'USA', 'English');
+  assert.ok('token' in onb && onb.profile.displayName === 'BrandNewGuest');
+  // Duplicate onboarding is rejected
+  assert.ok('error' in AuthService.onboardGuest('BrandNewGuest'));
+});

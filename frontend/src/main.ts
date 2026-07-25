@@ -7,7 +7,7 @@ import * as story from './game/story.js';
 const API = serverBase();
 
 type Screen = 'app' | 'matchmaking' | 'play' | 'pause' | 'respawn' | 'gameover' | 'ad-reward';
-type Page = 'home' | 'play' | 'missions' | 'inventory' | 'profile' | 'events' | 'social' | 'settings' | 'rewards' | 'story';
+type Page = 'home' | 'play' | 'missions' | 'inventory' | 'profile' | 'events' | 'social' | 'settings' | 'rewards' | 'story' | 'leaderboard';
 
 interface SkinDef { id: string; name: string; grad: string; premium?: boolean; family?: string; }
 // 15 skin families — each belongs to a themed group
@@ -98,6 +98,11 @@ const UI_MODE_ORDER: UIMode[] = ['free_roam', 'explorer', 'battle_royale', 'team
 
 const REGIONS = ['🌍 Quick Match', '🇮🇳 India', '🇺🇸 USA', '🇯🇵 Japan', '🇧🇷 Brazil', '🇪🇺 Europe', '🇦🇺 Australia'];
 
+// §5 onboarding options
+const ONB_COUNTRIES = ['India', 'United States', 'United Kingdom', 'Brazil', 'Japan', 'Germany', 'France', 'Australia', 'Canada', 'Nigeria', 'Indonesia', 'Other'];
+const ONB_LANGUAGES = ['English', 'हिन्दी', 'Español', 'Português', '日本語', 'Deutsch', 'Français', 'Bahasa', 'العربية', '中文'];
+const ONB_AVATARS = ['🐍', '🐲', '🦎', '🐢', '🦊', '🦉', '🐸', '🐝'];
+
 const LANDMARKS = [
   { name: 'Starbucks', x: 665, y: 1445 }, { name: 'Pizza Hut', x: 2265, y: 1445 },
   { name: 'Park Cafe', x: 1465, y: 645 }, { name: 'Hospital', x: 565, y: 2345 },
@@ -137,6 +142,12 @@ class AnacondaPark {
   private legendIdx = 0;
   private selectedClan = localStorage.getItem('ap_clan') || '';
 
+  // §5 Onboarding
+  private onboardName = '';
+  private onboardAvatar = '🐍';
+  private usernameState: { status: 'idle' | 'checking' | 'ok' | 'bad'; reason?: string; suggestions?: string[] } = { status: 'idle' };
+  private usernameTimer: any = null;
+
   private settings: Settings = { sfx: true, music: true, largeText: false, reduceMotion: false, highContrast: false, controlSide: 'right' };
 
   // input
@@ -159,7 +170,11 @@ class AnacondaPark {
     this.root = document.getElementById('app')!;
     this.loadSettings();
     this.render();
-    this.initGuest();
+    // §5 First-time users go through onboarding (which creates their named account);
+    // returning users (or anyone with an existing cached session) restore directly.
+    if (!localStorage.getItem('ap_onboarded') && localStorage.getItem('ap_profile_cache')) localStorage.setItem('ap_onboarded', '1');
+    if (localStorage.getItem('ap_onboarded')) this.initGuest();
+    else this.showOnboarding();
     window.addEventListener('resize', () => this.renderer?.resize());
     // Also track the visual viewport (URL bar hide/show on mobile)
     if (window.visualViewport) {
@@ -176,7 +191,129 @@ class AnacondaPark {
     //   ads.configure({ enabled: true, testMode: false, appId: 'ca-app-pub-XXXX~YYYY',
     //     units: { rewarded: '…', interstitial: '…', banner: '…', appOpen: '…' } });
     // Until then every ad call is a no-op / the built-in simulated reward modal.
-    this.maybeShowLegend();
+    if (localStorage.getItem('ap_onboarded')) this.maybeShowLegend(); // onboarding chains its own legend
+  }
+
+  // ---------- §5 FIRST-TIME ONBOARDING ----------
+  private showOnboarding() {
+    document.getElementById('onb-overlay')?.remove();
+    const el = document.createElement('div');
+    el.id = 'onb-overlay';
+    el.className = 'onb-overlay';
+    el.innerHTML = `
+      <div class="onb-card">
+        <div class="onb-logo">🐍</div>
+        <div class="onb-title">Welcome to Anaconda Park</div>
+        <div class="onb-sub">Create your explorer to begin the legend of the Lost Crown.</div>
+
+        <label class="onb-label">Player Name</label>
+        <input id="onb-name" class="onb-input" maxlength="16" autocomplete="off" placeholder="Choose a unique name" />
+        <div id="onb-uname" class="onb-uname"></div>
+        <div id="onb-suggest" class="onb-suggest"></div>
+
+        <label class="onb-label">Choose an Avatar</label>
+        <div class="onb-avatars">${ONB_AVATARS.map(a => `<button class="onb-av ${this.onboardAvatar === a ? 'sel' : ''}" data-onbav="${a}">${a}</button>`).join('')}</div>
+
+        <div class="onb-row">
+          <div><label class="onb-label">Country</label><select id="onb-country" class="onb-input">${ONB_COUNTRIES.map(c => `<option>${c}</option>`).join('')}</select></div>
+          <div><label class="onb-label">Language</label><select id="onb-lang" class="onb-input">${ONB_LANGUAGES.map(l => `<option>${l}</option>`).join('')}</select></div>
+        </div>
+
+        <button class="btn btn-primary btn-block onb-submit" id="onb-submit" disabled>🥚 Begin your journey</button>
+        <div class="onb-legal muted">Optional details help us match you locally. Your name is your unique identifier; a display name can be changed later.</div>
+      </div>`;
+    document.body.appendChild(el);
+    audio.ensureMusic();
+
+    const nameInput = document.getElementById('onb-name') as HTMLInputElement;
+    nameInput?.addEventListener('input', () => { this.onboardName = nameInput.value.trim(); this.checkUsernameDebounced(); });
+    document.querySelectorAll('[data-onbav]').forEach(b => b.addEventListener('click', () => {
+      this.onboardAvatar = (b as HTMLElement).dataset.onbav!;
+      document.querySelectorAll('.onb-av').forEach(a => a.classList.toggle('sel', a === b));
+    }));
+    document.getElementById('onb-submit')?.addEventListener('click', () => this.submitOnboarding());
+    setTimeout(() => nameInput?.focus(), 100);
+  }
+
+  private checkUsernameDebounced() {
+    if (this.usernameTimer) clearTimeout(this.usernameTimer);
+    const name = this.onboardName;
+    const unameEl = document.getElementById('onb-uname');
+    const submit = document.getElementById('onb-submit') as HTMLButtonElement | null;
+    if (submit) submit.disabled = true;
+    if (name.length < 3) { this.usernameState = { status: 'idle' }; if (unameEl) unameEl.className = 'onb-uname'; if (unameEl) unameEl.innerText = ''; this.renderSuggestions([]); return; }
+    this.usernameState = { status: 'checking' };
+    if (unameEl) { unameEl.className = 'onb-uname checking'; unameEl.innerText = 'Checking availability…'; }
+    this.usernameTimer = setTimeout(async () => {
+      try {
+        const res = await fetch(`${API}/api/auth/username-check?name=${encodeURIComponent(name)}`);
+        const d = await res.json();
+        if (name !== this.onboardName) return; // stale
+        if (d.available) {
+          this.usernameState = { status: 'ok' };
+          if (unameEl) { unameEl.className = 'onb-uname ok'; unameEl.innerText = '✓ Available'; }
+          this.renderSuggestions([]);
+          if (submit) submit.disabled = false;
+        } else {
+          this.usernameState = { status: 'bad', reason: d.reason, suggestions: d.suggestions };
+          if (unameEl) { unameEl.className = 'onb-uname bad'; unameEl.innerText = `✕ ${d.reason || 'Unavailable'}`; }
+          this.renderSuggestions(d.suggestions || []);
+        }
+      } catch {
+        // Offline / no server — allow the name locally (deployed build has no auth server).
+        if (name !== this.onboardName) return;
+        this.usernameState = { status: 'ok' };
+        if (unameEl) { unameEl.className = 'onb-uname ok'; unameEl.innerText = '✓ Available'; }
+        this.renderSuggestions([]);
+        if (submit) submit.disabled = false;
+      }
+    }, 400);
+  }
+
+  private renderSuggestions(suggestions: string[]) {
+    const el = document.getElementById('onb-suggest');
+    if (!el) return;
+    el.innerHTML = suggestions.length ? `Try: ${suggestions.map(s => `<button class="onb-sg" data-sg="${s}">${s}</button>`).join('')}` : '';
+    el.querySelectorAll('[data-sg]').forEach(b => b.addEventListener('click', () => {
+      const s = (b as HTMLElement).dataset.sg!;
+      const input = document.getElementById('onb-name') as HTMLInputElement;
+      if (input) { input.value = s; this.onboardName = s; this.checkUsernameDebounced(); input.focus(); }
+    }));
+  }
+
+  private async submitOnboarding() {
+    if (this.usernameState.status !== 'ok') return;
+    audio.playClick();
+    const country = (document.getElementById('onb-country') as HTMLSelectElement)?.value;
+    const language = (document.getElementById('onb-lang') as HTMLSelectElement)?.value;
+    const submit = document.getElementById('onb-submit') as HTMLButtonElement | null;
+    if (submit) { submit.disabled = true; submit.innerText = 'Creating…'; }
+    try {
+      const res = await fetch(`${API}/api/auth/onboard`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: this.onboardName, country, language }),
+      });
+      const d = await res.json();
+      if (d.token) { this.token = d.token; this.profile = d.profile; }
+      else throw new Error(d.error || 'onboard failed');
+    } catch {
+      // Deployed / offline: build a local named profile.
+      this.token = 'guest_local_token';
+      this.profile = { id: 'guest_1', displayName: this.onboardName, stars: 500, tickets: 5, level: 1, xp: 0, xpToNext: 300, evolutionXp: 0, equippedSkin: 'Forest', equippedEvolution: 'Baby', unlockedEvolutions: ['Baby'], stats: { matchesPlayed: 0, matchesWon: 0, totalKills: 0, totalFoodEaten: 0, highestScore: 0, survivalTimeSeconds: 0, cherriesCollected: 0 }, rank: { label: 'Bronze I', color: '#b45309', tier: 'Bronze' } };
+    }
+    try { localStorage.setItem('ap_avatar', this.onboardAvatar); } catch { /* */ }
+    localStorage.setItem('ap_onboarded', '1');
+    this.selectedSkin = this.profile?.equippedSkin || 'Forest';
+    this.persistSession();
+    await this.fetchAux();
+    document.getElementById('onb-overlay')?.remove();
+    this.render();
+    this.showLegend(); // §5 step 4 — the story intro plays next
+  }
+
+  private avatarGlyph(): string {
+    const a = localStorage.getItem('ap_avatar');
+    return a || (this.profile?.displayName || 'E')[0].toUpperCase();
   }
 
   // ---------- STORY: Legend intro overlay ----------
@@ -778,20 +915,20 @@ class AnacondaPark {
 
   // ------------------------------------------------------------- APP SHELL
   private renderApp() {
-    const p = this.profile; const r = this.rank();
+    const p = this.profile;
+    // §4 Bottom nav — Home · Play · Missions · Inventory · Social · Profile
     const nav: Array<[Page, string, string]> = [
-      ['home', '🏠', 'Home'], ['play', '🎮', 'Play'], ['missions', '🎯', 'Missions'], ['inventory', '🎒', 'Inventory'], ['profile', '👤', 'Profile'],
+      ['home', '🏠', 'Home'], ['play', '🎮', 'Play'], ['missions', '🎯', 'Missions'], ['inventory', '🎒', 'Inventory'], ['social', '👥', 'Social'], ['profile', '👤', 'Profile'],
     ];
     return `
       <div class="app-shell">
         <div class="app-top">
           <div class="app-brand"><div class="logo">🐍</div><div class="logo-txt">Anaconda Park<small>RECLAIM THE LOST CROWN</small></div></div>
           <div style="display:flex;gap:8px;align-items:center;">
-            <div class="chip">⭐ <span class="val">${p?.stars ?? 500}</span></div>
-            <div class="chip">🎟️ <span class="val">${p?.tickets ?? 5}</span></div>
-            <button class="icon-btn" data-go="story" title="Story">📜</button>
             <button class="icon-btn ${this.settings.music ? '' : 'off'}" id="music-toggle" title="${this.settings.music ? 'Music on' : 'Music off'}">${this.settings.music ? '🎵' : '🔕'}</button>
-            <button class="icon-btn" data-go="settings">⚙️</button>
+            <button class="icon-btn" id="notif-btn" title="Notifications">🔔</button>
+            <button class="icon-btn" data-go="settings" title="Settings">⚙️</button>
+            <button class="icon-btn avatar-btn" data-go="profile" title="Profile">${this.avatarGlyph()}</button>
           </div>
         </div>
         <div class="app-content">
@@ -804,7 +941,8 @@ class AnacondaPark {
                   : this.page === 'social' ? this.pageSocial()
                     : this.page === 'rewards' ? this.pageRewards()
                       : this.page === 'story' ? this.pageStory()
-                        : this.pageSettings()}
+                        : this.page === 'leaderboard' ? this.pageLeaderboard()
+                          : this.pageSettings()}
         </div>
         <div class="bottom-nav">
           ${nav.map(([id, ico, label]) => `<button class="nav-item ${this.page === id ? 'active' : ''}" data-go="${id}"><span class="ni-ico">${ico}</span>${label}</button>`).join('')}
@@ -818,69 +956,53 @@ class AnacondaPark {
     return `<div class="xp-wrap"><div class="xp-bar"><div style="width:${pct}%"></div></div><div class="xp-label"><span>Level ${p.level}${p.prestige ? ` · ✨${p.prestige}` : ''}</span><span>${p.xp} / ${toNext} XP</span></div></div>`;
   }
 
-  // ---------- HOME (focused: what do I do next?) ----------
+  // ---------- HOME (§4 clean: welcome + big actions) ----------
   private pageHome() {
     const p = this.profile; const r = this.rank();
     const prince = story.princeRank(p?.level || 1);
-    const daily = this.missions.filter(m => m.category === 'daily').slice(0, 3);
+    const toNext = p?.xpToNext || 300; const xpPct = Math.min(100, ((p?.xp || 0) / toNext) * 100);
     return `
       <div class="page">
-        <div class="hero">
-          <div class="welcome">Welcome back, lost prince…</div>
-          <div class="who">${p?.displayName || 'Explorer'}</div>
-          <div class="prince-line">${prince.icon} ${prince.title} · <i>“${prince.motto}”</i></div>
-          <div class="rank-line">
-            <span class="rank-badge" style="color:#fff">🏆 ${r.label}</span>
-            <span class="rank-badge">⭐ ${p?.stars ?? 0}</span>
-            <span class="rank-badge">🎟️ ${p?.tickets ?? 0}</span>
-          </div>
-          ${this.xpBar()}
-        </div>
-
-        <div class="card tint" data-go="story" style="cursor:pointer;display:flex;align-items:center;gap:12px;justify-content:space-between;">
-          <div style="display:flex;align-items:center;gap:12px;">
-            <div style="font-size:2rem;">📜</div>
-            <div><div style="font-family:var(--font-title);font-weight:800;">The Lost Crown</div><div class="muted" style="font-size:0.8rem;">Chapter ${story.currentChapter(p?.level || 1)} · rebuild the castle (${story.castleProgress(p?.level || 1)}%)</div></div>
-          </div>
-          <span class="pill gold">Story</span>
-        </div>
-
-        <div class="play-now">
-          <button class="btn btn-primary btn-lg btn-block" data-go="play">▶ PLAY NOW</button>
-          <button class="btn btn-gold btn-lg" id="quick-match" title="Quick match">⚡</button>
-        </div>
-
-        <div class="card">
-          <div class="section-title">🎯 Today's Missions <span class="see-all" data-go="missions">See all</span></div>
-          <div class="list">
-            ${daily.map(m => this.missionRow(m, true)).join('') || '<div class="muted">Loading…</div>'}
-          </div>
-        </div>
-
-        <div class="card tint" data-go="rewards" style="cursor:pointer;display:flex;align-items:center;gap:12px;justify-content:space-between;">
-          <div style="display:flex;align-items:center;gap:12px;">
-            <div style="font-size:2rem;">🎁</div>
-            <div><div style="font-family:var(--font-title);font-weight:800;">Rewards Marketplace</div><div class="muted" style="font-size:0.8rem;">Redeem ⭐ for gift cards, merch &amp; passes</div></div>
-          </div>
-          <span class="pill gold">Open</span>
-        </div>
-
-        <div class="two-col">
-          <div class="card tint" data-go="events" style="cursor:pointer;">
-            <div class="section-title">🎪 Latest Event</div>
-            <div style="display:flex;align-items:center;gap:12px;">
-              <div style="font-size:2.4rem;">🐍</div>
-              <div><div style="font-family:var(--font-title);font-weight:800;">Jungle Festival</div><div class="muted" style="font-size:0.8rem;">2 days remaining · double stars</div></div>
+        <div class="home-welcome card tint">
+          <div class="hw-top">
+            <div class="hw-avatar" data-go="profile">${this.avatarGlyph()}</div>
+            <div class="hw-info">
+              <div class="hw-hi">Welcome back,</div>
+              <div class="hw-name">${p?.displayName || 'Explorer'}</div>
+              <div class="hw-rank">${prince.icon} ${prince.title} · 🏆 ${r.label}</div>
             </div>
+            <div class="hw-stars">⭐ ${p?.stars ?? 0}</div>
           </div>
-          <div class="card" data-go="social" style="cursor:pointer;">
-            <div class="section-title">👥 Friends Online</div>
-            <div class="list">
-              ${['Ashraf', 'Rahul', 'David'].map(n => `<div class="friend"><div class="avatar">${n[0]}</div><div style="font-weight:700;font-size:0.85rem;">${n}</div><div class="dot"></div></div>`).join('')}
-            </div>
+          <div class="hw-xp">
+            <div class="xp-bar"><div style="width:${xpPct}%"></div></div>
+            <div class="xp-label"><span>Level ${p?.level ?? 1}${p?.prestige ? ` · ✨${p.prestige}` : ''}</span><span>${p?.xp ?? 0} / ${toNext} XP</span></div>
           </div>
+        </div>
+
+        <button class="btn btn-primary btn-lg btn-block home-play" id="home-play">▶ PLAY NOW</button>
+
+        <div class="home-actions">
+          <button class="home-action story" id="home-explorer"><span class="ha-ico">📜</span><span class="ha-label">Explorer</span></button>
+          <button class="home-action" data-go="missions"><span class="ha-ico">🎯</span><span class="ha-label">Missions</span></button>
+          <button class="home-action" data-go="inventory"><span class="ha-ico">🎒</span><span class="ha-label">Inventory</span></button>
+          <button class="home-action" data-go="social"><span class="ha-ico">👥</span><span class="ha-label">Friends</span></button>
+          <button class="home-action" data-go="rewards"><span class="ha-ico">🛒</span><span class="ha-label">Shop</span></button>
+          <button class="home-action" data-go="leaderboard"><span class="ha-ico">🏆</span><span class="ha-label">Leaderboard</span></button>
         </div>
       </div>`;
+  }
+
+  // ---------- LEADERBOARD ----------
+  private pageLeaderboard() {
+    const lb = this.leaderboard || [];
+    return `<div class="page"><div class="section-title">🏆 Global Leaderboard</div>
+      <div class="card"><div class="lb-page">
+        ${lb.length ? lb.map((e: any, i: number) => `<div class="lb-page-row ${e.userId === this.profile?.userId ? 'me' : ''}">
+          <span class="lbp-rank ${i < 3 ? 'top' : ''}">${['🥇', '🥈', '🥉'][i] || (i + 1)}</span>
+          <span class="lbp-name">${e.displayName || e.name}</span>
+          <span class="lbp-score">${e.score}${e.wins ? ` · 🏆${e.wins}` : ''}</span>
+        </div>`).join('') : '<div class="muted" style="text-align:center;padding:16px;">Leaderboard loading…</div>'}
+      </div></div></div>`;
   }
 
   private missionRow(m: any, compact = false) {
@@ -1350,6 +1472,9 @@ class AnacondaPark {
     document.querySelectorAll('[data-set]').forEach(b => b.addEventListener('click', () => this.toggleSetting((b as HTMLElement).dataset.set as keyof Settings)));
 
     on('music-toggle', () => this.toggleMusic());
+    on('notif-btn', () => this.showToast('🔔 No new notifications'));
+    on('home-play', () => this.go('play'));
+    on('home-explorer', () => { this.selectedUIMode = 'explorer'; this.startMatchmaking(); });
     on('quick-match', () => this.startMatchmaking());
     on('enter-btn', () => this.startMatchmaking());
     on('prestige-btn', () => this.doPrestige());
