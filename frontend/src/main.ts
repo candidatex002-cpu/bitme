@@ -274,20 +274,33 @@ class AnacondaPark {
   private loadCachedSession(): { token: string; profile: any } | null {
     try { const raw = localStorage.getItem('ap_profile_cache'); if (!raw) return null; const d = JSON.parse(raw); return d?.token && d?.profile ? d : null; } catch { return null; }
   }
+  // Cheap client-side JWT expiry check (the server still verifies for real) — lets us skip a
+  // doomed profile request for an already-expired token, avoiding a console 401 on startup.
+  private tokenLooksValid(token: string): boolean {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      return typeof payload.exp === 'number' && payload.exp * 1000 > Date.now() + 5000;
+    } catch { return false; }
+  }
 
   private async initGuest() {
     // Restore any cached session first so the player sees their progress instantly, even offline.
     const cached = this.loadCachedSession();
     if (cached) { this.token = cached.token; this.profile = cached.profile; this.selectedSkin = cached.profile?.equippedSkin || this.selectedSkin; this.render(); }
     try {
-      if (!this.token) {
+      // Validate the cached token; if the server rejects it (expired / backend restarted),
+      // silently re-authenticate as a guest instead of spamming 401s with a dead token.
+      let valid = false;
+      if (this.token && this.token !== 'guest_local_token' && this.tokenLooksValid(this.token)) {
+        const res = await fetch(API + '/api/player/profile', { headers: { Authorization: `Bearer ${this.token}` } });
+        if (res.ok) { const d = await res.json(); if (d?.profile) { this.profile = d.profile; valid = true; } }
+      }
+      if (!valid) {
         const res = await fetch(API + '/api/auth/guest', { method: 'POST' });
         const data = await res.json();
-        this.token = data.token;
-        this.profile = data.profile;
+        if (data?.token) { this.token = data.token; this.profile = data.profile; }
       }
       this.selectedSkin = this.profile?.equippedSkin || 'Forest';
-      await this.refreshProfile();
       await this.fetchAux();
       this.persistSession();
       this.render();

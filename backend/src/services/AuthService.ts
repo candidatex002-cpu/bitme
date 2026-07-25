@@ -52,7 +52,7 @@ export class AuthService {
     const token = jwt.sign(
       { userId: user.id, username: user.username, isGuest: true },
       JWT_SECRET,
-      { expiresIn: '12h' }
+      { expiresIn: '30d' } // keep guest sessions (and their progress) alive across visits
     );
 
     return { token, user: { id: user.id, username: user.username, email: user.email }, profile };
