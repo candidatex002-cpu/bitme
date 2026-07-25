@@ -3,6 +3,7 @@ import { Renderer } from './game/Renderer.js';
 import { audio } from './game/AudioSystem.js';
 import { ads } from './game/AdService.js';
 import * as story from './game/story.js';
+import { icons } from './game/ui/icons.js';
 
 const API = serverBase();
 
@@ -313,7 +314,8 @@ class AnacondaPark {
 
   private avatarGlyph(): string {
     const a = localStorage.getItem('ap_avatar');
-    return a || (this.profile?.displayName || 'E')[0].toUpperCase();
+    const letter = a || (this.profile?.displayName || 'E')[0].toUpperCase();
+    return `<div class="av-initial">${letter}</div>`;
   }
 
   // ---------- STORY: Legend intro overlay ----------
@@ -916,19 +918,34 @@ class AnacondaPark {
   // ------------------------------------------------------------- APP SHELL
   private renderApp() {
     const p = this.profile;
-    // §4 Bottom nav — Home · Play · Missions · Inventory · Social · Profile
     const nav: Array<[Page, string, string]> = [
-      ['home', '🏠', 'Home'], ['play', '🎮', 'Play'], ['missions', '🎯', 'Missions'], ['inventory', '🎒', 'Inventory'], ['social', '👥', 'Social'], ['profile', '👤', 'Profile'],
+      ['home', icons.home(22), 'Home'],
+      ['play', icons.play(22), 'Play'],
+      ['missions', icons.missions(22), 'Missions'],
+      ['inventory', icons.inventory(22), 'Inventory'],
+      ['social', icons.social(22), 'Social'],
+      ['profile', icons.profile(22), 'Profile'],
     ];
     return `
       <div class="app-shell">
         <div class="app-top">
-          <div class="app-brand"><div class="logo">🐍</div><div class="logo-txt">Anaconda Park<small>RECLAIM THE LOST CROWN</small></div></div>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <button class="icon-btn ${this.settings.music ? '' : 'off'}" id="music-toggle" title="${this.settings.music ? 'Music on' : 'Music off'}">${this.settings.music ? '🎵' : '🔕'}</button>
-            <button class="icon-btn" id="notif-btn" title="Notifications">🔔</button>
-            <button class="icon-btn" data-go="settings" title="Settings">⚙️</button>
-            <button class="icon-btn avatar-btn" data-go="profile" title="Profile">${this.avatarGlyph()}</button>
+          <div class="app-brand">
+            ${icons.logo(38)}
+            <div class="logo-txt">Anaconda Park<small>RECLAIM THE LOST CROWN</small></div>
+          </div>
+          <div class="app-top-actions">
+            <button class="icon-btn ${this.settings.music ? '' : 'off'}" id="music-toggle" title="${this.settings.music ? 'Music on' : 'Music off'}">
+              ${this.settings.music ? icons.music(20) : icons.musicMuted(20)}
+            </button>
+            <button class="icon-btn" id="notif-btn" title="Notifications">
+              ${icons.bell(20)}
+            </button>
+            <button class="icon-btn" data-go="settings" title="Settings">
+              ${icons.settings(20)}
+            </button>
+            <button class="icon-btn avatar-btn" data-go="profile" title="Profile">
+              ${this.avatarGlyph()}
+            </button>
           </div>
         </div>
         <div class="app-content">
@@ -945,7 +962,7 @@ class AnacondaPark {
                           : this.pageSettings()}
         </div>
         <div class="bottom-nav">
-          ${nav.map(([id, ico, label]) => `<button class="nav-item ${this.page === id ? 'active' : ''}" data-go="${id}"><span class="ni-ico">${ico}</span>${label}</button>`).join('')}
+          ${nav.map(([id, ico, label]) => `<button class="nav-item ${this.page === id ? 'active' : ''}" data-go="${id}"><span class="ni-ico">${ico}</span><span class="ni-lbl">${label}</span></button>`).join('')}
         </div>
       </div>`;
   }
@@ -956,7 +973,7 @@ class AnacondaPark {
     return `<div class="xp-wrap"><div class="xp-bar"><div style="width:${pct}%"></div></div><div class="xp-label"><span>Level ${p.level}${p.prestige ? ` · ✨${p.prestige}` : ''}</span><span>${p.xp} / ${toNext} XP</span></div></div>`;
   }
 
-  // ---------- HOME (§4 clean: welcome + big actions) ----------
+  // ---------- HOME (clean welcome + 6 grid actions) ----------
   private pageHome() {
     const p = this.profile; const r = this.rank();
     const prince = story.princeRank(p?.level || 1);
@@ -969,9 +986,9 @@ class AnacondaPark {
             <div class="hw-info">
               <div class="hw-hi">Welcome back,</div>
               <div class="hw-name">${p?.displayName || 'Explorer'}</div>
-              <div class="hw-rank">${prince.icon} ${prince.title} · 🏆 ${r.label}</div>
+              <div class="hw-rank">${prince.icon} ${prince.title} · <span class="rank-tag" style="color:${r.color}">🏆 ${r.label}</span></div>
             </div>
-            <div class="hw-stars">⭐ ${p?.stars ?? 0}</div>
+            <div class="hw-stars">${icons.star(18)} <span class="val">${p?.stars ?? 0}</span></div>
           </div>
           <div class="hw-xp">
             <div class="xp-bar"><div style="width:${xpPct}%"></div></div>
@@ -979,15 +996,17 @@ class AnacondaPark {
           </div>
         </div>
 
-        <button class="btn btn-primary btn-lg btn-block home-play" id="home-play">▶ PLAY NOW</button>
+        <button class="btn btn-primary btn-lg btn-block home-play" id="home-play">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> PLAY NOW
+        </button>
 
         <div class="home-actions">
-          <button class="home-action story" id="home-explorer"><span class="ha-ico">📜</span><span class="ha-label">Explorer</span></button>
-          <button class="home-action" data-go="missions"><span class="ha-ico">🎯</span><span class="ha-label">Missions</span></button>
-          <button class="home-action" data-go="inventory"><span class="ha-ico">🎒</span><span class="ha-label">Inventory</span></button>
-          <button class="home-action" data-go="social"><span class="ha-ico">👥</span><span class="ha-label">Friends</span></button>
-          <button class="home-action" data-go="rewards"><span class="ha-ico">🛒</span><span class="ha-label">Shop</span></button>
-          <button class="home-action" data-go="leaderboard"><span class="ha-ico">🏆</span><span class="ha-label">Leaderboard</span></button>
+          <button class="home-action story" id="home-explorer"><span class="ha-ico">${icons.explorer(36)}</span><span class="ha-label">Explorer</span></button>
+          <button class="home-action" data-go="missions"><span class="ha-ico">${icons.missions(36)}</span><span class="ha-label">Missions</span></button>
+          <button class="home-action" data-go="inventory"><span class="ha-ico">${icons.inventory(36)}</span><span class="ha-label">Inventory</span></button>
+          <button class="home-action" data-go="social"><span class="ha-ico">${icons.social(36)}</span><span class="ha-label">Friends</span></button>
+          <button class="home-action" data-go="rewards"><span class="ha-ico">${icons.shop(36)}</span><span class="ha-label">Shop</span></button>
+          <button class="home-action" data-go="leaderboard"><span class="ha-ico">${icons.leaderboard(36)}</span><span class="ha-label">Leaderboard</span></button>
         </div>
       </div>`;
   }
@@ -995,7 +1014,7 @@ class AnacondaPark {
   // ---------- LEADERBOARD ----------
   private pageLeaderboard() {
     const lb = this.leaderboard || [];
-    return `<div class="page"><div class="section-title">🏆 Global Leaderboard</div>
+    return `<div class="page"><div class="section-title">${icons.leaderboard(22)} Global Leaderboard</div>
       <div class="card"><div class="lb-page">
         ${lb.length ? lb.map((e: any, i: number) => `<div class="lb-page-row ${e.userId === this.profile?.userId ? 'me' : ''}">
           <span class="lbp-rank ${i < 3 ? 'top' : ''}">${['🥇', '🥈', '🥉'][i] || (i + 1)}</span>
@@ -1019,31 +1038,50 @@ class AnacondaPark {
 
   // ---------- PLAY (modes + matchmaking only) ----------
   private pagePlay() {
+    const regionButtons = [
+      { id: 'Quick Match', icon: icons.regionQuick(18), label: 'Quick Match' },
+      { id: 'India', icon: icons.flagIndia(18), label: 'India' },
+      { id: 'USA', icon: icons.flagUSA(18), label: 'USA' },
+      { id: 'Japan', icon: icons.flagJapan(18), label: 'Japan' },
+      { id: 'Brazil', icon: icons.flagBrazil(18), label: 'Brazil' },
+      { id: 'Europe', icon: icons.flagEurope(18), label: 'Europe' },
+      { id: 'Australia', icon: icons.flagAustralia(18), label: 'Australia' }
+    ];
     return `
       <div class="page">
         <div class="card">
-          <div class="section-title">🌐 Matchmaking</div>
+          <div class="section-title">${icons.globe(20)} Matchmaking</div>
           <div class="seg" style="margin-bottom:12px;">
-            <button class="${this.matchType === 'global' ? 'active' : ''}" data-mt="global">🌎 Global Adventure</button>
-            <button class="${this.matchType === 'local' ? 'active' : ''}" data-mt="local">📍 Local Explorer</button>
+            <button class="${this.matchType === 'global' ? 'active' : ''}" data-mt="global">${icons.globe(16)} Global Adventure</button>
+            <button class="${this.matchType === 'local' ? 'active' : ''}" data-mt="local">${icons.pin(16)} Local Explorer</button>
           </div>
           ${this.matchType === 'global'
-        ? `<div class="region-grid">${REGIONS.map(rg => `<div class="region-btn ${this.selectedRegion === rg ? 'active' : ''}" data-region="${rg}">${rg}</div>`).join('')}</div>`
-        : `<div class="muted" style="font-size:0.85rem;">You'll be matched into a game region near your approximate location (neighbourhood level only). Your exact GPS is never shared with other players.</div>`}
+            ? `<div class="region-grid">${regionButtons.map(rg => `<div class="region-btn ${this.selectedRegion.includes(rg.id) ? 'active' : ''}" data-region="${rg.id}">${rg.icon} <span>${rg.label}</span></div>`).join('')}</div>`
+            : `<div class="muted" style="font-size:0.85rem;">You'll be matched into a game region near your approximate location (neighbourhood level only). Your exact GPS is never shared with other players.</div>`}
         </div>
 
         <div class="card">
-          <div class="section-title">🎮 Choose a Mode</div>
+          <div class="section-title">${icons.play(20)} Choose a Mode</div>
           <div class="mode-grid">
-            ${UI_MODE_ORDER.map(m => { const def = UI_MODES[m]; const sel = this.selectedUIMode === m; return `
+            ${UI_MODE_ORDER.map(m => {
+              const def = UI_MODES[m];
+              const sel = this.selectedUIMode === m;
+              let modeIco = icons.modeFreeRoam(36);
+              if (m === 'explorer') modeIco = icons.modeStory(36);
+              else if (m === 'battle_royale') modeIco = icons.modeBattleRoyale(36);
+              else if (m === 'team') modeIco = icons.modeTeamBattle(36);
+              else if (m === 'nokia') modeIco = icons.modeClassic(36);
+              else if (m === 'event') modeIco = icons.modeEvent(36);
+              return `
               <div class="mode-card ${sel ? 'selected' : ''} ${def.enabled ? '' : 'disabled'}" data-mode="${m}">
                 ${def.enabled ? '' : '<span class="mood" style="background:#94a3b8">SOON</span>'}
-                <div class="mode-icon">${def.icon}</div>
+                <div class="mode-icon">${modeIco}</div>
                 <div class="mode-name">${def.name}</div>
                 <div class="mode-tag">${def.tag}</div>
-              </div>`; }).join('')}
+              </div>`;
+            }).join('')}
           </div>
-          <div class="mode-rules muted">${this.modeDef.icon} <b>${this.modeDef.name}</b> — ${this.modeDef.rules}</div>
+          <div class="mode-rules muted"><b>${this.modeDef.name}</b> — ${this.modeDef.rules}</div>
           <button class="btn btn-primary btn-lg btn-block" id="enter-btn" ${this.modeDef.enabled ? '' : 'disabled'}>${this.modeDef.enabled ? `🚀 Enter ${this.modeDef.name}` : '🔒 Enabled during live events'}</button>
         </div>
       </div>`;
@@ -1054,7 +1092,7 @@ class AnacondaPark {
     const cats: Array<[typeof this.missionCat, string]> = [['daily', 'Daily'], ['weekly', 'Weekly'], ['event', 'Event'], ['achievements', 'Achievements']];
     return `
       <div class="page">
-        <div class="section-title">🎯 Missions & Awards</div>
+        <div class="section-title">${icons.missions(22)} Missions & Awards</div>
         <div class="tabs">${cats.map(([id, l]) => `<button class="tab ${this.missionCat === id ? 'active' : ''}" data-mcat="${id}">${l}</button>`).join('')}</div>
         <div class="list">
           ${this.missionCat === 'achievements'
@@ -1107,9 +1145,9 @@ class AnacondaPark {
         <div class="muted" style="font-size:0.78rem;padding:6px 2px;">Boosts, Eggs, Chests & Trails collected in-match will appear here — full inventory storage is coming in a later update.</div></div>`;
     } else {
       const coupons = this.profile?.coupons || [];
-      content = `<div class="list">${coupons.length ? coupons.map((c: any) => `<div class="row-card"><div class="r-ico">${c.icon || '🎟️'}</div><div class="r-body"><div class="r-title">${c.storeName}</div><div class="r-desc">${c.discountText} · <b>${c.promoCode}</b></div></div><button class="btn btn-ghost copy-btn" data-code="${c.promoCode}" style="padding:7px 10px;font-size:0.76rem;">Copy</button></div>`).join('') : '<div class="muted" style="text-align:center;padding:16px;">No coupons yet — grab a 🎁 box near a store in-match.</div>'}</div>`;
+      content = `<div class="list">${coupons.length ? coupons.map((c: any) => `<div class="row-card"><div class="r-ico">${icons.ticket(22)}</div><div class="r-body"><div class="r-title">${c.storeName}</div><div class="r-desc">${c.discountText} · <b>${c.promoCode}</b></div></div><button class="btn btn-ghost copy-btn" data-code="${c.promoCode}" style="padding:7px 12px;font-size:0.78rem;display:inline-flex;align-items:center;gap:4px;">${icons.copy(14)} Copy</button></div>`).join('') : '<div class="muted" style="text-align:center;padding:16px;">No coupons yet — grab a 🎁 box near a store in-match.</div>'}</div>`;
     }
-    return `<div class="page"><div class="section-title">🎒 Inventory</div><div class="tabs">${tabs.map(([id, l]) => `<button class="tab ${this.invTab === id ? 'active' : ''}" data-inv="${id}">${l}</button>`).join('')}</div><div class="card">${content}</div></div>`;
+    return `<div class="page"><div class="section-title">${icons.inventory(22)} Inventory</div><div class="tabs">${tabs.map(([id, l]) => `<button class="tab ${this.invTab === id ? 'active' : ''}" data-inv="${id}">${l}</button>`).join('')}</div><div class="card">${content}</div></div>`;
   }
 
   // ---------- PROFILE (progression) ----------
@@ -1204,8 +1242,15 @@ class AnacondaPark {
   private pageSocial() {
     const season = story.SEASONS[story.CURRENT_SEASON - 1];
     const friends = [{ n: 'Ashraf', on: true }, { n: 'Rahul', on: true }, { n: 'Meera', on: false }];
+    const clanIcons: Record<string, string> = {
+      forest: icons.clanForest(34),
+      ocean: icons.clanOcean(34),
+      fire: icons.clanFire(34),
+      ice: icons.clanIce(34),
+      blossom: icons.clanBlossom(34),
+    };
     return `<div class="page">
-      <div class="section-title">🛡️ Choose Your Clan</div>
+      <div class="section-title">${icons.social(22)} Choose Your Clan</div>
       <div class="card tint">
         <div class="muted" style="font-size:0.82rem;margin-bottom:6px;">Each season, clans compete to restore more of the Seven Kingdoms. Pick a clan and fight for a shared goal.</div>
         <div class="pill gold">Season ${season.n}: ${season.title}</div>
@@ -1213,15 +1258,16 @@ class AnacondaPark {
       <div class="card"><div class="clan-grid">
         ${story.CLANS.map(c => {
           const joined = this.selectedClan === c.id;
+          const ico = clanIcons[c.id] || icons.clanForest(34);
           return `<div class="clan-card ${joined ? 'joined' : ''}" data-clan="${c.id}" style="--clan:${c.color}">
-            <div class="clan-ico">${c.icon}</div>
+            <div class="clan-ico">${ico}</div>
             <div class="clan-name">${c.name}</div>
             <div class="clan-tag">${joined ? '✓ Your Clan' : 'Tap to join'}</div>
           </div>`;
         }).join('')}
       </div></div>
       <div class="card">
-        <div class="section-title" style="font-size:0.9rem;">👥 Friends</div>
+        <div class="section-title" style="font-size:0.9rem;">${icons.social(18)} Friends</div>
         <div class="list">${friends.map(f => `<div class="friend"><div class="avatar">${f.n[0]}</div><div style="flex:1;"><div style="font-weight:700;font-size:0.9rem;">${f.n}</div><div class="muted" style="font-size:0.72rem;">${f.on ? 'Online' : 'Offline'}</div></div><div class="dot ${f.on ? '' : 'off'}"></div></div>`).join('')}</div>
       </div>
       <div class="muted" style="font-size:0.78rem;">Clan wars, parties and in-match chat expand this over future seasons.</div></div>`;
