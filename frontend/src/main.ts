@@ -99,6 +99,18 @@ const UI_MODE_ORDER: UIMode[] = ['free_roam', 'explorer', 'battle_royale', 'team
 
 const REGIONS = ['🌍 Quick Match', '🇮🇳 India', '🇺🇸 USA', '🇯🇵 Japan', '🇧🇷 Brazil', '🇪🇺 Europe', '🇦🇺 Australia'];
 
+// §5 interactive tutorial (how-to-play walkthrough)
+const TUTORIAL_SLIDES = [
+  { icon: '🕹️', title: 'Move', text: 'Drag the joystick (bottom-left) to steer. On desktop use the mouse or WASD.' },
+  { icon: '⚡', title: 'Boost', text: 'Push the joystick to its edge — or hold Shift / the ⚡ button — to dash. Boosting spends a little score.' },
+  { icon: '🍒', title: 'Eat & Grow', text: 'Collect cherries, apples and frogs to score and grow. Growth is gentle so the field stays readable.' },
+  { icon: '⭐', title: 'Star Fragments', text: 'Chase the drifting stars — they flee, but you are faster. Spend stars on skins, respawns and rewards.' },
+  { icon: '⚔️', title: 'Combat', text: 'Only HEAD-to-HEAD hits eliminate a snake — the higher score wins. Body contact is safe. 🛡️ Shield and 🍄 Super make you briefly invincible.' },
+  { icon: '🗺️', title: 'The World', text: 'The map wraps around — leave one edge, appear on the other. The minimap shows the sanctuary and wormholes.' },
+  { icon: '🌀', title: 'Wormholes & Sanctuary', text: 'Enter a wormhole to escape to a linked one. Rest in the green Safe Sanctuary — no PvP, and you heal.' },
+  { icon: '🎁', title: 'Missions & Rewards', text: 'Finish story quests for XP and stars, then redeem stars in the Rewards marketplace. Now — go reclaim the crown!' },
+];
+
 // §5 onboarding options
 const ONB_COUNTRIES = ['India', 'United States', 'United Kingdom', 'Brazil', 'Japan', 'Germany', 'France', 'Australia', 'Canada', 'Nigeria', 'Indonesia', 'Other'];
 const ONB_LANGUAGES = ['English', 'हिन्दी', 'Español', 'Português', '日本語', 'Deutsch', 'Français', 'Bahasa', 'العربية', '中文'];
@@ -148,6 +160,19 @@ class AnacondaPark {
   private onboardAvatar = '🐍';
   private usernameState: { status: 'idle' | 'checking' | 'ok' | 'bad'; reason?: string; suggestions?: string[] } = { status: 'idle' };
   private usernameTimer: any = null;
+  // Friends & Profile Edit
+  private friends = [
+    { id: 'f1', name: 'Ashraf', avatar: '🐍', online: true, clan: 'Forest' },
+    { id: 'f2', name: 'Rahul', avatar: '🦁', online: true, clan: 'Ocean' },
+    { id: 'f3', name: 'Meera', avatar: '🦉', online: false, lastActiveMinsAgo: 14, clan: 'Fire' },
+    { id: 'f4', name: 'Vikram', avatar: '🐺', online: false, lastActiveMinsAgo: 58, clan: 'Ice' },
+    { id: 'f5', name: 'Sara', avatar: '🌸', online: false, lastActiveMinsAgo: 240, clan: 'Blossom' }
+  ];
+  private friendRequests = [
+    { id: 'fr1', name: 'Karthik', avatar: '🐲' }
+  ];
+  private isEditingProfile = false;
+  private editingAvatar = '🐍';
 
   private settings: Settings = { sfx: true, music: true, largeText: false, reduceMotion: false, highContrast: false, controlSide: 'right' };
 
@@ -309,7 +334,8 @@ class AnacondaPark {
     await this.fetchAux();
     document.getElementById('onb-overlay')?.remove();
     this.render();
-    this.showLegend(); // §5 step 4 — the story intro plays next
+    // §5 step 4 → story intro, then step 5 → interactive tutorial, then Home.
+    this.showLegend(() => this.showTutorial());
   }
 
   private avatarGlyph(): string {
@@ -323,7 +349,9 @@ class AnacondaPark {
     if (localStorage.getItem('ap_story_seen')) return;
     this.showLegend();
   }
-  private showLegend() {
+  private legendThen?: () => void;
+  private showLegend(then?: () => void) {
+    this.legendThen = then;
     this.legendIdx = 0;
     document.getElementById('legend-overlay')?.remove();
     const el = document.createElement('div');
@@ -349,12 +377,44 @@ class AnacondaPark {
           <button class="btn btn-primary" id="legend-next">${last ? '🥚 Begin your journey' : 'Next →'}</button>
         </div>
       </div>`;
-    const close = () => { localStorage.setItem('ap_story_seen', '1'); el.remove(); audio.ensureMusic(); };
+    const close = () => { localStorage.setItem('ap_story_seen', '1'); el.remove(); audio.ensureMusic(); const then = this.legendThen; this.legendThen = undefined; then?.(); };
     document.getElementById('legend-skip')?.addEventListener('click', () => { audio.playClick(); close(); });
     document.getElementById('legend-next')?.addEventListener('click', () => {
       audio.playClick();
       if (last) close(); else { this.legendIdx++; this.renderLegend(); }
     });
+  }
+
+  // ---------- §5 Interactive tutorial (how to play) ----------
+  private tutorialIdx = 0;
+  private showTutorial() {
+    this.tutorialIdx = 0;
+    document.getElementById('tutorial-overlay')?.remove();
+    const el = document.createElement('div');
+    el.id = 'tutorial-overlay';
+    el.className = 'legend-overlay';
+    document.body.appendChild(el);
+    this.renderTutorial();
+  }
+  private renderTutorial() {
+    const el = document.getElementById('tutorial-overlay'); if (!el) return;
+    const s = TUTORIAL_SLIDES[this.tutorialIdx];
+    const last = this.tutorialIdx === TUTORIAL_SLIDES.length - 1;
+    el.innerHTML = `
+      <div class="legend-card">
+        <div class="legend-kicker">🎮 How to Play (${this.tutorialIdx + 1}/${TUTORIAL_SLIDES.length})</div>
+        <div class="legend-icon">${s.icon}</div>
+        <div class="legend-slide-title">${s.title}</div>
+        <div class="legend-text">${s.text}</div>
+        <div class="legend-dots">${TUTORIAL_SLIDES.map((_, i) => `<span class="${i === this.tutorialIdx ? 'on' : ''}"></span>`).join('')}</div>
+        <div class="legend-actions">
+          <button class="btn btn-ghost" id="tut-skip">Skip</button>
+          <button class="btn btn-primary" id="tut-next">${last ? '✅ Got it — play!' : 'Next →'}</button>
+        </div>
+      </div>`;
+    const close = () => { localStorage.setItem('ap_tutorial_seen', '1'); el.remove(); };
+    document.getElementById('tut-skip')?.addEventListener('click', () => { audio.playClick(); close(); });
+    document.getElementById('tut-next')?.addEventListener('click', () => { audio.playClick(); if (last) close(); else { this.tutorialIdx++; this.renderTutorial(); } });
   }
 
   private toggleMusic() {
@@ -639,8 +699,21 @@ class AnacondaPark {
     } catch {
       this.summary = this.applyLocalMatchRewards(score, kills, placement, survival);
     }
+    this.recordHistory({ mode: this.modeDef.name, score: Math.round(score), kills, placement, survival, at: Date.now() }); // §6
     this.persistSession(); // §10 keep earned stars/XP/level across restarts
     await this.fetchAux(); this.client.disconnect(); this.setScreen('gameover');
+  }
+
+  // §6 Match history (client-side, last 15) — survives restarts via localStorage.
+  private recordHistory(entry: any) {
+    try {
+      const h = this.loadHistory();
+      h.unshift(entry);
+      localStorage.setItem('ap_history', JSON.stringify(h.slice(0, 15)));
+    } catch { /* */ }
+  }
+  private loadHistory(): any[] {
+    try { return JSON.parse(localStorage.getItem('ap_history') || '[]'); } catch { return []; }
   }
 
   // §10 Client-side reward application for the deployed build (no persistent server).
@@ -1161,15 +1234,17 @@ class AnacondaPark {
       <div class="page">
         <div class="card tint">
           <div style="display:flex;align-items:center;gap:14px;">
-            <div class="friend"><div class="avatar" style="width:56px;height:56px;font-size:1.5rem;">${(p.displayName || 'E')[0]}</div></div>
-            <div style="flex:1;">
-              <div style="font-family:var(--font-title);font-weight:900;font-size:1.2rem;">${p.displayName}</div>
-              <div style="font-size:0.82rem;color:var(--green-deep);font-weight:700;margin-top:2px;">${story.princeRank(p.level).icon} ${story.princeRank(p.level).title} · <i style="color:var(--muted)">“${story.princeRank(p.level).motto}”</i></div>
+            <div class="hw-avatar" style="width:56px;height:56px;font-size:1.6rem;">${this.avatarGlyph()}</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-family:var(--font-title);font-weight:900;font-size:1.2rem;">${p.displayName}${p.title ? ` <span class="pill gold" style="font-size:0.66rem;">${p.title}</span>` : ''}</div>
+              <div style="font-size:0.82rem;color:var(--green-deep);font-weight:700;margin-top:2px;">${story.princeRank(p.level).icon} ${story.princeRank(p.level).title}</div>
               <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">
                 <span class="rank-badge" style="background:${r.color}22;border-color:${r.color}55;color:${r.color}">🏆 ${r.label}</span>
                 <span class="rank-badge" style="background:#eef6f0;color:var(--ink)">Lvl ${p.level}${p.prestige ? ` ✨${p.prestige}` : ''}</span>
+                ${p.country ? `<span class="rank-badge" style="background:#eef6f0;color:var(--ink)">📍 ${p.country}</span>` : ''}
               </div>
             </div>
+            <button class="btn btn-ghost" id="edit-profile-btn" style="padding:7px 12px;font-size:0.78rem;">✏️ Edit</button>
           </div>
           <div style="margin-top:12px;"><div class="progress" style="height:10px;"><div style="width:${Math.min(100, (p.xp / (p.xpToNext || 300)) * 100)}%"></div></div>
           <div class="xp-label muted" style="color:var(--muted)"><span>${p.xp} / ${p.xpToNext || 300} XP to Lv ${p.level + 1}</span><span>✨ ${p.evolutionXp} Evo-XP</span></div></div>
@@ -1213,7 +1288,89 @@ class AnacondaPark {
             <div class="stat-cell"><div class="sv">${Math.round(p.stats.survivalTimeSeconds / 60)}m</div><div class="sl">Survived</div></div>
           </div>
         </div>
+
+        <div class="card">
+          <div class="section-title">🐍 Favourite Snake</div>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div class="skin-swatch" style="width:44px;height:44px;border-radius:12px;background:${(SKINS.find(s => s.id === p.equippedSkin) || SKINS[0]).grad}"></div>
+            <div><div style="font-weight:800;">${p.equippedSkin || 'Forest'}</div><div class="muted" style="font-size:0.78rem;">Change it in Inventory → Skins</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="section-title">📜 Match History</div>
+          <div class="list">
+            ${(() => { const h = this.loadHistory(); return h.length ? h.slice(0, 8).map((m: any) => `<div class="hist-row"><span class="hist-mode">${m.mode}</span><span class="hist-detail">#${m.placement} · ${m.score} pts · ⚔️${m.kills}</span><span class="hist-time">${this.timeAgo(m.at)}</span></div>`).join('') : '<div class="muted" style="text-align:center;padding:12px;">No matches yet — play to build your history.</div>'; })()}
+          </div>
+        </div>
       </div>`;
+  }
+
+  private timeAgo(t: number): string {
+    const s = Math.floor((Date.now() - t) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+    return `${Math.floor(s / 86400)}d ago`;
+  }
+
+  // ---------- §6 Edit Profile overlay ----------
+  private showEditProfile() {
+    const p = this.profile || {};
+    document.getElementById('edit-overlay')?.remove();
+    const el = document.createElement('div');
+    el.id = 'edit-overlay';
+    el.className = 'onb-overlay';
+    const titles = ['', ...story.PRINCE_RANKS.filter(rk => (p.level || 1) >= rk.min).map(rk => rk.title)];
+    el.innerHTML = `
+      <div class="onb-card">
+        <div class="onb-title">✏️ Edit Profile</div>
+        <div class="onb-sub">Your username is permanent; the display name can change (7-day cooldown).</div>
+        <label class="onb-label">Display Name</label>
+        <input id="ep-name" class="onb-input" maxlength="16" value="${(p.displayName || '').replace(/"/g, '&quot;')}" />
+        <label class="onb-label">Avatar</label>
+        <div class="onb-avatars">${ONB_AVATARS.map(a => `<button class="onb-av ${(localStorage.getItem('ap_avatar') || '🐍') === a ? 'sel' : ''}" data-epav="${a}">${a}</button>`).join('')}</div>
+        <label class="onb-label">Title</label>
+        <select id="ep-title" class="onb-input">${titles.map(t => `<option ${p.title === t ? 'selected' : ''}>${t || 'None'}</option>`).join('')}</select>
+        <div class="onb-row">
+          <div><label class="onb-label">Country</label><select id="ep-country" class="onb-input">${ONB_COUNTRIES.map(c => `<option ${p.country === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+          <div><label class="onb-label">Preferred Region</label><select id="ep-region" class="onb-input">${REGIONS.map(rg => `<option ${p.preferredRegion === rg ? 'selected' : ''}>${rg}</option>`).join('')}</select></div>
+        </div>
+        <button class="btn btn-primary btn-block onb-submit" id="ep-save">💾 Save</button>
+        <button class="btn btn-ghost btn-block" id="ep-cancel" style="margin-top:8px;">Cancel</button>
+        <div id="ep-msg" class="onb-uname"></div>
+      </div>`;
+    document.body.appendChild(el);
+    let avatar = localStorage.getItem('ap_avatar') || '🐍';
+    el.querySelectorAll('[data-epav]').forEach(b => b.addEventListener('click', () => { avatar = (b as HTMLElement).dataset.epav!; el.querySelectorAll('.onb-av').forEach(a => a.classList.toggle('sel', a === b)); }));
+    document.getElementById('ep-cancel')?.addEventListener('click', () => { audio.playClick(); el.remove(); });
+    document.getElementById('ep-save')?.addEventListener('click', () => this.saveEditProfile(avatar));
+  }
+
+  private async saveEditProfile(avatar: string) {
+    audio.playClick();
+    const name = (document.getElementById('ep-name') as HTMLInputElement)?.value.trim();
+    const title = (document.getElementById('ep-title') as HTMLSelectElement)?.value;
+    const country = (document.getElementById('ep-country') as HTMLSelectElement)?.value;
+    const region = (document.getElementById('ep-region') as HTMLSelectElement)?.value;
+    const msg = document.getElementById('ep-msg');
+    try {
+      const res = await fetch(`${API}/api/player/edit-profile`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
+        body: JSON.stringify({ displayName: name, title: title === 'None' ? '' : title, country, region }),
+      });
+      const d = await res.json();
+      if (d.success && d.profile) { this.profile = d.profile; }
+      else { if (msg) { msg.className = 'onb-uname bad'; msg.innerText = `✕ ${d.error || 'Could not save'}`; } return; }
+    } catch {
+      // Offline / deployed — apply locally.
+      this.profile = { ...this.profile, displayName: name || this.profile.displayName, title: title === 'None' ? '' : title, country, preferredRegion: region };
+    }
+    try { localStorage.setItem('ap_avatar', avatar); } catch { /* */ }
+    this.persistSession();
+    document.getElementById('edit-overlay')?.remove();
+    this.render();
+    this.showToast('✅ Profile updated');
   }
 
   // ---------- EVENTS ----------
@@ -1241,7 +1398,6 @@ class AnacondaPark {
 
   private pageSocial() {
     const season = story.SEASONS[story.CURRENT_SEASON - 1];
-    const friends = [{ n: 'Ashraf', on: true }, { n: 'Rahul', on: true }, { n: 'Meera', on: false }];
     const clanIcons: Record<string, string> = {
       forest: icons.clanForest(34),
       ocean: icons.clanOcean(34),
@@ -1250,6 +1406,68 @@ class AnacondaPark {
       blossom: icons.clanBlossom(34),
     };
     return `<div class="page">
+      <!-- Add Friend & Pending Requests -->
+      <div class="card">
+        <div class="section-title">${icons.addFriend(20)} Add Friends</div>
+        <div class="friend-search-wrap">
+          <input type="text" id="friend-search-input" placeholder="Enter username or player ID..." class="friend-search-input" />
+          <button class="btn btn-primary" id="friend-send-btn" style="padding:9px 14px;font-size:0.82rem;">Send Request</button>
+        </div>
+        ${this.friendRequests.length ? `
+          <div style="margin-top:12px;">
+            <div style="font-size:0.75rem;font-weight:800;color:var(--muted);margin-bottom:6px;letter-spacing:0.5px;">PENDING REQUESTS (${this.friendRequests.length})</div>
+            ${this.friendRequests.map(r => `
+              <div class="row-card" style="padding:8px 12px;margin-bottom:6px;">
+                <div class="friend-avatar" style="width:34px;height:34px;font-size:1rem;">${r.avatar || '👤'}</div>
+                <div class="r-body">
+                  <div class="r-title" style="font-size:0.88rem;">${r.name}</div>
+                  <div class="r-desc" style="font-size:0.72rem;">Sent you a friend request</div>
+                </div>
+                <div style="display:flex;gap:6px;">
+                  <button class="btn btn-primary freq-accept" data-id="${r.id}" data-name="${r.name}" style="padding:5px 10px;font-size:0.72rem;">Accept</button>
+                  <button class="btn btn-ghost freq-decline" data-id="${r.id}" style="padding:5px 10px;font-size:0.72rem;">Decline</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+      </div>
+
+      <!-- Friends List Card -->
+      <div class="card">
+        <div class="section-title">${icons.social(20)} Friends (${this.friends.length})</div>
+        <div class="list">
+          ${this.friends.length ? this.friends.map(f => {
+            let statusHtml = '';
+            if (f.online) {
+              statusHtml = `<span style="color:#059669;font-weight:700;">Online</span>`;
+            } else {
+              const mins = f.lastActiveMinsAgo || 12;
+              let timeStr = `${mins}m ago`;
+              if (mins >= 1440) timeStr = `${Math.floor(mins / 1440)}d ago`;
+              else if (mins >= 60) timeStr = `${Math.floor(mins / 60)}h ago`;
+              statusHtml = `<span class="muted">Active ${timeStr}</span>`;
+            }
+            return `
+              <div class="friend-card">
+                <div class="friend-avatar">${(f.name || 'F')[0].toUpperCase()}</div>
+                <div class="friend-info">
+                  <div style="display:flex;align-items:center;justify-content:space-between;">
+                    <div class="friend-name">${f.name}</div>
+                    <div class="dot ${f.online ? '' : 'off'}" title="${f.online ? 'Online' : 'Offline'}"></div>
+                  </div>
+                  <div class="friend-status">${statusHtml}${f.clan ? ` · <span class="pill gold" style="font-size:0.64rem;">${f.clan} Clan</span>` : ''}</div>
+                  <div class="friend-actions-row">
+                    <button class="btn btn-ghost friend-invite-match" data-friend="${f.name}" style="padding:5px 9px;font-size:0.72rem;display:inline-flex;align-items:center;gap:4px;">🎮 Room Match</button>
+                    <button class="btn btn-ghost friend-invite-clan" data-friend="${f.name}" style="padding:5px 9px;font-size:0.72rem;display:inline-flex;align-items:center;gap:4px;">🛡️ Clan Invite</button>
+                  </div>
+                </div>
+              </div>`;
+          }).join('') : '<div class="muted" style="text-align:center;padding:16px;">No friends yet. Add your first friend above!</div>'}
+        </div>
+      </div>
+
+      <!-- Clans Section -->
       <div class="section-title">${icons.social(22)} Choose Your Clan</div>
       <div class="card tint">
         <div class="muted" style="font-size:0.82rem;margin-bottom:6px;">Each season, clans compete to restore more of the Seven Kingdoms. Pick a clan and fight for a shared goal.</div>
@@ -1266,11 +1484,7 @@ class AnacondaPark {
           </div>`;
         }).join('')}
       </div></div>
-      <div class="card">
-        <div class="section-title" style="font-size:0.9rem;">${icons.social(18)} Friends</div>
-        <div class="list">${friends.map(f => `<div class="friend"><div class="avatar">${f.n[0]}</div><div style="flex:1;"><div style="font-weight:700;font-size:0.9rem;">${f.n}</div><div class="muted" style="font-size:0.72rem;">${f.on ? 'Online' : 'Offline'}</div></div><div class="dot ${f.on ? '' : 'off'}"></div></div>`).join('')}</div>
-      </div>
-      <div class="muted" style="font-size:0.78rem;">Clan wars, parties and in-match chat expand this over future seasons.</div></div>`;
+    </div>`;
   }
 
   // ---------- REWARDS MARKETPLACE (§15) ----------
@@ -1404,6 +1618,12 @@ class AnacondaPark {
         <div class="toggle"><span class="t-label">High Contrast</span>${sw(this.settings.highContrast, 'highContrast')}</div>
         <div class="toggle"><span class="t-label">Reduce Motion</span>${sw(this.settings.reduceMotion, 'reduceMotion')}</div>
       </div>
+      <div class="card"><div class="section-title" style="font-size:0.9rem;">❓ Help</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn btn-ghost" id="replay-tutorial" style="flex:1;">🎮 Replay Tutorial</button>
+          <button class="btn btn-ghost" id="replay-story" style="flex:1;">📜 Replay Story</button>
+        </div>
+      </div>
       <button class="btn btn-ghost btn-block" data-go="home">← Back to Home</button></div>`;
   }
 
@@ -1515,6 +1735,8 @@ class AnacondaPark {
     document.querySelectorAll('.redeem-btn').forEach(b => b.addEventListener('click', () => this.redeemReward((b as HTMLElement).dataset.reward!)));
     document.querySelectorAll('[data-clan]').forEach(b => b.addEventListener('click', () => this.joinClan((b as HTMLElement).dataset.clan!)));
     document.getElementById('replay-legend')?.addEventListener('click', () => { audio.playClick(); this.showLegend(); });
+    document.getElementById('replay-story')?.addEventListener('click', () => { audio.playClick(); this.showLegend(); });
+    document.getElementById('replay-tutorial')?.addEventListener('click', () => { audio.playClick(); this.showTutorial(); });
     document.querySelectorAll('[data-set]').forEach(b => b.addEventListener('click', () => this.toggleSetting((b as HTMLElement).dataset.set as keyof Settings)));
 
     on('music-toggle', () => this.toggleMusic());
@@ -1524,7 +1746,52 @@ class AnacondaPark {
     on('quick-match', () => this.startMatchmaking());
     on('enter-btn', () => this.startMatchmaking());
     on('prestige-btn', () => this.doPrestige());
+    on('edit-profile-btn', () => this.showEditProfile());
     on('side-btn', () => { this.settings.controlSide = this.settings.controlSide === 'right' ? 'left' : 'right'; this.saveSettings(); this.render(); });
+
+    // Friends list & social handlers
+    on('friend-send-btn', () => {
+      const input = (document.getElementById('friend-search-input') as HTMLInputElement)?.value?.trim();
+      if (!input) {
+        this.showToast('⚠️ Please enter a player name or ID');
+        return;
+      }
+      audio.playClick();
+      this.friends.push({ id: 'f_' + Date.now(), name: input, avatar: '👤', online: true, clan: 'Forest' });
+      (document.getElementById('friend-search-input') as HTMLInputElement).value = '';
+      this.render();
+      this.showToast(`🎉 Friend request sent to ${input}!`);
+    });
+
+    document.querySelectorAll('.freq-accept').forEach(b => b.addEventListener('click', (e) => {
+      const id = (e.currentTarget as HTMLElement).dataset.id!;
+      const name = (e.currentTarget as HTMLElement).dataset.name!;
+      audio.playClick();
+      this.friendRequests = this.friendRequests.filter(r => r.id !== id);
+      this.friends.push({ id: 'f_' + Date.now(), name, avatar: '👤', online: true, clan: 'Forest' });
+      this.render();
+      this.showToast(`🎉 Accepted ${name}'s friend request!`);
+    }));
+
+    document.querySelectorAll('.freq-decline').forEach(b => b.addEventListener('click', (e) => {
+      const id = (e.currentTarget as HTMLElement).dataset.id!;
+      audio.playClick();
+      this.friendRequests = this.friendRequests.filter(r => r.id !== id);
+      this.render();
+      this.showToast('Friend request declined.');
+    }));
+
+    document.querySelectorAll('.friend-invite-match').forEach(b => b.addEventListener('click', (e) => {
+      const name = (e.currentTarget as HTMLElement).dataset.friend!;
+      audio.playClick();
+      this.showToast(`🎮 Room match invitation sent to ${name}!`);
+    }));
+
+    document.querySelectorAll('.friend-invite-clan').forEach(b => b.addEventListener('click', (e) => {
+      const name = (e.currentTarget as HTMLElement).dataset.friend!;
+      audio.playClick();
+      this.showToast(`🛡️ Clan invitation sent to ${name}!`);
+    }));
 
     on('nav-pause', () => this.togglePause());
     on('btn-resume', () => this.togglePause());

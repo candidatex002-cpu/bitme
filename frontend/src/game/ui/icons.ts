@@ -396,6 +396,26 @@ export const icons = {
   flagAustralia: (size = 16) => `<svg width="${size}" height="${size}" viewBox="0 0 24 16" fill="none"><rect width="24" height="16" fill="#00008B"/><path d="M0 0h10v6.6H0z" fill="#00008B"/><path d="M0 0l10 6.6M10 0L0 6.6" stroke="#FFF" stroke-width="1"/><path d="M5 0v6.6M0 3.3h10" stroke="#CC0000" stroke-width="0.8"/></svg>`,
 
   // ── MISC UTILITY ICONS ──
+  addFriend: (size = 18) => `
+    <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+      <circle cx="8.5" cy="7" r="4"/>
+      <line x1="20" y1="8" x2="20" y2="14"/>
+      <line x1="17" y1="11" x2="23" y2="11"/>
+    </svg>
+  `,
+  edit: (size = 16) => `
+    <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+    </svg>
+  `,
+  invite: (size = 16) => `
+    <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 2L11 13"/>
+      <path d="M22 2L15 22L11 13L2 9L22 2Z"/>
+    </svg>
+  `,
   copy: (size = 16) => `
     <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
