@@ -183,9 +183,43 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .region-btn.active { border-color: var(--green-deep); background: #ECFDF5; color: var(--green-deep); font-weight: 800; box-shadow: 0 0 0 3px rgba(16,185,129,0.15); }
 
 /* ---------------------------------------------------------------- tabs */
-.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
-.tab { background: var(--card-2); border: 1px solid var(--line); color: var(--muted); font-family: var(--font-title); font-weight: 700; font-size: 0.85rem; padding: 8px 16px; border-radius: 40px; cursor: pointer; transition: all 0.15s ease; }
-.tab.active { color: #fff; background: var(--green-deep); border-color: var(--green-deep); box-shadow: var(--shadow); }
+.tabs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+  margin: 4px 0 16px 0;
+}
+.tab {
+  background: #FFFFFF;
+  border: 1.5px solid var(--line);
+  color: var(--muted);
+  font-family: var(--font-title);
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 8px 18px;
+  border-radius: 40px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.tab:hover {
+  border-color: var(--green-deep);
+  color: var(--ink);
+}
+.tab.active {
+  color: #ffffff;
+  background: var(--green-deep);
+  border-color: var(--green-deep);
+  font-weight: 800;
+  box-shadow: 0 4px 12px rgba(16,185,129,0.3);
+}
 
 /* ---------------------------------------------------------------- missions / lists */
 .list { display: flex; flex-direction: column; gap: 10px; }
