@@ -131,6 +131,33 @@ app.post('/api/player/equip', (req, res) => {
   res.json({ success: true, profile });
 });
 
+// §6 Edit profile — avatar/title/country/region freely; display name with a cooldown + rules.
+const NAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+app.post('/api/player/edit-profile', (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const profile = db.getProfile(a.userId);
+  if (!profile) return res.status(404).json({ error: 'Profile not found' });
+  const { displayName, avatar, title, country, region } = req.body || {};
+  const updates: any = {};
+  if (avatar !== undefined) updates.avatar = avatar;
+  if (title !== undefined) updates.title = title;
+  if (country !== undefined) updates.country = country;
+  if (region !== undefined) updates.preferredRegion = region;
+
+  if (displayName !== undefined && displayName !== profile.displayName) {
+    const v = AuthService.validateUsername(String(displayName)); // reuse name rules (anti-impersonation)
+    if (!v.ok) return res.status(400).json({ error: v.reason });
+    const last = (profile as any).lastNameChange || 0;
+    const remaining = NAME_COOLDOWN_MS - (Date.now() - last);
+    if (last && remaining > 0) return res.status(400).json({ error: `You can change your display name again in ${Math.ceil(remaining / 86400000)} day(s)` });
+    updates.displayName = String(displayName).trim();
+    updates.lastNameChange = Date.now();
+  }
+
+  const updated = db.updateProfile(a.userId, updates);
+  res.json({ success: true, profile: withRank(updated) });
+});
+
 app.post('/api/player/equip-accessory', (req, res) => {
   const a = auth(req, res); if (!a) return;
   const { accessoryId } = req.body;
