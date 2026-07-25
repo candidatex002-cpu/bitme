@@ -412,8 +412,11 @@ export class GameSessionService {
           const push = (minDist - dist);
           snake.head.x += (dx / dist) * push;
           snake.head.y += (dy / dist) * push;
+          // Impact damages snake HP instead of instant death
+          this.damageSnake(snake, 25 * dt, `Hit ${ob.type || 'obstacle'}`);
+          if (!snake.isAlive) return;
         }
-        if (ob.damage) { // §3 environmental hazard
+        if (ob.damage) { // environmental hazard
           this.damageSnake(snake, ob.damage * dt, `Hurt by ${ob.type}`);
           if (!snake.isAlive) return;
         }

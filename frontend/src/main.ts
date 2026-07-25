@@ -942,16 +942,19 @@ class AnacondaPark {
     if (!me) return;
     const setW = (id: string, p: number) => { const el = document.getElementById(id); if (el) el.style.width = `${Math.max(0, Math.min(100, p))}%`; };
     const setT = (id: string, v: string) => { const el = document.getElementById(id); if (el) el.innerText = v; };
-    const hp = Math.round(me.hp ?? 100);
-    const maxHp = Math.round(me.maxHp ?? 100);
-    setW('hs-health', (hp / maxHp) * 100); setT('hv-health', String(hp));
+    const hp = Math.max(0, Math.round(me.hp ?? 100));
+    const maxHp = Math.max(1, Math.round(me.maxHp ?? 100));
+    setW('hs-health', (hp / maxHp) * 100);
+    setT('hv-health', `${hp} / ${maxHp} HP`);
     const hpFill = document.getElementById('hs-health');
-    if (hpFill) hpFill.style.background = hp < maxHp * 0.3 ? '#ef5a45' : hp < maxHp * 0.6 ? '#f5a623' : '#22c55e';
-    // §3 Health bar only appears during combat / after damage — hidden in normal play.
-    if (hp < this.lastHp) this.hpVisibleUntil = Date.now() + 3500;
+    if (hpFill) {
+      hpFill.style.background = hp < maxHp * 0.3
+        ? 'linear-gradient(90deg, #ef4444, #f87171)'
+        : hp < maxHp * 0.6
+          ? 'linear-gradient(90deg, #f59e0b, #fbbf24)'
+          : 'linear-gradient(90deg, #10b981, #34d399)';
+    }
     this.lastHp = hp;
-    const hpBar = document.getElementById('hud-hp-bar');
-    if (hpBar) hpBar.classList.toggle('hud-hp--hidden', hp >= maxHp && Date.now() > this.hpVisibleUntil);
     setT('hv-score', String(Math.round(me.score)));
     setT('hud-stage', `${me.evolution || me.stage} · Lv ${me.level}`);
     const cd = me.abilityCooldown ?? 0;
@@ -1736,7 +1739,14 @@ class AnacondaPark {
         <button id="nav-pause" class="hud-pause">⏸</button>
         <div class="hud-tl-main">
           <div class="hud-scoreline"><span class="hud-score" id="hv-score">0</span><span class="hud-stage" id="hud-stage">Baby · Lv 1</span></div>
-          <div class="hud-hp hud-hp--hidden" id="hud-hp-bar"><span class="hud-hp-fill" id="hs-health" style="width:100%"></span><span class="hud-hp-txt" id="hv-health">100</span></div>
+          <div class="hud-life-bar" id="hud-hp-bar">
+            <span class="hud-heart-ico">❤️</span>
+            <div class="hud-hp-track">
+              <div class="hud-hp-fill" id="hs-health" style="width:100%"></div>
+              <div class="hud-hp-txt" id="hv-health">100 / 100 HP</div>
+            </div>
+            <div class="hud-chances-badge" id="hud-chances" title="Play Chances">❤️ × 3</div>
+          </div>
         </div>
       </div>
       <div class="power-status" id="power-status" style="display:none;"></div>
