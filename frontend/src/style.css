@@ -35,13 +35,26 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 
-html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); font-family: var(--font-body); color: var(--ink); }
-#app { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+html { width: 100%; height: 100%; }
+body {
+  width: 100%; height: 100%; overflow: hidden;
+  /* Use dynamic viewport height so the canvas never overflows past the real visible area */
+  height: 100dvh;
+  background: var(--bg); font-family: var(--font-body); color: var(--ink);
+}
+#app {
+  position: fixed; /* fixed avoids layout reflow from virtual keyboard / URL bar */
+  inset: 0;
+  width: 100%; height: 100%;
+  overflow: hidden;
+}
 
 #game-canvas {
   position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1;
   background: linear-gradient(180deg, #cdeafb 0%, #d9f2df 45%, #cdeccd 100%);
   display: block;
+  /* Prevent canvas from accidentally stretching its container */
+  max-width: 100%; max-height: 100%;
 }
 
 body.a11y-large { font-size: 1.12rem; }
@@ -252,7 +265,11 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 /* ---------------------------------------------------------------- in-game HUD */
 .hud {
   position: absolute; inset: 0; z-index: 12; pointer-events: none; overflow: hidden;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  /* Use padding so controls never overlap device safe areas (notch, home bar) */
+  padding-top: max(env(safe-area-inset-top), 0px);
+  padding-right: max(env(safe-area-inset-right), 0px);
+  padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  padding-left: max(env(safe-area-inset-left), 0px);
 }
 .hud > * { pointer-events: auto; }
 .hud-panel {
@@ -369,14 +386,18 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 /* ---- Bottom-Left: Touch Joystick ---- */
 .touch-joystick {
   position: absolute;
-  bottom: clamp(16px, 3vh, 36px); left: clamp(12px, 3vw, 28px);
-  width: clamp(100px, 26vw, 150px); height: clamp(100px, 26vw, 150px);
+  /* Use dvh so bottom offset is relative to the real visible area, not the full layout viewport */
+  bottom: clamp(14px, 2.5dvh, 36px);
+  left: clamp(12px, 3vw, 28px);
+  width: clamp(100px, 22vw, 150px); height: clamp(100px, 22vw, 150px);
   border-radius: 50%; background: rgba(255,255,255,0.50);
   border: 2.5px solid var(--line-strong); display: none; touch-action: none;
-  opacity: 0.40; transition: opacity 0.15s ease; z-index: 14;
+  opacity: 0.55; transition: opacity 0.15s ease; z-index: 14;
+  /* Raise the visual size so players can tap it more easily */
+  -webkit-tap-highlight-color: transparent;
 }
-.touch-joystick.active { opacity: 0.72; }
-.touch-joystick.boosting { opacity: 0.85; box-shadow: 0 0 18px 5px rgba(111,224,141,0.7); border-color: #1f9d47; }
+.touch-joystick.active { opacity: 0.80; }
+.touch-joystick.boosting { opacity: 0.88; box-shadow: 0 0 18px 5px rgba(111,224,141,0.7); border-color: #1f9d47; }
 .touch-knob {
   position: absolute; top: 50%; left: 50%;
   width: clamp(36px, 10vw, 56px); height: clamp(36px, 10vw, 56px);
@@ -387,27 +408,35 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 /* ---- Bottom-Right: Action Buttons ---- */
 .touch-actions {
   position: absolute;
-  bottom: clamp(16px, 3vh, 36px); right: clamp(12px, 3vw, 28px);
+  bottom: clamp(14px, 2.5dvh, 36px);
+  right: clamp(12px, 3vw, 28px);
   display: none; flex-direction: column;
-  gap: clamp(8px, 1.8vh, 14px); align-items: flex-end; z-index: 14;
+  gap: clamp(8px, 1.5dvh, 14px); align-items: flex-end; z-index: 14;
 }
 .touch-row { display: flex; gap: clamp(8px, 2vw, 12px); align-items: center; }
 .touch-btn {
   position: relative;
-  width: clamp(48px, 12vw, 64px); height: clamp(48px, 12vw, 64px);
+  width: clamp(50px, 12vw, 68px); height: clamp(50px, 12vw, 68px);
   border-radius: 50%; display: grid; place-items: center;
-  font-size: clamp(1.1rem, 3.2vw, 1.6rem); color: #fff; touch-action: none;
-  box-shadow: var(--shadow-lg); border: 2.5px solid rgba(255,255,255,0.65); opacity: 0.92;
+  font-size: clamp(1.15rem, 3.2vw, 1.65rem); color: #fff; touch-action: none;
+  box-shadow: var(--shadow-lg); border: 2.5px solid rgba(255,255,255,0.65); opacity: 0.95;
+  /* Prevent tiny hit targets */
+  min-width: 44px; min-height: 44px;
 }
 .touch-btn.boost { background: radial-gradient(circle at 40% 30%, #6fe08d, #1f9d47); }
 .touch-btn.ability { background: radial-gradient(circle at 40% 30%, #b0a3f7, #6d55d6); }
 .touch-btn.zoom {
-  width: clamp(40px, 10vw, 52px); height: clamp(40px, 10vw, 52px);
-  font-size: clamp(0.9rem, 2.6vw, 1.15rem);
+  width: clamp(42px, 10vw, 54px); height: clamp(42px, 10vw, 54px);
+  font-size: clamp(0.95rem, 2.6vw, 1.2rem);
   background: radial-gradient(circle at 40% 30%, #7fd0f5, #2f80b8);
 }
+.touch-btn.mini {
+  width: clamp(42px, 10vw, 54px); height: clamp(42px, 10vw, 54px);
+  font-size: clamp(0.95rem, 2.6vw, 1.2rem);
+  background: radial-gradient(circle at 40% 30%, #f5e07f, #d99512);
+}
 .touch-btn .tz-label {
-  position: absolute; bottom: clamp(-14px, -1.8vh, -18px);
+  position: absolute; bottom: clamp(-14px, -1.8dvh, -18px);
   font-size: clamp(0.44rem, 1.2vw, 0.56rem); font-weight: 800;
   color: var(--ink); background: rgba(255,255,255,0.88);
   border-radius: 6px; padding: 1px clamp(3px, 0.6vw, 5px);
@@ -476,20 +505,20 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 
 /* Landscape phones — compact everything vertically */
 @media (orientation: landscape) and (max-height: 500px) {
-  .hud-tl { top: clamp(3px, 0.8vh, 8px); left: clamp(3px, 0.8vw, 8px); padding: clamp(2px, 0.5vw, 5px); }
-  .hud-leaderboard { top: clamp(3px, 0.8vh, 8px); right: clamp(3px, 0.8vw, 8px); font-size: clamp(0.52rem, 1.4vw, 0.68rem); width: clamp(110px, 16vw, 180px); padding: clamp(4px, 0.6vw, 8px); }
+  .hud-tl { top: clamp(3px, 0.8dvh, 8px); left: clamp(3px, 0.8vw, 8px); padding: clamp(2px, 0.5vw, 5px); }
+  .hud-leaderboard { top: clamp(3px, 0.8dvh, 8px); right: clamp(3px, 0.8vw, 8px); font-size: clamp(0.52rem, 1.4vw, 0.68rem); width: clamp(110px, 16vw, 180px); padding: clamp(4px, 0.6vw, 8px); }
   .hud-leaderboard h4 { font-size: clamp(0.54rem, 1.5vw, 0.7rem); margin-bottom: 2px; }
   .hud-score { font-size: clamp(0.8rem, 2.2vw, 1.1rem); }
-  .hud-hp { height: clamp(6px, 1.2vh, 10px); }
-  .hud-hp-txt { font-size: 0.45rem; line-height: clamp(6px, 1.2vh, 10px); }
-  .touch-joystick { bottom: clamp(8px, 2vh, 18px); left: clamp(8px, 1.5vw, 16px); width: clamp(72px, 14vh, 110px); height: clamp(72px, 14vh, 110px); }
-  .touch-knob { width: clamp(28px, 5vh, 42px); height: clamp(28px, 5vh, 42px); }
-  .touch-actions { bottom: clamp(8px, 2vh, 18px); right: clamp(8px, 1.5vw, 16px); gap: clamp(4px, 1vh, 8px); }
-  .touch-btn { width: clamp(36px, 7vh, 50px); height: clamp(36px, 7vh, 50px); font-size: clamp(0.85rem, 2.2vw, 1.15rem); }
-  .touch-btn.zoom { width: clamp(30px, 6vh, 42px); height: clamp(30px, 6vh, 42px); }
+  .hud-hp { height: clamp(6px, 1.2dvh, 10px); }
+  .hud-hp-txt { font-size: 0.45rem; line-height: clamp(6px, 1.2dvh, 10px); }
+  .touch-joystick { bottom: clamp(6px, 1.5dvh, 18px); left: clamp(8px, 1.5vw, 16px); width: clamp(70px, 14dvh, 110px); height: clamp(70px, 14dvh, 110px); }
+  .touch-knob { width: clamp(28px, 5dvh, 42px); height: clamp(28px, 5dvh, 42px); }
+  .touch-actions { bottom: clamp(6px, 1.5dvh, 18px); right: clamp(8px, 1.5vw, 16px); gap: clamp(4px, 1dvh, 8px); }
+  .touch-btn { width: clamp(36px, 7dvh, 52px); height: clamp(36px, 7dvh, 52px); font-size: clamp(0.85rem, 2.2vw, 1.15rem); min-width: 36px; min-height: 36px; }
+  .touch-btn.zoom, .touch-btn.mini { width: clamp(30px, 6dvh, 44px); height: clamp(30px, 6dvh, 44px); }
   .ability-badge { display: none; }
   .hud-event { display: none; }
-  .power-status { top: calc(clamp(3px, 0.8vh, 8px) + clamp(28px, 6vh, 42px)); }
+  .power-status { top: calc(clamp(3px, 0.8dvh, 8px) + clamp(28px, 6dvh, 42px)); }
 }
 
 /* Very short landscape (game bars / split-screen) */

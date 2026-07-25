@@ -148,6 +148,10 @@ class AnacondaPark {
     this.render();
     this.initGuest();
     window.addEventListener('resize', () => this.renderer?.resize());
+    // Also track the visual viewport (URL bar hide/show on mobile)
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', () => this.renderer?.resize());
+    }
     window.addEventListener('keydown', (e) => { if (e.code === 'Escape' && (this.screen === 'play' || this.screen === 'pause')) this.togglePause(); });
     this.bindLifecycle();
     // Browsers block audio until the user interacts — kick off the Home music on the

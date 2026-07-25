@@ -96,10 +96,14 @@ export class Renderer {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
     this.resize();
     window.addEventListener('resize', () => this.resize());
-    window.addEventListener('orientationchange', () => setTimeout(() => this.resize(), 100));
+    window.addEventListener('orientationchange', () => setTimeout(() => this.resize(), 150));
+    // visualViewport fires when the on-screen keyboard or URL bar resizes the visible area
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', () => this.resize());
+    }
     if (typeof ResizeObserver !== 'undefined') {
       const ro = new ResizeObserver(() => this.resize());
-      ro.observe(document.body);
+      ro.observe(document.documentElement);
     }
   }
 
@@ -115,12 +119,16 @@ export class Renderer {
 
   public resize() {
     const dpr = Math.min(2.5, window.devicePixelRatio || 1);
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    // Use visualViewport when available — on mobile this reflects the actual visible
+    // area after the URL bar / virtual keyboard shrinks it. innerWidth/innerHeight
+    // can return the full layout viewport (larger than what's actually visible).
+    const vp = window.visualViewport;
+    const w = vp ? Math.round(vp.width) : window.innerWidth;
+    const h = vp ? Math.round(vp.height) : window.innerHeight;
     this.canvas.width = Math.floor(w * dpr);
     this.canvas.height = Math.floor(h * dpr);
-    this.canvas.style.width = '100%';
-    this.canvas.style.height = '100%';
+    this.canvas.style.width = w + 'px';
+    this.canvas.style.height = h + 'px';
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
