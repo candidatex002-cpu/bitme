@@ -614,3 +614,58 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 
 /* ---------------------------------------------------------------- hud HP hidden */
 .hud-hp--hidden { opacity: 0; pointer-events: none; transition: opacity 0.3s; }
+
+/* ---------------------------------------------------------------- STORY: legend intro */
+.legend-overlay { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 20px;
+  background: radial-gradient(1000px 700px at 50% 0%, #1b3a5c 0%, #0c1626 70%); animation: toastIn 0.35s ease; }
+.legend-card { max-width: 460px; width: 100%; text-align: center; background: linear-gradient(170deg,#ffffff,#f2f8ff);
+  border-radius: var(--r-lg); padding: 26px 24px; box-shadow: var(--shadow-lg); border: 1px solid #cfe0f5; }
+.legend-kicker { font-family: var(--font-title); font-weight: 800; font-size: 0.78rem; letter-spacing: 1px; color: var(--gold-deep); text-transform: uppercase; }
+.legend-icon { font-size: 4.2rem; margin: 10px 0 4px; }
+.legend-slide-title { font-family: var(--font-title); font-weight: 900; font-size: 1.5rem; color: var(--ink); }
+.legend-text { color: var(--ink-soft); font-size: 0.95rem; line-height: 1.5; margin: 12px 0 16px; }
+.legend-dots { display: flex; gap: 7px; justify-content: center; margin-bottom: 16px; }
+.legend-dots span { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); }
+.legend-dots span.on { background: var(--green-deep); width: 22px; border-radius: 5px; }
+.legend-actions { display: flex; gap: 10px; }
+.legend-actions .btn { flex: 1; }
+
+/* prince rank line on the home hero */
+.prince-line { font-family: var(--font-title); font-weight: 700; font-size: 0.86rem; color: #fff; opacity: 0.95; margin: 4px 0 6px; }
+.prince-line i { opacity: 0.85; font-weight: 500; }
+
+/* ---------------------------------------------------------------- STORY page */
+.story-hero { text-align: center; border-radius: var(--r-lg); padding: 22px 18px; color: #fff;
+  background: linear-gradient(160deg, #3a2c7a 0%, #6d55d6 60%, #a07be0 100%); box-shadow: var(--shadow-lg); position: relative; overflow: hidden; }
+.story-hero::after { content: '🏰'; position: absolute; right: -8px; bottom: -16px; font-size: 5.5rem; opacity: 0.18; }
+.story-crown { font-size: 2.6rem; }
+.story-kicker { font-family: var(--font-title); font-weight: 800; font-size: 0.74rem; letter-spacing: 1px; text-transform: uppercase; opacity: 0.9; }
+.story-rank { font-family: var(--font-title); font-weight: 900; font-size: 1.55rem; margin-top: 4px; }
+.story-motto { font-size: 0.95rem; opacity: 0.92; font-style: italic; }
+
+.castle-parts { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.castle-part { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r-sm); background: var(--card-2); border: 1px solid var(--line); opacity: 0.6; }
+.castle-part.done { opacity: 1; background: #eefaf0; border-color: #bfe6c8; }
+.castle-part .cp-ico { font-size: 1.3rem; }
+.castle-part .cp-name { flex: 1; font-weight: 700; font-size: 0.86rem; }
+.castle-part .cp-tag { font-size: 0.72rem; font-weight: 800; color: var(--muted); }
+.castle-part.done .cp-tag { color: var(--green-deep); }
+.row-card.story-current { border: 1.5px solid var(--gold); background: #fffdf3; }
+
+.kingdom-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.kingdom-cell, .boss-cell { text-align: center; padding: 10px 6px; border-radius: var(--r-md); background: var(--card-2); border: 1px solid var(--line); }
+.kd-ico, .bs-ico { font-size: 1.7rem; }
+.kd-name, .bs-name { font-size: 0.72rem; font-weight: 700; color: var(--ink-soft); margin-top: 4px; }
+.boss-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+@media (max-width: 520px) { .kingdom-grid, .boss-grid { grid-template-columns: repeat(3, 1fr); } }
+
+/* ---------------------------------------------------------------- CLANS */
+.clan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.clan-card { text-align: center; padding: 14px 8px; border-radius: var(--r-md); background: var(--card-2); border: 2px solid var(--line); cursor: pointer; transition: transform 0.12s ease; }
+.clan-card:active { transform: scale(0.96); }
+.clan-card.joined { border-color: var(--clan); background: color-mix(in srgb, var(--clan) 10%, #fff); box-shadow: 0 0 0 2px color-mix(in srgb, var(--clan) 25%, transparent); }
+.clan-ico { font-size: 2rem; }
+.clan-name { font-family: var(--font-title); font-weight: 800; font-size: 0.82rem; margin-top: 4px; }
+.clan-tag { font-size: 0.7rem; font-weight: 700; color: var(--muted); margin-top: 2px; }
+.clan-card.joined .clan-tag { color: var(--clan); }
+@media (max-width: 420px) { .clan-grid { grid-template-columns: repeat(2, 1fr); } }

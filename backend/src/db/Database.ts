@@ -73,21 +73,21 @@ export class Database {
   // ------------------------------------------------------------- templates
   private defaultMissions(): MissionObjective[] {
     return [
-      // DAILY
-      { id: 'ms_cherry', title: 'Collect 30 Cherries', description: 'Snack on 30 cherries', category: 'daily', metric: 'cherry', icon: '🍒', targetCount: 30, currentCount: 0, rewardStars: 150, rewardXP: 120, rewardEvoXP: 40, isCompleted: false, isClaimed: false },
-      { id: 'ms_frog', title: 'Catch 10 Frogs', description: 'Gobble 10 frogs', category: 'daily', metric: 'frog', icon: '🐸', targetCount: 10, currentCount: 0, rewardStars: 150, rewardXP: 120, rewardEvoXP: 40, isCompleted: false, isClaimed: false },
-      { id: 'ms_star', title: 'Collect 100 Stars', description: 'Gather 100 star pickups', category: 'daily', metric: 'star', icon: '⭐', targetCount: 100, currentCount: 0, rewardStars: 200, rewardXP: 150, rewardEvoXP: 50, isCompleted: false, isClaimed: false },
-      { id: 'ms_eat', title: 'Defeat 5 Snakes', description: 'Take down 5 rival snakes', category: 'daily', metric: 'kill', icon: '🐍', targetCount: 5, currentCount: 0, rewardStars: 250, rewardXP: 180, rewardEvoXP: 60, isCompleted: false, isClaimed: false },
-      { id: 'ms_boost', title: 'Use Boost 20 Times', description: 'Sprint with boost 20 times', category: 'daily', metric: 'boost', icon: '⚡', targetCount: 20, currentCount: 0, rewardStars: 120, rewardXP: 90, rewardEvoXP: 30, isCompleted: false, isClaimed: false },
-      { id: 'ms_win', title: 'Win One Match', description: 'Finish #1 in any mode', category: 'daily', metric: 'win', icon: '🏆', targetCount: 1, currentCount: 0, rewardStars: 300, rewardXP: 220, rewardEvoXP: 80, isCompleted: false, isClaimed: false },
-      // WEEKLY
-      { id: 'ms_cherry1k', title: 'Collect 1000 Cherries', description: 'A whole week of cherries', category: 'weekly', metric: 'cherry', icon: '🍒', targetCount: 1000, currentCount: 0, rewardStars: 800, rewardXP: 500, rewardEvoXP: 200, isCompleted: false, isClaimed: false },
-      { id: 'ms_travel', title: 'Travel 50 KM', description: 'Slither 50 kilometres', category: 'weekly', metric: 'distance', icon: '📍', targetCount: 50, currentCount: 0, rewardStars: 700, rewardXP: 450, rewardEvoXP: 180, isCompleted: false, isClaimed: false },
-      { id: 'ms_win20', title: 'Win 20 Matches', description: 'Claim 20 victories this week', category: 'weekly', metric: 'win', icon: '👑', targetCount: 20, currentCount: 0, rewardStars: 1000, rewardXP: 700, rewardEvoXP: 300, isCompleted: false, isClaimed: false },
-      { id: 'ms_treasure25', title: 'Open 25 Treasure Chests', description: 'Crack 25 gift boxes', category: 'weekly', metric: 'treasure', icon: '🎁', targetCount: 25, currentCount: 0, rewardStars: 900, rewardXP: 600, rewardEvoXP: 250, isCompleted: false, isClaimed: false },
-      // EVENT
-      { id: 'ms_survive', title: 'Survive 30 Minutes', description: 'Total survival time across matches', category: 'event', metric: 'survive', icon: '⏱️', targetCount: 1800, currentCount: 0, rewardStars: 1200, rewardXP: 800, rewardEvoXP: 300, isCompleted: false, isClaimed: false },
-      { id: 'ms_score5k', title: 'Score 5,000 in a Match', description: 'Reach 5,000 score in one match', category: 'event', metric: 'score', icon: '🐉', targetCount: 5000, currentCount: 0, rewardStars: 2000, rewardXP: 1000, rewardEvoXP: 500, isCompleted: false, isClaimed: false },
+      // DAILY — story quests (Legend of the Lost Crown)
+      { id: 'ms_cherry', title: '🍒 Feed the Hungry Village', description: 'Gather 30 cherries for the starving village', category: 'daily', metric: 'cherry', icon: '🍒', targetCount: 30, currentCount: 0, rewardStars: 150, rewardXP: 120, rewardEvoXP: 40, isCompleted: false, isClaimed: false },
+      { id: 'ms_frog', title: '🐸 A Feast for the Frog Chef', description: 'Bring 10 frogs to the royal kitchen', category: 'daily', metric: 'frog', icon: '🐸', targetCount: 10, currentCount: 0, rewardStars: 150, rewardXP: 120, rewardEvoXP: 40, isCompleted: false, isClaimed: false },
+      { id: 'ms_star', title: '⭐ Recover Lost Crown Fragments', description: 'Reclaim 100 shattered Star Fragments', category: 'daily', metric: 'star', icon: '⭐', targetCount: 100, currentCount: 0, rewardStars: 200, rewardXP: 150, rewardEvoXP: 50, isCompleted: false, isClaimed: false },
+      { id: 'ms_eat', title: '🛡️ Defeat 5 Venom Soldiers', description: 'Drive back 5 soldiers of the Venom Order', category: 'daily', metric: 'kill', icon: '🛡️', targetCount: 5, currentCount: 0, rewardStars: 250, rewardXP: 180, rewardEvoXP: 60, isCompleted: false, isClaimed: false },
+      { id: 'ms_boost', title: '⚡ Master the Royal Dash', description: 'Use the royal dash 20 times', category: 'daily', metric: 'boost', icon: '⚡', targetCount: 20, currentCount: 0, rewardStars: 120, rewardXP: 90, rewardEvoXP: 30, isCompleted: false, isClaimed: false },
+      { id: 'ms_win', title: '👑 Claim a Royal Victory', description: 'Finish #1 to honour the crown', category: 'daily', metric: 'win', icon: '👑', targetCount: 1, currentCount: 0, rewardStars: 300, rewardXP: 220, rewardEvoXP: 80, isCompleted: false, isClaimed: false },
+      // WEEKLY — chapter goals
+      { id: 'ms_cherry1k', title: '🍒 Restore the Great Orchard', description: 'Harvest 1000 cherries this week', category: 'weekly', metric: 'cherry', icon: '🍒', targetCount: 1000, currentCount: 0, rewardStars: 800, rewardXP: 500, rewardEvoXP: 200, isCompleted: false, isClaimed: false },
+      { id: 'ms_travel', title: '🗺️ Explore the Ancient Roads', description: 'Travel 50 km along the old kingdom roads', category: 'weekly', metric: 'distance', icon: '🗺️', targetCount: 50, currentCount: 0, rewardStars: 700, rewardXP: 450, rewardEvoXP: 180, isCompleted: false, isClaimed: false },
+      { id: 'ms_win20', title: '👑 Rally the Seven Kingdoms', description: 'Win 20 matches to unite the clans', category: 'weekly', metric: 'win', icon: '👑', targetCount: 20, currentCount: 0, rewardStars: 1000, rewardXP: 700, rewardEvoXP: 300, isCompleted: false, isClaimed: false },
+      { id: 'ms_treasure25', title: '🎁 Unearth Royal Relics', description: 'Recover 25 lost royal relics', category: 'weekly', metric: 'treasure', icon: '🎁', targetCount: 25, currentCount: 0, rewardStars: 900, rewardXP: 600, rewardEvoXP: 250, isCompleted: false, isClaimed: false },
+      // EVENT — the Venom siege
+      { id: 'ms_survive', title: '⏳ Endure the Venom Siege', description: 'Survive 30 minutes against the Venom Order', category: 'event', metric: 'survive', icon: '⏳', targetCount: 1800, currentCount: 0, rewardStars: 1200, rewardXP: 800, rewardEvoXP: 300, isCompleted: false, isClaimed: false },
+      { id: 'ms_score5k', title: '🐉 Awaken the Titan Within', description: 'Reach 5,000 score in a single match', category: 'event', metric: 'score', icon: '🐉', targetCount: 5000, currentCount: 0, rewardStars: 2000, rewardXP: 1000, rewardEvoXP: 500, isCompleted: false, isClaimed: false },
     ];
   }
 

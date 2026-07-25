@@ -2,11 +2,12 @@ import { GameClient, GameMode, GameStateTick, SnakeData, serverBase } from './ga
 import { Renderer } from './game/Renderer.js';
 import { audio } from './game/AudioSystem.js';
 import { ads } from './game/AdService.js';
+import * as story from './game/story.js';
 
 const API = serverBase();
 
 type Screen = 'app' | 'matchmaking' | 'play' | 'pause' | 'respawn' | 'gameover' | 'ad-reward';
-type Page = 'home' | 'play' | 'missions' | 'inventory' | 'profile' | 'events' | 'social' | 'settings' | 'rewards';
+type Page = 'home' | 'play' | 'missions' | 'inventory' | 'profile' | 'events' | 'social' | 'settings' | 'rewards' | 'story';
 
 interface SkinDef { id: string; name: string; grad: string; premium?: boolean; family?: string; }
 // 15 skin families — each belongs to a themed group
@@ -125,6 +126,10 @@ class AnacondaPark {
   private rewards: any[] = [];
   private rewardRegion = 'Global';
 
+  // Story — "The Legend of the Lost Crown"
+  private legendIdx = 0;
+  private selectedClan = localStorage.getItem('ap_clan') || '';
+
   private settings: Settings = { sfx: true, music: true, largeText: false, reduceMotion: false, highContrast: false, controlSide: 'right' };
 
   // input
@@ -163,6 +168,46 @@ class AnacondaPark {
     //   ads.configure({ enabled: true, testMode: false, appId: 'ca-app-pub-XXXX~YYYY',
     //     units: { rewarded: '…', interstitial: '…', banner: '…', appOpen: '…' } });
     // Until then every ad call is a no-op / the built-in simulated reward modal.
+    this.maybeShowLegend();
+  }
+
+  // ---------- STORY: Legend intro overlay ----------
+  private maybeShowLegend() {
+    if (localStorage.getItem('ap_story_seen')) return;
+    this.showLegend();
+  }
+  private showLegend() {
+    this.legendIdx = 0;
+    document.getElementById('legend-overlay')?.remove();
+    const el = document.createElement('div');
+    el.id = 'legend-overlay';
+    el.className = 'legend-overlay';
+    document.body.appendChild(el);
+    this.renderLegend();
+  }
+  private renderLegend() {
+    const el = document.getElementById('legend-overlay'); if (!el) return;
+    const slides = story.LEGEND_SLIDES;
+    const s = slides[this.legendIdx];
+    const last = this.legendIdx === slides.length - 1;
+    el.innerHTML = `
+      <div class="legend-card">
+        <div class="legend-kicker">🐍 The Legend of the Lost Crown</div>
+        <div class="legend-icon">${s.icon}</div>
+        <div class="legend-slide-title">${s.title}</div>
+        <div class="legend-text">${s.text}</div>
+        <div class="legend-dots">${slides.map((_, i) => `<span class="${i === this.legendIdx ? 'on' : ''}"></span>`).join('')}</div>
+        <div class="legend-actions">
+          <button class="btn btn-ghost" id="legend-skip">Skip</button>
+          <button class="btn btn-primary" id="legend-next">${last ? '🥚 Begin your journey' : 'Next →'}</button>
+        </div>
+      </div>`;
+    const close = () => { localStorage.setItem('ap_story_seen', '1'); el.remove(); audio.ensureMusic(); };
+    document.getElementById('legend-skip')?.addEventListener('click', () => { audio.playClick(); close(); });
+    document.getElementById('legend-next')?.addEventListener('click', () => {
+      audio.playClick();
+      if (last) close(); else { this.legendIdx++; this.renderLegend(); }
+    });
   }
 
   private toggleMusic() {
@@ -698,10 +743,11 @@ class AnacondaPark {
     return `
       <div class="app-shell">
         <div class="app-top">
-          <div class="app-brand"><div class="logo">🐍</div><div class="logo-txt">Anaconda Park<small>GROW · EXPLORE · COMPETE</small></div></div>
+          <div class="app-brand"><div class="logo">🐍</div><div class="logo-txt">Anaconda Park<small>RECLAIM THE LOST CROWN</small></div></div>
           <div style="display:flex;gap:8px;align-items:center;">
             <div class="chip">⭐ <span class="val">${p?.stars ?? 500}</span></div>
             <div class="chip">🎟️ <span class="val">${p?.tickets ?? 5}</span></div>
+            <button class="icon-btn" data-go="story" title="Story">📜</button>
             <button class="icon-btn ${this.settings.music ? '' : 'off'}" id="music-toggle" title="${this.settings.music ? 'Music on' : 'Music off'}">${this.settings.music ? '🎵' : '🔕'}</button>
             <button class="icon-btn" data-go="settings">⚙️</button>
           </div>
@@ -715,7 +761,8 @@ class AnacondaPark {
                 : this.page === 'events' ? this.pageEvents()
                   : this.page === 'social' ? this.pageSocial()
                     : this.page === 'rewards' ? this.pageRewards()
-                      : this.pageSettings()}
+                      : this.page === 'story' ? this.pageStory()
+                        : this.pageSettings()}
         </div>
         <div class="bottom-nav">
           ${nav.map(([id, ico, label]) => `<button class="nav-item ${this.page === id ? 'active' : ''}" data-go="${id}"><span class="ni-ico">${ico}</span>${label}</button>`).join('')}
@@ -732,18 +779,28 @@ class AnacondaPark {
   // ---------- HOME (focused: what do I do next?) ----------
   private pageHome() {
     const p = this.profile; const r = this.rank();
+    const prince = story.princeRank(p?.level || 1);
     const daily = this.missions.filter(m => m.category === 'daily').slice(0, 3);
     return `
       <div class="page">
         <div class="hero">
-          <div class="welcome">Welcome back,</div>
+          <div class="welcome">Welcome back, lost prince…</div>
           <div class="who">${p?.displayName || 'Explorer'}</div>
+          <div class="prince-line">${prince.icon} ${prince.title} · <i>“${prince.motto}”</i></div>
           <div class="rank-line">
             <span class="rank-badge" style="color:#fff">🏆 ${r.label}</span>
             <span class="rank-badge">⭐ ${p?.stars ?? 0}</span>
             <span class="rank-badge">🎟️ ${p?.tickets ?? 0}</span>
           </div>
           ${this.xpBar()}
+        </div>
+
+        <div class="card tint" data-go="story" style="cursor:pointer;display:flex;align-items:center;gap:12px;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div style="font-size:2rem;">📜</div>
+            <div><div style="font-family:var(--font-title);font-weight:800;">The Lost Crown</div><div class="muted" style="font-size:0.8rem;">Chapter ${story.currentChapter(p?.level || 1)} · rebuild the castle (${story.castleProgress(p?.level || 1)}%)</div></div>
+          </div>
+          <span class="pill gold">Story</span>
         </div>
 
         <div class="play-now">
@@ -905,6 +962,7 @@ class AnacondaPark {
             <div class="friend"><div class="avatar" style="width:56px;height:56px;font-size:1.5rem;">${(p.displayName || 'E')[0]}</div></div>
             <div style="flex:1;">
               <div style="font-family:var(--font-title);font-weight:900;font-size:1.2rem;">${p.displayName}</div>
+              <div style="font-size:0.82rem;color:var(--green-deep);font-weight:700;margin-top:2px;">${story.princeRank(p.level).icon} ${story.princeRank(p.level).title} · <i style="color:var(--muted)">“${story.princeRank(p.level).motto}”</i></div>
               <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">
                 <span class="rank-badge" style="background:${r.color}22;border-color:${r.color}55;color:${r.color}">🏆 ${r.label}</span>
                 <span class="rank-badge" style="background:#eef6f0;color:var(--ink)">Lvl ${p.level}${p.prestige ? ` ✨${p.prestige}` : ''}</span>
@@ -969,13 +1027,40 @@ class AnacondaPark {
       <div class="muted" style="font-size:0.78rem;">Seasonal maps and live world events rotate automatically. More on the roadmap.</div></div>`;
   }
 
-  // ---------- SOCIAL ----------
+  // ---------- CLANS (join a kingdom clan) ----------
+  private joinClan(id: string) {
+    audio.playClick();
+    this.selectedClan = this.selectedClan === id ? '' : id;
+    try { localStorage.setItem('ap_clan', this.selectedClan); } catch { /* */ }
+    const c = story.CLANS.find(x => x.id === this.selectedClan);
+    this.showToast(this.selectedClan ? `${c?.icon ?? '🏳️'} Joined ${c?.name}` : '🏳️ Left your clan');
+    this.render();
+  }
+
   private pageSocial() {
-    const friends = [{ n: 'Ashraf', on: true }, { n: 'Rahul', on: true }, { n: 'David', on: true }, { n: 'Meera', on: false }, { n: 'Chen', on: false }];
-    return `<div class="page"><div class="section-title">👥 Friends</div>
-      <div class="card"><div class="list">${friends.map(f => `<div class="friend"><div class="avatar">${f.n[0]}</div><div style="flex:1;"><div style="font-weight:700;font-size:0.9rem;">${f.n}</div><div class="muted" style="font-size:0.72rem;">${f.on ? 'Online' : 'Offline'}</div></div><div class="dot ${f.on ? '' : 'off'}"></div></div>`).join('')}</div></div>
-      <button class="btn btn-primary btn-block">➕ Invite to Team</button>
-      <div class="muted" style="font-size:0.78rem;">Parties, team invites and in-match chat are on the roadmap (this is a preview).</div></div>`;
+    const season = story.SEASONS[story.CURRENT_SEASON - 1];
+    const friends = [{ n: 'Ashraf', on: true }, { n: 'Rahul', on: true }, { n: 'Meera', on: false }];
+    return `<div class="page">
+      <div class="section-title">🛡️ Choose Your Clan</div>
+      <div class="card tint">
+        <div class="muted" style="font-size:0.82rem;margin-bottom:6px;">Each season, clans compete to restore more of the Seven Kingdoms. Pick a clan and fight for a shared goal.</div>
+        <div class="pill gold">Season ${season.n}: ${season.title}</div>
+      </div>
+      <div class="card"><div class="clan-grid">
+        ${story.CLANS.map(c => {
+          const joined = this.selectedClan === c.id;
+          return `<div class="clan-card ${joined ? 'joined' : ''}" data-clan="${c.id}" style="--clan:${c.color}">
+            <div class="clan-ico">${c.icon}</div>
+            <div class="clan-name">${c.name}</div>
+            <div class="clan-tag">${joined ? '✓ Your Clan' : 'Tap to join'}</div>
+          </div>`;
+        }).join('')}
+      </div></div>
+      <div class="card">
+        <div class="section-title" style="font-size:0.9rem;">👥 Friends</div>
+        <div class="list">${friends.map(f => `<div class="friend"><div class="avatar">${f.n[0]}</div><div style="flex:1;"><div style="font-weight:700;font-size:0.9rem;">${f.n}</div><div class="muted" style="font-size:0.72rem;">${f.on ? 'Online' : 'Offline'}</div></div><div class="dot ${f.on ? '' : 'off'}"></div></div>`).join('')}</div>
+      </div>
+      <div class="muted" style="font-size:0.78rem;">Clan wars, parties and in-match chat expand this over future seasons.</div></div>`;
   }
 
   // ---------- REWARDS MARKETPLACE (§15) ----------
@@ -1038,6 +1123,58 @@ class AnacondaPark {
       <div class="r-desc">${it.description} · <i>${it.provider}</i></div>
       <div class="r-count">⭐ ${it.starCost}${it.minLevel > 1 ? ` · Lvl ${it.minLevel}+` : ''}${!canAfford && it.available && !it.soldOut ? ' · not enough ⭐' : ''}</div>
       </div><button class="btn ${disabled ? 'btn-ghost' : 'btn-gold'} redeem-btn" data-reward="${it.id}" ${disabled ? 'disabled' : ''} style="padding:8px 12px;font-size:0.78rem;">${it.soldOut ? '—' : 'Redeem'}</button></div>`;
+  }
+
+  // ---------- STORY / CHAPTERS ----------
+  private pageStory() {
+    const p = this.profile; const lvl = p?.level || 1;
+    const rank = story.princeRank(lvl);
+    const chapter = story.currentChapter(lvl);
+    const castlePct = story.castleProgress(lvl);
+    const season = story.SEASONS[story.CURRENT_SEASON - 1];
+    return `
+      <div class="page">
+        <div class="story-hero">
+          <div class="story-crown">👑</div>
+          <div class="story-kicker">Season ${season.n} · ${season.title}</div>
+          <div class="story-rank">${rank.icon} ${rank.title}</div>
+          <div class="story-motto">“${rank.motto}”</div>
+          <button class="btn btn-ghost" id="replay-legend" style="margin-top:12px;">📜 Read the Legend</button>
+        </div>
+
+        <div class="card">
+          <div class="section-title">🏰 Restore the Royal Castle</div>
+          <div class="muted" style="font-size:0.8rem;margin-bottom:10px;">Every level rebuilds the fallen castle. By Level 1000 the throne is yours again.</div>
+          <div class="progress" style="height:12px;"><div style="width:${castlePct}%"></div></div>
+          <div class="castle-parts">
+            ${story.CASTLE_PARTS.map(part => { const done = lvl >= part.level; return `<div class="castle-part ${done ? 'done' : ''}"><span class="cp-ico">${part.icon}</span><span class="cp-name">${part.name}</span><span class="cp-tag">${done ? '✓ Restored' : `Lv ${part.level}`}</span></div>`; }).join('')}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="section-title">📖 Story Chapters</div>
+          <div class="list">
+            ${story.CHAPTERS.map(ch => { const unlocked = lvl >= ch.unlockLevel; const cur = ch.n === chapter; return `<div class="row-card ${cur ? 'story-current' : ''}"><div class="r-ico">${unlocked ? ch.icon : '🔒'}</div><div class="r-body"><div class="r-title">Chapter ${ch.n}: ${ch.title}${cur ? ' <span class="pill gold">Current</span>' : ''}</div><div class="r-desc">${unlocked ? ch.desc : `Unlocks at Level ${ch.unlockLevel}`}</div></div></div>`; }).join('')}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="section-title">🗺️ The Seven Kingdoms</div>
+          <div class="kingdom-grid">${story.KINGDOMS.map(k => `<div class="kingdom-cell"><div class="kd-ico">${k.icon}</div><div class="kd-name">${k.name}</div></div>`).join('')}</div>
+        </div>
+
+        <div class="card">
+          <div class="section-title">🐢 Characters You'll Meet</div>
+          <div class="list">${story.NPCS.map(n => `<div class="row-card"><div class="r-ico">${n.icon}</div><div class="r-body"><div class="r-title">${n.name}</div><div class="r-desc">${n.role}</div></div></div>`).join('')}</div>
+          <div class="muted" style="font-size:0.76rem;margin-top:6px;">Guides appear across the kingdoms as the story unfolds.</div>
+        </div>
+
+        <div class="card">
+          <div class="section-title">🐉 Kingdom Guardians</div>
+          <div class="boss-grid">${story.BOSSES.map(b => `<div class="boss-cell"><div class="bs-ico">${b.icon}</div><div class="bs-name">${b.name}</div></div>`).join('')}</div>
+          <div class="muted" style="font-size:0.76rem;margin-top:6px;">Each kingdom's guardian is a major milestone on the road to the throne.</div>
+        </div>
+      </div>`;
   }
 
   // ---------- SETTINGS ----------
@@ -1159,6 +1296,8 @@ class AnacondaPark {
     document.querySelectorAll('.copy-btn').forEach(b => b.addEventListener('click', (e) => { const c = (e.currentTarget as HTMLElement).dataset.code!; navigator.clipboard?.writeText(c); this.showToast(`📋 Copied ${c}`); }));
     document.querySelectorAll('[data-rwregion]').forEach(b => b.addEventListener('click', () => { this.rewardRegion = (b as HTMLElement).dataset.rwregion!; audio.playClick(); this.render(); this.loadRewards(); }));
     document.querySelectorAll('.redeem-btn').forEach(b => b.addEventListener('click', () => this.redeemReward((b as HTMLElement).dataset.reward!)));
+    document.querySelectorAll('[data-clan]').forEach(b => b.addEventListener('click', () => this.joinClan((b as HTMLElement).dataset.clan!)));
+    document.getElementById('replay-legend')?.addEventListener('click', () => { audio.playClick(); this.showLegend(); });
     document.querySelectorAll('[data-set]').forEach(b => b.addEventListener('click', () => this.toggleSetting((b as HTMLElement).dataset.set as keyof Settings)));
 
     on('music-toggle', () => this.toggleMusic());

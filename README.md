@@ -1,7 +1,17 @@
 # 🐍 Anaconda Park (Bitme) — Live Web App
 
 Authoritative Realtime Multiplayer Game built with TypeScript, Vite, Express, and Canvas 2D.
-Grow · Explore · Compete · Survive.
+**Reclaim the Lost Crown** — grow from a lost royal hatchling into the Titan King.
+
+## 📜 Story — The Legend of the Lost Crown
+
+You are the royal snake prince who escaped in the last egg when the **Venom Order** shattered the
+Emerald Anaconda King's **Crown of Nature** into Star Fragments. Recover the fragments, restore the
+**Seven Kingdoms**, rebuild the fallen **castle** (it repairs itself as you level, 0→100% by Lv 1000),
+and reclaim the throne. Level bands are story ranks — **Baby Prince → Young Explorer → Royal Guardian
+→ Elite Commander → Titan King** — daily/weekly missions are story quests, and a **📜 Story** screen
+tracks your chapter, castle, kingdoms, characters and guardians. Pick a **Clan** to compete each season.
+The opening legend plays on first launch (replayable from the Story screen).
 
 ## Quick start
 
