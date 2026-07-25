@@ -83,12 +83,18 @@ const POWERUPS = [
   { icon: '⚡', name: 'Speed', sub: 'Faster for 6s', val: 'Boost' },
 ];
 
-const MODE_META: Record<GameMode, { icon: string; name: string; tag: string; mood?: boolean }> = {
-  classic: { icon: '👑', name: 'Classic', tag: 'Free For All', mood: true },
-  battle_royale: { icon: '⚔️', name: 'Battle Royale', tag: 'Last Snake Standing' },
-  team: { icon: '🛡️', name: 'Team Battle', tag: '4v4 Team' },
-  event: { icon: '🏆', name: 'Event Mode', tag: 'Special Events' },
+// §2 Six game modes, each with its own rules. `backend` maps to the authoritative GameMode.
+type UIMode = 'free_roam' | 'explorer' | 'battle_royale' | 'team' | 'nokia' | 'event';
+interface UIModeDef { icon: string; name: string; tag: string; rules: string; backend: GameMode; enabled: boolean; solo?: boolean; story?: boolean; timed?: boolean; }
+const UI_MODES: Record<UIMode, UIModeDef> = {
+  free_roam:     { icon: '🌿', name: 'Free Roam',     tag: 'Multiplayer · Infinite', rules: 'Explore an endless world, complete missions, collect stars and outgrow rivals. No timer.', backend: 'classic', enabled: true },
+  explorer:      { icon: '📜', name: 'Explorer',      tag: 'Story Mode',             rules: 'The main story. Restore the Seven Kingdoms and chase quest goals as you play.', backend: 'classic', enabled: true, story: true },
+  battle_royale: { icon: '⚔️', name: 'Battle Royale', tag: 'Last Snake Standing',    rules: 'A timed match with a shrinking safe zone. Survive the storm — last snake standing wins.', backend: 'battle_royale', enabled: true, timed: true },
+  team:          { icon: '🛡️', name: 'Team Battle',   tag: 'Red vs Blue',            rules: 'Join a team and fight for the highest combined team score.', backend: 'team', enabled: true },
+  nokia:         { icon: '🕹️', name: 'Classic Snake', tag: 'Nokia · Solo',           rules: 'The nostalgic grid snake — eat, grow, avoid the walls and yourself. Solo high score.', backend: 'classic', enabled: true, solo: true },
+  event:         { icon: '🎪', name: 'Event Mode',    tag: 'Live Events Only',       rules: 'Special limited-time events, enabled by the server during live events.', backend: 'event', enabled: false },
 };
+const UI_MODE_ORDER: UIMode[] = ['free_roam', 'explorer', 'battle_royale', 'team', 'nokia', 'event'];
 
 const REGIONS = ['🌍 Quick Match', '🇮🇳 India', '🇺🇸 USA', '🇯🇵 Japan', '🇧🇷 Brazil', '🇪🇺 Europe', '🇦🇺 Australia'];
 
@@ -116,7 +122,8 @@ class AnacondaPark {
   private missionCat: 'daily' | 'weekly' | 'event' | 'achievements' = 'daily';
   private invTab: 'skins' | 'accessories' | 'powerups' | 'coupons' = 'skins';
 
-  private selectedMode: GameMode = 'classic';
+  private selectedUIMode: UIMode = 'free_roam';
+  private get modeDef(): UIModeDef { return UI_MODES[this.selectedUIMode]; }
   private selectedSkin = 'Forest';
   private equippedAccessory = '';
   private matchType: 'global' | 'local' = 'global';
@@ -146,6 +153,7 @@ class AnacondaPark {
   private matchStart = 0; private lastAlive = true; private lastSnake: SnakeData | null = null;
   private lastState: GameStateTick | null = null; private visitedAreas = new Set<string>(); private summary: any = null;
   private adTimer = 5; private adInterval: any = null; private respawnWait = 0; private respawnInterval: any = null;
+  private lastHp = 100; private hpVisibleUntil = 0; // §3 health bar show-on-damage
 
   constructor() {
     this.root = document.getElementById('app')!;
@@ -236,7 +244,7 @@ class AnacondaPark {
     if (this.screen !== 'play' && this.screen !== 'pause') return;
     try {
       localStorage.setItem('ap_session', JSON.stringify({
-        at: Date.now(), mode: this.selectedMode, skin: this.selectedSkin,
+        at: Date.now(), mode: this.selectedUIMode, skin: this.selectedSkin,
         matchType: this.matchType, region: this.selectedRegion,
         score: Math.round(this.lastSnake?.score || 0),
       }));
@@ -401,7 +409,11 @@ class AnacondaPark {
 
   // ------------------------------------------------------------- match flow
   private startMatchmaking() {
-    audio.playClick(); this.setScreen('matchmaking');
+    if (!this.modeDef.enabled) { this.showToast('🔒 Event Mode is only enabled during live events'); return; }
+    audio.playClick();
+    // Solo Classic Snake skips matchmaking — jump straight in.
+    if (this.modeDef.solo) { this.startMatch(); return; }
+    this.setScreen('matchmaking');
     let n = 3;
     const t = setInterval(() => { n--; const el = document.getElementById('mm-count'); if (el) el.innerText = String(n); if (n <= 0) { clearInterval(t); this.startMatch(); } }, 750);
   }
@@ -414,7 +426,9 @@ class AnacondaPark {
     this.client.onStateUpdate = (s) => this.onTick(s);
     this.client.onRespawnResult = (r) => this.onRespawn(r);
     const region = this.matchType === 'local' ? 'Perambur' : this.selectedRegion.replace(/^[^\w]+/, '').trim() || 'Global';
-    this.client.connect(this.token, this.selectedSkin, this.selectedMode, region, this.matchType);
+    // §2 Each mode carries its own rules/flags into the engine (solo, story, timed).
+    this.client.setModeFlags({ ui: this.selectedUIMode, solo: !!this.modeDef.solo, story: !!this.modeDef.story });
+    this.client.connect(this.token, this.selectedSkin, this.modeDef.backend, region, this.matchType);
     this.setupInput();
     this.startRenderLoop();
   }
@@ -437,6 +451,8 @@ class AnacondaPark {
     const me = state.snakes.find(s => s.id === this.client.localUserId);
     if (me) this.lastSnake = me;
     if (me && me.isAlive) for (const l of LANDMARKS) { const dx = me.head.x - l.x, dy = me.head.y - l.y; if (dx * dx + dy * dy < 240 * 240) this.visitedAreas.add(l.name); }
+    // §2 Battle Royale ended (timer up / last standing) — go straight to results.
+    if ((state as any).matchOver && (this.screen === 'play' || this.screen === 'respawn')) { this.endMatch(); return; }
     if (me && !me.isAlive && this.lastAlive && this.screen === 'play') { this.lastAlive = false; audio.playDeath(); this.openRespawn(); return; }
     if (me && me.isAlive) this.lastAlive = true;
     if (this.screen === 'play') this.updateHUD(state, me);
@@ -701,9 +717,15 @@ class AnacondaPark {
     const setW = (id: string, p: number) => { const el = document.getElementById(id); if (el) el.style.width = `${Math.max(0, Math.min(100, p))}%`; };
     const setT = (id: string, v: string) => { const el = document.getElementById(id); if (el) el.innerText = v; };
     const hp = Math.round(me.hp ?? 100);
-    setW('hs-health', hp); setT('hv-health', String(hp));
+    const maxHp = Math.round(me.maxHp ?? 100);
+    setW('hs-health', (hp / maxHp) * 100); setT('hv-health', String(hp));
     const hpFill = document.getElementById('hs-health');
-    if (hpFill) hpFill.style.background = hp < 30 ? '#ef5a45' : hp < 60 ? '#f5a623' : '#22c55e';
+    if (hpFill) hpFill.style.background = hp < maxHp * 0.3 ? '#ef5a45' : hp < maxHp * 0.6 ? '#f5a623' : '#22c55e';
+    // §3 Health bar only appears during combat / after damage — hidden in normal play.
+    if (hp < this.lastHp) this.hpVisibleUntil = Date.now() + 3500;
+    this.lastHp = hp;
+    const hpBar = document.getElementById('hud-hp-bar');
+    if (hpBar) hpBar.classList.toggle('hud-hp--hidden', hp >= maxHp && Date.now() > this.hpVisibleUntil);
     setT('hv-score', String(Math.round(me.score)));
     setT('hud-stage', `${me.evolution || me.stage} · Lv ${me.level}`);
     const cd = me.abilityCooldown ?? 0;
@@ -719,7 +741,14 @@ class AnacondaPark {
     if (ps) { if (powers.length) { ps.style.display = 'flex'; ps.innerHTML = powers.join(''); } else ps.style.display = 'none'; }
     document.getElementById('touch-ability')?.classList.toggle('cooling', cd > 0);
     const evt = document.getElementById('hud-event');
-    if (evt) { if (state.currentEvent) { evt.style.display = 'block'; evt.innerText = `${state.currentEvent.icon} ${state.currentEvent.timerSeconds}s`; } else evt.style.display = 'none'; }
+    const matchTimer = (state as any).matchTimer as number | undefined;
+    if (evt) {
+      if (typeof matchTimer === 'number') { // §2 Battle Royale countdown
+        const mm = Math.floor(matchTimer / 60), ss = matchTimer % 60;
+        evt.style.display = 'block'; evt.innerText = `⏱️ ${mm}:${String(ss).padStart(2, '0')}`;
+      } else if (state.currentEvent) { evt.style.display = 'block'; evt.innerText = `${state.currentEvent.icon} ${state.currentEvent.timerSeconds}s`; }
+      else evt.style.display = 'none';
+    }
     const ts = document.getElementById('team-scores');
     if (ts) { if (state.teamScores) { ts.style.display = 'flex'; ts.innerHTML = `<div class="ts red">🔴 ${state.teamScores.red}</div><div class="ts blue">🔵 ${state.teamScores.blue}</div>`; } else ts.style.display = 'none'; }
     const lb = document.getElementById('hud-lb-rows');
@@ -884,16 +913,16 @@ class AnacondaPark {
         <div class="card">
           <div class="section-title">🎮 Choose a Mode</div>
           <div class="mode-grid">
-            ${(Object.keys(MODE_META) as GameMode[]).map(m => `
-              <div class="mode-card ${this.selectedMode === m ? 'selected' : ''}" data-mode="${m}">
-                ${MODE_META[m].mood ? '<span class="mood">MOOD</span>' : ''}
-                <div class="mode-icon">${MODE_META[m].icon}</div>
-                <div class="mode-name">${MODE_META[m].name}</div>
-                <div class="mode-tag">${MODE_META[m].tag}</div>
-              </div>`).join('')}
+            ${UI_MODE_ORDER.map(m => { const def = UI_MODES[m]; const sel = this.selectedUIMode === m; return `
+              <div class="mode-card ${sel ? 'selected' : ''} ${def.enabled ? '' : 'disabled'}" data-mode="${m}">
+                ${def.enabled ? '' : '<span class="mood" style="background:#94a3b8">SOON</span>'}
+                <div class="mode-icon">${def.icon}</div>
+                <div class="mode-name">${def.name}</div>
+                <div class="mode-tag">${def.tag}</div>
+              </div>`; }).join('')}
           </div>
-          <div class="muted" style="font-size:0.78rem;margin:10px 0;">Feeling casual? <b>Classic</b> is a relaxed free-for-all. Want stakes? Try Battle Royale or Team.</div>
-          <button class="btn btn-primary btn-lg btn-block" id="enter-btn">🚀 Enter ${MODE_META[this.selectedMode].name}</button>
+          <div class="mode-rules muted">${this.modeDef.icon} <b>${this.modeDef.name}</b> — ${this.modeDef.rules}</div>
+          <button class="btn btn-primary btn-lg btn-block" id="enter-btn" ${this.modeDef.enabled ? '' : 'disabled'}>${this.modeDef.enabled ? `🚀 Enter ${this.modeDef.name}` : '🔒 Enabled during live events'}</button>
         </div>
       </div>`;
   }
@@ -1212,7 +1241,7 @@ class AnacondaPark {
 
   // ---------- GAME OVERLAYS ----------
   private renderMatchmaking() {
-    const mm = MODE_META[this.selectedMode];
+    const mm = this.modeDef;
     const where = this.matchType === 'local' ? '📍 Local region' : this.selectedRegion;
     return `<div class="overlay"><div class="modal" style="text-align:center;"><div class="section-title" style="justify-content:center;">${mm.icon} ${mm.name}</div>
       <div class="countdown-num" id="mm-count">3</div><div class="muted">${where} · connecting to the 30 Hz world…</div>
@@ -1226,7 +1255,7 @@ class AnacondaPark {
         <button id="nav-pause" class="hud-pause">⏸</button>
         <div class="hud-tl-main">
           <div class="hud-scoreline"><span class="hud-score" id="hv-score">0</span><span class="hud-stage" id="hud-stage">Baby · Lv 1</span></div>
-          <div class="hud-hp"><span class="hud-hp-fill" id="hs-health" style="width:100%"></span><span class="hud-hp-txt" id="hv-health">100</span></div>
+          <div class="hud-hp hud-hp--hidden" id="hud-hp-bar"><span class="hud-hp-fill" id="hs-health" style="width:100%"></span><span class="hud-hp-txt" id="hv-health">100</span></div>
         </div>
       </div>
       <div class="power-status" id="power-status" style="display:none;"></div>
@@ -1249,8 +1278,15 @@ class AnacondaPark {
   }
 
   private renderPause() {
-    return `<div class="overlay"><div class="modal" style="text-align:center;max-width:380px;"><div class="section-title" style="justify-content:center;">⏸️ Paused</div>
-      <div style="display:flex;flex-direction:column;gap:10px;"><button id="btn-resume" class="btn btn-primary btn-block">▶️ Resume</button>
+    const sw = (on: boolean, key: string) => `<button class="switch ${on ? 'on' : ''}" data-pset="${key}"></button>`;
+    // §1.1 In-game settings — apply live, gameplay resumes without restarting, controls never disabled.
+    return `<div class="overlay"><div class="modal" style="text-align:center;max-width:400px;"><div class="section-title" style="justify-content:center;">⏸️ Paused</div>
+      <div class="pause-settings">
+        <div class="toggle"><span class="t-label">🖐️ Control Side</span><button class="btn btn-ghost" id="pause-hand" style="padding:6px 14px;font-size:0.8rem;">${this.settings.controlSide === 'right' ? 'Right-handed' : 'Left-handed'}</button></div>
+        <div class="toggle"><span class="t-label">🔊 Sound Effects</span>${sw(this.settings.sfx, 'sfx')}</div>
+        <div class="toggle"><span class="t-label">🎵 Music</span>${sw(this.settings.music, 'music')}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:14px;"><button id="btn-resume" class="btn btn-primary btn-block">▶️ Resume</button>
       <button id="btn-leave" class="btn btn-danger btn-block">🚪 Leave Match</button></div></div></div>`;
   }
 
@@ -1270,7 +1306,7 @@ class AnacondaPark {
     const s = this.summary || { score: 0, kills: 0, placement: 5, survival: 0, earnedStars: 0, earnedXP: 0, earnedEvoXP: 0 };
     const mins = Math.floor(s.survival / 60), secs = s.survival % 60;
     return `<div class="overlay"><div class="modal" style="text-align:center;max-width:500px;">
-      <h1 style="color:var(--danger);">GAME OVER</h1><div class="muted">${MODE_META[this.selectedMode].name}</div>
+      <h1 style="color:var(--danger);">GAME OVER</h1><div class="muted">${this.modeDef.name}</div>
       <div class="summary-grid">
         <div class="summary-cell"><div class="sc-label">Placement</div><div class="sc-val" style="color:var(--green-deep);">#${s.placement}</div></div>
         <div class="summary-cell"><div class="sc-label">Score</div><div class="sc-val" style="color:var(--gold-deep);">${s.score}</div></div>
@@ -1299,7 +1335,7 @@ class AnacondaPark {
     document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => this.go((b as HTMLElement).dataset.go as Page)));
     document.querySelectorAll('[data-mcat]').forEach(b => b.addEventListener('click', () => { this.missionCat = (b as HTMLElement).dataset.mcat as any; audio.playClick(); this.render(); }));
     document.querySelectorAll('[data-inv]').forEach(b => b.addEventListener('click', () => { this.invTab = (b as HTMLElement).dataset.inv as any; audio.playClick(); this.render(); }));
-    document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { audio.playClick(); this.selectedMode = (b as HTMLElement).dataset.mode as GameMode; this.render(); }));
+    document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { audio.playClick(); const m = (b as HTMLElement).dataset.mode as UIMode; if (UI_MODES[m]) { this.selectedUIMode = m; this.render(); } }));
     document.querySelectorAll('[data-mt]').forEach(b => b.addEventListener('click', () => { this.matchType = (b as HTMLElement).dataset.mt as any; audio.playClick(); this.render(); }));
     document.querySelectorAll('[data-region]').forEach(b => b.addEventListener('click', () => { this.selectedRegion = (b as HTMLElement).dataset.region!; audio.playClick(); this.render(); }));
     document.querySelectorAll('[data-skin]').forEach(b => b.addEventListener('click', () => this.equipSkin((b as HTMLElement).dataset.skin!)));
@@ -1322,6 +1358,9 @@ class AnacondaPark {
     on('nav-pause', () => this.togglePause());
     on('btn-resume', () => this.togglePause());
     on('btn-leave', () => this.abandon());
+    // §1.1 In-game settings — apply live (render keeps the game running; resume re-binds input)
+    on('pause-hand', () => { audio.playClick(); this.settings.controlSide = this.settings.controlSide === 'right' ? 'left' : 'right'; this.saveSettings(); this.render(); });
+    document.querySelectorAll('[data-pset]').forEach(b => b.addEventListener('click', () => { const k = (b as HTMLElement).dataset.pset as keyof Settings; (this.settings as any)[k] = !(this.settings as any)[k]; this.saveSettings(); this.render(); }));
     on('rs-stars', () => this.doRespawn('stars')); on('rs-ad', () => this.doRespawn('ad')); on('respawn-wait-btn', () => this.doRespawn('wait')); on('rs-ticket', () => this.doRespawn('ticket'));
     on('rs-end', () => this.endMatch());
     on('go-ad', () => this.triggerAd(async () => { try { const r = await fetch(API + '/api/ads/claim', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } }); const d = await r.json(); if (d.profile) this.profile = d.profile; this.showToast(`🎉 ${d.message}`); } catch { /* */ } this.setScreen('gameover'); }));

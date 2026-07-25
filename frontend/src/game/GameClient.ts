@@ -70,6 +70,8 @@ export interface GameStateTick {
   leaderboard: Array<{ id: string; name: string; score: number; kills: number; team?: 'red' | 'blue' }>;
   teamScores?: { red: number; blue: number };
   currentEvent?: WorldEventData;
+  matchTimer?: number;  // §2 Battle Royale — seconds remaining
+  matchOver?: boolean;  // §2 match ended (timer/last-standing)
 }
 
 export interface ModeConfig {
@@ -141,12 +143,23 @@ export class GameClient {
   private starCooldown = 0;
   private wormholeRelocate = 120; // §7 four linked wormholes relocate periodically
   private sanctuaryTimer = 90;    // relocate sanctuary periodically in the local sim
+  // §2 per-mode flags + state
+  private modeUI = 'free_roam';
+  private modeSolo = false;
+  private modeStory = false;
+  private localNokia = false;      // solo classic snake — walls + self kill, no wrap
+  private localBR = false;         // battle royale — timer + shrinking storm + last standing
+  private localTeam = false;       // team battle — team scoring
+  private localMatchTimer = 0;     // seconds remaining (BR); 0 = untimed
+  private localMatchOver = false;
 
   constructor() {
     this.localUserId = 'usr_' + Math.random().toString(36).substring(2, 9);
   }
 
   public connect(token: string, skinName: string = 'Forest', mode: GameMode = 'classic', region = 'Global', matchType: 'local' | 'global' = 'global') {
+    // §2 Solo modes (Classic Snake / Nokia) never touch the multiplayer server.
+    if (this.modeSolo) { this.startLocalEngine(skinName, mode, region); return; }
     const authPayload = { token, skin: skinName, mode, region, matchType };
     this.lastServerTickTime = 0;
 
@@ -218,6 +231,11 @@ export class GameClient {
 
   // §12 Tell the server we've backgrounded/foregrounded so it can mark us inactive
   // (invisible, no damage) and resume us cleanly. No-op under the local engine.
+  // §2 Carry the selected mode's rules into the engine before connecting.
+  public setModeFlags(flags: { ui: string; solo: boolean; story: boolean }) {
+    this.modeUI = flags.ui; this.modeSolo = flags.solo; this.modeStory = flags.story;
+  }
+
   public notifyPause(paused: boolean) {
     this.localPaused = paused;
     if (this.socket && this.isConnected) this.socket.emit(paused ? 'player_pause' : 'player_resume');
@@ -256,6 +274,13 @@ export class GameClient {
   private startLocalEngine(skinName: string, mode: GameMode, region: string) {
     this.isLocalEngineRunning = true;
 
+    // §2 Resolve this match's rules from the selected mode.
+    this.localNokia = this.modeSolo || this.modeUI === 'nokia';
+    this.localBR = mode === 'battle_royale';
+    this.localTeam = mode === 'team';
+    this.localMatchTimer = this.localBR ? 180 : 0; // 3-minute Battle Royale
+    this.localMatchOver = false;
+
     const me: SnakeData = {
       id: this.localUserId,
       userId: this.localUserId,
@@ -282,9 +307,12 @@ export class GameClient {
       speedBoostTimer: 0,
       abilityCooldown: 0,
       abilityActiveTimer: 0,
+      team: this.localTeam ? 'blue' : undefined,
     };
 
-    const bots: SnakeData[] = BOT_NAMES.map((name, idx) => {
+    // Nokia is solo (no bots); Battle Royale packs more rivals.
+    const botCount = this.localNokia ? 0 : (this.localBR ? 9 : 7);
+    const bots: SnakeData[] = BOT_NAMES.slice(0, botCount).map((name, idx) => {
       const bx = 400 + Math.random() * 2400;
       const by = 400 + Math.random() * 2400;
       return {
@@ -312,11 +340,12 @@ export class GameClient {
         speedBoostTimer: 0,
         abilityCooldown: 0,
         abilityActiveTimer: 0,
+        team: this.localTeam ? (idx % 2 === 0 ? 'red' : 'blue') : undefined,
       };
     });
 
-    const foodItems: FoodData[] = Array.from({ length: 120 }, (_, i) => this.genFood(`f_${i}`));
-    for (let i = 0; i < 16; i++) foodItems.push(this.genStar(`star_${i}`)); // §3 moving stars
+    const foodItems: FoodData[] = Array.from({ length: this.localNokia ? 60 : 120 }, (_, i) => this.genFood(`f_${i}`));
+    if (!this.localNokia) for (let i = 0; i < 16; i++) foodItems.push(this.genStar(`star_${i}`)); // §3 moving stars
 
     this.localState = {
       tick: 1,
@@ -324,10 +353,13 @@ export class GameClient {
       mode,
       snakes: [me, ...bots],
       food: foodItems,
-      safeZone: { centerX: 1600, centerY: 1600, radius: 1500, targetRadius: 1500, damagePerSecond: 2 },
-      sanctuaryZone: { centerX: 1600, centerY: 1600, radius: 320, label: '🛡️ Safe Sanctuary', icon: '🛡️' }, // §8
-      portals: this.genWormholes(), // §7 four linked wormholes
-      obstacles: this.genObstacles(14), // §2
+      // Battle Royale storm shrinks toward a small radius; other modes stay open.
+      safeZone: { centerX: 1600, centerY: 1600, radius: 1500, targetRadius: this.localBR ? 320 : 1500, damagePerSecond: 2 },
+      sanctuaryZone: this.localNokia ? undefined : { centerX: 1600, centerY: 1600, radius: 320, label: '🛡️ Safe Sanctuary', icon: '🛡️' }, // §8
+      portals: this.localNokia ? [] : this.genWormholes(), // §7 four linked wormholes
+      obstacles: this.localNokia ? [] : this.genObstacles(14), // §2
+      teamScores: this.localTeam ? { red: 0, blue: 0 } : undefined,
+      matchTimer: this.localBR ? this.localMatchTimer : undefined,
       leaderboard: [],
     };
 
@@ -431,10 +463,22 @@ export class GameClient {
       if ((me.superTimer ?? 0) > 0) speed *= 1.5;       // 🍄 super power
       if (me.boosting) me.score = Math.max(10, me.score - 0.2);
 
-      // §6 wrap-around movement — no borders
-      me.head.x = this.wrapLocal(me.head.x + Math.cos(me.angle) * speed);
-      me.head.y = this.wrapLocal(me.head.y + Math.sin(me.angle) * speed);
-      this.followBodyLocal(me);
+      const nx = me.head.x + Math.cos(me.angle) * speed;
+      const ny = me.head.y + Math.sin(me.angle) * speed;
+      if (this.localNokia) {
+        // §2 Classic Snake — walls kill, no wrap; hitting your own body is Game Over.
+        if (nx < me.radius || nx > 3200 - me.radius || ny < me.radius || ny > 3200 - me.radius) {
+          this.eliminateLocal(me, null);
+        } else {
+          me.head.x = nx; me.head.y = ny; this.followBodyLocal(me);
+          if (this.selfCollide(me)) this.eliminateLocal(me, null);
+        }
+      } else {
+        // §6 wrap-around movement — no borders
+        me.head.x = this.wrapLocal(nx);
+        me.head.y = this.wrapLocal(ny);
+        this.followBodyLocal(me);
+      }
       if (me.abilityCooldown > 0) me.abilityCooldown = Math.max(0, me.abilityCooldown - 0.033);
     }
 
@@ -463,13 +507,15 @@ export class GameClient {
       this.followBodyLocal(b);
     }
 
-    // 2.5 World systems — moving stars, wormhole lifecycle, sanctuary relocation,
-    // obstacle soft-collision, and wormhole teleport (§2, §3, §7, §8)
-    this.updateLocalStars(0.033);
-    this.updateLocalWormhole(0.033);
-    this.updateLocalSanctuary(0.033);
-    this.resolveLocalObstacles();
-    this.resolveLocalWormholeTeleport();
+    // 2.5 World systems — skipped in solo Classic Snake (a bare grid arena).
+    if (!this.localNokia) {
+      this.updateLocalStars(0.033);
+      this.updateLocalWormhole(0.033);
+      this.updateLocalSanctuary(0.033);
+      this.resolveLocalObstacles();
+      this.resolveLocalWormholeTeleport();
+    }
+    this.updateLocalMatch(0.033); // §2 Battle Royale timer + shrinking storm + last-standing
 
     // 3. Check Food Collisions & Spawning
     for (const s of state.snakes) {
@@ -671,12 +717,48 @@ export class GameClient {
   }
 
   // Local-engine elimination: mark the loser dead, reward the winner, scatter a little food.
+  // §2 Classic Snake self-collision — head touching its own body (past a small gap) = death.
+  private selfCollide(s: SnakeData): boolean {
+    for (let i = 6; i < s.body.length; i++) {
+      const dx = s.head.x - s.body[i].x, dy = s.head.y - s.body[i].y;
+      if (dx * dx + dy * dy < (s.radius * 0.8) * (s.radius * 0.8)) return true;
+    }
+    return false;
+  }
+
+  // §2 Battle Royale — timer, shrinking storm that eliminates snakes left outside, last-standing.
+  private updateLocalMatch(dt: number) {
+    const state = this.localState;
+    if (!state || !this.localBR || this.localMatchOver) return;
+    this.localMatchTimer = Math.max(0, this.localMatchTimer - dt);
+    state.matchTimer = Math.ceil(this.localMatchTimer);
+
+    const sz = state.safeZone;
+    if (sz.radius > sz.targetRadius) sz.radius = Math.max(sz.targetRadius, sz.radius - 8 * dt);
+    for (const s of state.snakes) {
+      if (!s.isAlive || (s.shieldTimer ?? 0) > 0) continue;
+      const dx = s.head.x - sz.centerX, dy = s.head.y - sz.centerY;
+      if (dx * dx + dy * dy > sz.radius * sz.radius) {
+        (s as any).stormT = ((s as any).stormT ?? 0) + dt;
+        if ((s as any).stormT > 3) this.eliminateLocal(s, null); // caught in the storm
+      } else (s as any).stormT = 0;
+    }
+
+    const alive = state.snakes.filter(s => s.isAlive);
+    if (this.localMatchTimer <= 0 || alive.length <= 1) {
+      this.localMatchOver = true;
+      state.matchOver = true;
+    }
+  }
+
   private eliminateLocal(loser: SnakeData, winner: SnakeData | null) {
     if (!loser.isAlive) return;
     loser.isAlive = false;
     if (winner) {
       winner.kills++;
       winner.score += 200 + Math.floor(loser.score * 0.25);
+      // §2 Team Battle scoring
+      if (this.localTeam && winner.team && this.localState?.teamScores) this.localState.teamScores[winner.team]++;
     }
     if (!this.localState) return;
     for (let k = 0; k < loser.body.length; k += 4) {

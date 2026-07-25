@@ -615,6 +615,13 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 /* ---------------------------------------------------------------- hud HP hidden */
 .hud-hp--hidden { opacity: 0; pointer-events: none; transition: opacity 0.3s; }
 
+/* §1.1 in-game (pause) settings */
+.pause-settings { display: flex; flex-direction: column; gap: 6px; text-align: left; margin-top: 8px; padding: 10px 12px; background: var(--card-2); border: 1px solid var(--line); border-radius: var(--r-md); }
+
+/* §2 mode picker */
+.mode-card.disabled { opacity: 0.5; }
+.mode-rules { font-size: 0.82rem; margin: 12px 2px; line-height: 1.45; }
+
 /* ---------------------------------------------------------------- STORY: legend intro */
 .legend-overlay { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 20px;
   background: radial-gradient(1000px 700px at 50% 0%, #1b3a5c 0%, #0c1626 70%); animation: toastIn 0.35s ease; }
