@@ -1,5 +1,6 @@
 import { UserAccount, PlayerProfile, MissionObjective, Achievement, AntiCheatViolation, ProgressMetric, Evolution } from '../types';
 import { ProgressionService } from '../services/ProgressionService';
+import { SupabaseSync } from './SupabaseSync';
 import bcrypt from 'bcryptjs';
 import fs from 'fs';
 import path from 'path';
@@ -22,7 +23,15 @@ export class Database {
     this.dataFile = process.env.DATA_FILE || path.join(process.cwd(), 'data', 'anaconda-db.json');
     this.seedDefaultData();
     this.load();
+    this.hydrateFromCloud(); // §11 Supabase (async, best-effort) overrides the local snapshot
     this.registerFlushHooks();
+  }
+
+  // §11 Pull the latest snapshot from Supabase on boot (if configured).
+  private async hydrateFromCloud() {
+    if (!SupabaseSync.configured()) return;
+    const data = await SupabaseSync.loadSnapshot();
+    if (data) { this.applySnapshot(data); console.log('[supabase] hydrated cloud snapshot'); }
   }
 
   // ------------------------------------------------------------- persistence
@@ -42,31 +51,36 @@ export class Database {
   private flush() {
     if (!this.dirty) return;
     this.dirty = false;
+    const snapshot = {
+      v: 1,
+      users: Array.from(new Set(this.users.values())),          // id + username alias share one object
+      profiles: Array.from(this.profiles.values()),
+      missions: Array.from(this.missions.entries()),
+      achievements: Array.from(this.achievements.entries()),
+      leaderboard: Array.from(this.globalLeaderboard.entries()),
+    };
     try {
       fs.mkdirSync(path.dirname(this.dataFile), { recursive: true });
-      const snapshot = {
-        v: 1,
-        users: Array.from(new Set(this.users.values())),          // id + username alias share one object
-        profiles: Array.from(this.profiles.values()),
-        missions: Array.from(this.missions.entries()),
-        achievements: Array.from(this.achievements.entries()),
-        leaderboard: Array.from(this.globalLeaderboard.entries()),
-      };
       const tmp = this.dataFile + '.tmp';
       fs.writeFileSync(tmp, JSON.stringify(snapshot));
       fs.renameSync(tmp, this.dataFile); // atomic replace
     } catch { /* read-only / serverless FS — persistence off, in-memory still works */ }
+    SupabaseSync.saveSnapshot(snapshot); // §11 mirror to the cloud (no-op unless configured)
+  }
+
+  // Populate the in-memory maps from a persisted snapshot (file or cloud).
+  private applySnapshot(data: any) {
+    if (data.users) for (const u of data.users) { this.users.set(u.id, u); this.users.set(u.username.toLowerCase(), u); }
+    if (data.profiles) for (const p of data.profiles) this.profiles.set(p.userId, p);
+    if (data.missions) for (const [k, v] of data.missions) this.missions.set(k, v);
+    if (data.achievements) for (const [k, v] of data.achievements) this.achievements.set(k, v);
+    if (data.leaderboard) for (const [k, v] of data.leaderboard) this.globalLeaderboard.set(k, v);
   }
 
   private load() {
     try {
       if (!fs.existsSync(this.dataFile)) return;
-      const data = JSON.parse(fs.readFileSync(this.dataFile, 'utf8'));
-      if (data.users) for (const u of data.users) { this.users.set(u.id, u); this.users.set(u.username.toLowerCase(), u); }
-      if (data.profiles) for (const p of data.profiles) this.profiles.set(p.userId, p);
-      if (data.missions) for (const [k, v] of data.missions) this.missions.set(k, v);
-      if (data.achievements) for (const [k, v] of data.achievements) this.achievements.set(k, v);
-      if (data.leaderboard) for (const [k, v] of data.leaderboard) this.globalLeaderboard.set(k, v);
+      this.applySnapshot(JSON.parse(fs.readFileSync(this.dataFile, 'utf8')));
     } catch { /* corrupt/unreadable — fall back to seeded defaults */ }
   }
 

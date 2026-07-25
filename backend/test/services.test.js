@@ -16,6 +16,7 @@ const { ProgressionService } = require(dist('services/ProgressionService.js'));
 const { EconomyService } = require(dist('services/EconomyService.js'));
 const { RewardsService } = require(dist('services/RewardsService.js'));
 const { AuthService } = require(dist('services/AuthService.js'));
+const { SupabaseSync } = require(dist('db/SupabaseSync.js'));
 
 test.after(() => { try { fs.rmSync(process.env.DATA_FILE, { force: true }); } catch { /* */ } });
 
@@ -150,4 +151,11 @@ test('Auth: username validation, availability, suggestions, onboarding', () => {
   assert.ok('token' in onb && onb.profile.displayName === 'BrandNewGuest');
   // Duplicate onboarding is rejected
   assert.ok('error' in AuthService.onboardGuest('BrandNewGuest'));
+});
+
+// §11 Supabase cloud sync is disabled without keys and degrades gracefully
+test('Supabase: disabled without env keys, no-ops safely', async () => {
+  assert.equal(SupabaseSync.configured(), false);
+  assert.equal(await SupabaseSync.loadSnapshot(), null);
+  await SupabaseSync.saveSnapshot({ v: 1 }); // must not throw
 });
