@@ -64,11 +64,12 @@ const OBSTACLE_TEMPLATES: Array<{ type: ObstacleType; icon: string; radius: numb
   { type: 'poison', icon: '☠️', radius: 36, blocking: false, damage: 14 }, // §3 toxic pool, passable
 ];
 
+// §8 Bot counts populate the large map (real players replace bots as they join, ~25 total).
 const MODE_CONFIGS: Record<GameMode, GameModeConfig> = {
-  classic: { mode: 'classic', label: 'Classic', tagline: 'Free For All', shrinkingZone: false, teamsEnabled: false, worldEvents: false, botCount: 8 },
-  battle_royale: { mode: 'battle_royale', label: 'Battle Royale', tagline: 'Last Snake Standing', shrinkingZone: true, teamsEnabled: false, worldEvents: true, botCount: 10 },
-  team: { mode: 'team', label: 'Team Mode', tagline: '4v4 Team Battle', shrinkingZone: false, teamsEnabled: true, worldEvents: false, botCount: 8 },
-  event: { mode: 'event', label: 'Event Mode', tagline: 'Special Events', shrinkingZone: true, teamsEnabled: false, worldEvents: true, botCount: 8 },
+  classic: { mode: 'classic', label: 'Free Roam', tagline: 'Free For All', shrinkingZone: false, teamsEnabled: false, worldEvents: false, botCount: 20 },
+  battle_royale: { mode: 'battle_royale', label: 'Battle Royale', tagline: 'Last Snake Standing', shrinkingZone: true, teamsEnabled: false, worldEvents: true, botCount: 24 },
+  team: { mode: 'team', label: 'Team Mode', tagline: 'Team Battle', shrinkingZone: false, teamsEnabled: true, worldEvents: false, botCount: 24 },
+  event: { mode: 'event', label: 'Event Mode', tagline: 'Special Events', shrinkingZone: true, teamsEnabled: false, worldEvents: true, botCount: 20 },
 };
 
 export function getModeConfig(mode: GameMode): GameModeConfig {
@@ -80,14 +81,14 @@ export class GameSessionService {
   private config: GameModeConfig;
   private simulationInterval: NodeJS.Timeout | null = null;
   private readonly TICK_RATE = 30;
-  private readonly WORLD_SIZE = 3200;
+  private readonly WORLD_SIZE = 6000; // §8 large map — wide exploration, room for ~25 players
   private readonly BASE_SPEED = 240; // Faster, smooth, responsive movement
   private readonly BOOST_MULT = 1.7;
   private readonly MAX_LENGTH = 90; // shorter snakes → easier to see everyone (esp. on mobile)
 
   // §3 moving stars
-  private readonly STAR_MAX = 20;
-  private readonly STAR_TARGET = 16;
+  private readonly STAR_MAX = 30;
+  private readonly STAR_TARGET = 24;
   private starCooldown = 0;
   // §7 Four linked wormholes — always present; entering one exits from another (escape route).
   // They relocate together periodically to stay dynamic.
@@ -116,16 +117,16 @@ export class GameSessionService {
       safeZone: {
         centerX: this.WORLD_SIZE / 2,
         centerY: this.WORLD_SIZE / 2,
-        radius: this.config.shrinkingZone ? 1500 : 1600,
-        targetRadius: this.config.shrinkingZone ? 500 : 1600,
-        shrinkRate: this.config.shrinkingZone ? 6 : 0,
+        radius: this.config.shrinkingZone ? this.WORLD_SIZE * 0.47 : this.WORLD_SIZE * 0.5,
+        targetRadius: this.config.shrinkingZone ? this.WORLD_SIZE * 0.09 : this.WORLD_SIZE * 0.5,
+        shrinkRate: this.config.shrinkingZone ? 11 : 0,
         damagePerSecond: 15,
       },
       // Peaceful Sanctuary Zone — No PvP / No Damage / Hide Safely Inside!
       sanctuaryZone: {
-        centerX: 1600,
-        centerY: 1600,
-        radius: 340,
+        centerX: this.WORLD_SIZE / 2,
+        centerY: this.WORLD_SIZE / 2,
+        radius: 360,
         label: '🛡️ Safe Sanctuary',
         icon: '🛡️',
       },
@@ -139,7 +140,7 @@ export class GameSessionService {
       currentEvent: this.config.worldEvents ? this.availableEvents[0] : undefined,
     };
 
-    this.spawnInitialCollectibles(60); // Clean, lesser food count
+    this.spawnInitialCollectibles(180); // §8 scaled to the large map
     this.spawnMovingStars(this.STAR_TARGET); // §3
     this.spawnObstacles(); // §2
     this.spawnWormholes(); // §7 four linked wormholes
@@ -654,10 +655,11 @@ export class GameSessionService {
 
   private spawnBossAnaconda() {
     const bossId = `boss_titan_${Date.now()}`;
-    const body = Array.from({ length: 44 }, (_, i) => ({ x: 1600 - i * 20, y: 1600 }));
+    const cx = this.WORLD_SIZE / 2;
+    const body = Array.from({ length: 44 }, (_, i) => ({ x: cx - i * 20, y: cx }));
     this.state.snakes[bossId] = {
       id: bossId, userId: bossId, displayName: '🐉 TITAN BOSS', skin: 'Shadow',
-      head: { x: 1600, y: 1600 }, body, angle: 0, speed: 140, speedPct: 60, boosting: false,
+      head: { x: cx, y: cx }, body, angle: 0, speed: 140, speedPct: 60, boosting: false,
       score: 15000, level: 60, length: body.length, radius: 38, hp: 2500, maxHp: 2500,
       defense: 55, stage: 'Titan', evolution: 'Titan', isAlive: true, isAutoProtectAI: false, autoProtectTimer: 0,
       kills: 0, shieldTimer: 0, speedBoostTimer: 0, abilityCooldown: 0, abilityActiveTimer: 0,
@@ -716,7 +718,7 @@ export class GameSessionService {
   }
 
   private maintainCollectibles() {
-    if (Object.keys(this.state.food).length < 50) this.spawnInitialCollectibles(6);
+    if (Object.keys(this.state.food).length < 150) this.spawnInitialCollectibles(12);
   }
 
   private spawnInitialCollectibles(count: number) {
@@ -875,7 +877,7 @@ export class GameSessionService {
   private desiredObstacleCount(): number {
     const avg = this.averageScore();
     const tier = avg >= 1000 ? 2 : avg >= 200 ? 1 : 0; // scales with avg lobby progression
-    return [10, 18, 26][tier];
+    return [22, 34, 46][tier]; // §8 more obstacles across the larger map
   }
 
   private averageScore(): number {

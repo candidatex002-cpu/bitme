@@ -1,4 +1,4 @@
-import { GameStateTick, SnakeData, FoodData, ObstacleData } from './GameClient.js';
+import { GameStateTick, SnakeData, FoodData, ObstacleData, WORLD } from './GameClient.js';
 import {
   renderTreeAsset,
   renderPondAsset,
@@ -66,17 +66,16 @@ interface InterpolatedSnake {
 export class Renderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private cameraPos = { x: 1600, y: 1600 };
+  private cameraPos = { x: WORLD / 2, y: WORLD / 2 };
   private zoom = 1.0;
   private userZoom = 1.0;            // §5 player-controlled zoom (wheel / pinch / button)
   private readonly ZOOM_MIN = 0.6;   // most zoomed OUT — reveals nearby enemies
   private readonly ZOOM_MAX = 1.6;   // most zoomed IN — focuses on the snake
   private animFrame = 0;
 
-  // §6 Toroidal wrap helpers — draw entities at the copy nearest the camera.
-  private readonly WORLD = 3200;
-  private wrapRaw(v: number): number { const w = this.WORLD; return ((v % w) + w) % w; }
-  private wrapDeltaRaw(d: number): number { const w = this.WORLD; let r = ((d % w) + w) % w; if (r > w / 2) r -= w; return r; }
+  // §6 Toroidal wrap helpers — draw entities at the copy nearest the camera (§8 world = WORLD).
+  private wrapRaw(v: number): number { const w = WORLD; return ((v % w) + w) % w; }
+  private wrapDeltaRaw(d: number): number { const w = WORLD; let r = ((d % w) + w) % w; if (r > w / 2) r -= w; return r; }
   private wrapNear(coord: number, ref: number): number { return ref + this.wrapDeltaRaw(coord - ref); }
 
   // LERP Position Cache
@@ -194,7 +193,7 @@ export class Renderer {
     this.ctx.scale(this.zoom, this.zoom);
     this.ctx.translate(-this.cameraPos.x, -this.cameraPos.y);
 
-    this.renderTerrain(3200);
+    this.renderTerrain(WORLD);
     this.renderSafeZone(state.safeZone);
     if (state.sanctuaryZone) this.renderSanctuaryZone(state.sanctuaryZone);
     if (state.obstacles) this.renderObstacles(state.obstacles);
@@ -214,7 +213,7 @@ export class Renderer {
       }
     }
 
-    if (state.currentEvent?.type === 'rain_storm') this.renderRain(3200);
+    if (state.currentEvent?.type === 'rain_storm') this.renderRain(WORLD);
 
     this.ctx.restore();
 
@@ -708,7 +707,7 @@ export class Renderer {
     ctx.roundRect(x, y, size, size, Math.max(6, size * 0.1));
     ctx.fill(); ctx.stroke();
 
-    const scale = size / 3200;
+    const scale = size / WORLD;
 
     // Sanctuary (always visible) — green ring on the minimap
     if (state.sanctuaryZone) {

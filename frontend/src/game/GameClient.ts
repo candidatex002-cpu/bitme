@@ -92,6 +92,11 @@ export function serverBase(): string {
   return location.origin;
 }
 
+// §8 World size — single source of truth shared with the Renderer. Larger map = wide
+// exploration that never feels crowded, room for ~25 players.
+export const WORLD = 6000;
+const HALF = WORLD / 2;
+
 const FOOD_TYPES = [
   { type: 'cherry', val: 10, icon: '🍒', color: '#ff4d4d' },
   { type: 'apple', val: 15, icon: '🍎', color: '#ff3333' },
@@ -266,7 +271,7 @@ export class GameClient {
         me.isAlive = true;
         me.hp = 100;
         me.score = 150; me.level = 1; me.radius = 13; me.length = 9; // reset to a small snake
-        me.head = { x: 1600 + (Math.random() - 0.5) * 400, y: 1600 + (Math.random() - 0.5) * 400 };
+        me.head = { x: HALF + (Math.random() - 0.5) * 400, y: HALF + (Math.random() - 0.5) * 400 };
         me.body = Array.from({ length: 9 }, (_, i) => ({ x: me.head.x - i * 10, y: me.head.y }));
         this.onRespawnResult?.({ success: true, method });
       }
@@ -291,8 +296,8 @@ export class GameClient {
       userId: this.localUserId,
       displayName: 'You (Explorer)',
       skin: skinName,
-      head: { x: 1600, y: 1600 },
-      body: Array.from({ length: 9 }, (_, i) => ({ x: 1600 - i * 12, y: 1600 })),
+      head: { x: HALF, y: HALF },
+      body: Array.from({ length: 9 }, (_, i) => ({ x: HALF - i * 12, y: HALF })),
       angle: 0,
       speed: 4,
       speedPct: 1,
@@ -315,11 +320,12 @@ export class GameClient {
       team: this.localTeam ? 'blue' : undefined,
     };
 
-    // Nokia is solo (no bots); Battle Royale packs more rivals.
-    const botCount = this.localNokia ? 0 : (this.localBR ? 9 : 7);
-    const bots: SnakeData[] = BOT_NAMES.slice(0, botCount).map((name, idx) => {
-      const bx = 400 + Math.random() * 2400;
-      const by = 400 + Math.random() * 2400;
+    // Nokia is solo (no bots); the bigger map (§8) is populated with up to ~24 rivals.
+    const botCount = this.localNokia ? 0 : (this.localBR ? 24 : 18);
+    const bots: SnakeData[] = Array.from({ length: botCount }, (_, idx) => {
+      const name = BOT_NAMES[idx % BOT_NAMES.length] + (idx >= BOT_NAMES.length ? ` ${Math.floor(idx / BOT_NAMES.length) + 1}` : '');
+      const bx = 400 + Math.random() * (WORLD - 800);
+      const by = 400 + Math.random() * (WORLD - 800);
       return {
         id: `bot_${idx}`,
         userId: `bot_${idx}`,
@@ -349,8 +355,9 @@ export class GameClient {
       };
     });
 
-    const foodItems: FoodData[] = Array.from({ length: this.localNokia ? 60 : 120 }, (_, i) => this.genFood(`f_${i}`));
-    if (!this.localNokia) for (let i = 0; i < 16; i++) foodItems.push(this.genStar(`star_${i}`)); // §3 moving stars
+    // §8 More food/stars/obstacles to fill the bigger map without feeling crowded.
+    const foodItems: FoodData[] = Array.from({ length: this.localNokia ? 70 : 260 }, (_, i) => this.genFood(`f_${i}`));
+    if (!this.localNokia) for (let i = 0; i < 24; i++) foodItems.push(this.genStar(`star_${i}`)); // §3 moving stars
 
     this.localState = {
       tick: 1,
@@ -359,10 +366,10 @@ export class GameClient {
       snakes: [me, ...bots],
       food: foodItems,
       // Battle Royale storm shrinks toward a small radius; other modes stay open.
-      safeZone: { centerX: 1600, centerY: 1600, radius: 1500, targetRadius: this.localBR ? 320 : 1500, damagePerSecond: 2 },
-      sanctuaryZone: this.localNokia ? undefined : { centerX: 1600, centerY: 1600, radius: 320, label: '🛡️ Safe Sanctuary', icon: '🛡️' }, // §8
+      safeZone: { centerX: HALF, centerY: HALF, radius: HALF * 0.94, targetRadius: this.localBR ? 420 : HALF * 0.94, damagePerSecond: 2 },
+      sanctuaryZone: this.localNokia ? undefined : { centerX: HALF, centerY: HALF, radius: 360, label: '🛡️ Safe Sanctuary', icon: '🛡️' }, // §8
       portals: this.localNokia ? [] : this.genWormholes(), // §7 four linked wormholes
-      obstacles: this.localNokia ? [] : this.genObstacles(14), // §2
+      obstacles: this.localNokia ? [] : this.genObstacles(30), // §2 (scaled to the bigger map)
       teamScores: this.localTeam ? { red: 0, blue: 0 } : undefined,
       matchTimer: this.localBR ? this.localMatchTimer : undefined,
       leaderboard: [],
@@ -395,8 +402,8 @@ export class GameClient {
     const fType = FOOD_TYPES[Math.floor(Math.random() * FOOD_TYPES.length)];
     return {
       id,
-      x: 100 + Math.random() * 3000,
-      y: 100 + Math.random() * 3000,
+      x: 100 + Math.random() * (WORLD - 200),
+      y: 100 + Math.random() * (WORLD - 200),
       value: fType.val,
       type: fType.type,
       color: fType.color,
@@ -404,9 +411,9 @@ export class GameClient {
     };
   }
 
-  // §6 Toroidal wrap helpers for the local engine (world = 3200).
-  private wrapLocal(v: number): number { return ((v % 3200) + 3200) % 3200; }
-  private wrapDeltaLocal(d: number): number { let r = ((d % 3200) + 3200) % 3200; if (r > 1600) r -= 3200; return r; }
+  // §6 Toroidal wrap helpers for the local engine (world = WORLD).
+  private wrapLocal(v: number): number { return ((v % WORLD) + WORLD) % WORLD; }
+  private wrapDeltaLocal(d: number): number { let r = ((d % WORLD) + WORLD) % WORLD; if (r > HALF) r -= WORLD; return r; }
   private followBodyLocal(s: SnakeData) {
     let prev = { x: s.head.x, y: s.head.y };
     for (let i = 0; i < s.body.length; i++) {
@@ -424,7 +431,7 @@ export class GameClient {
 
   // §3 A slow-drifting star collectible.
   private genStar(id: string): FoodData {
-    return { id, x: 200 + Math.random() * 2800, y: 200 + Math.random() * 2800, value: 50, type: 'star', icon: '⭐', color: '#ffcc00', vx: 0, vy: 0, wanderTimer: Math.random() * 2 };
+    return { id, x: 200 + Math.random() * (WORLD - 400), y: 200 + Math.random() * (WORLD - 400), value: 50, type: 'star', icon: '⭐', color: '#ffcc00', vx: 0, vy: 0, wanderTimer: Math.random() * 2 };
   }
 
   // §2 Scatter obstacles with wide lanes and a clear centre spawn.
@@ -433,9 +440,9 @@ export class GameClient {
     let guard = 0;
     while (list.length < count && guard++ < 140) {
       const t = OBSTACLE_TYPES[Math.floor(Math.random() * OBSTACLE_TYPES.length)];
-      const x = 240 + Math.random() * 2720;
-      const y = 240 + Math.random() * 2720;
-      const dcx = x - 1600, dcy = y - 1600;
+      const x = 240 + Math.random() * (WORLD - 480);
+      const y = 240 + Math.random() * (WORLD - 480);
+      const dcx = x - HALF, dcy = y - HALF;
       if (dcx * dcx + dcy * dcy < 460 * 460) continue; // keep the centre spawn clear
       let ok = true;
       for (const o of list) { const dx = x - o.x, dy = y - o.y, gap = t.radius + o.radius + 140; if (dx * dx + dy * dy < gap * gap) { ok = false; break; } }
@@ -472,7 +479,7 @@ export class GameClient {
       const ny = me.head.y + Math.sin(me.angle) * speed;
       if (this.localNokia) {
         // §2 Classic Snake — walls kill, no wrap; hitting your own body is Game Over.
-        if (nx < me.radius || nx > 3200 - me.radius || ny < me.radius || ny > 3200 - me.radius) {
+        if (nx < me.radius || nx > WORLD - me.radius || ny < me.radius || ny > WORLD - me.radius) {
           this.eliminateLocal(me, null);
         } else {
           me.head.x = nx; me.head.y = ny; this.followBodyLocal(me);
@@ -587,8 +594,8 @@ export class GameClient {
       if (s.isAlive || s.id === this.localUserId) continue;
       s.respawnAt = s.respawnAt ?? state.timestamp + 4000;
       if (state.timestamp >= s.respawnAt) {
-        const bx = 300 + Math.random() * 2600;
-        const by = 300 + Math.random() * 2600;
+        const bx = 300 + Math.random() * (WORLD - 600);
+        const by = 300 + Math.random() * (WORLD - 600);
         s.isAlive = true;
         s.head = { x: bx, y: by };
         s.body = Array.from({ length: 9 }, (_, i) => ({ x: bx - i * 10, y: by }));
@@ -651,10 +658,10 @@ export class GameClient {
     for (let i = 0; i < 4; i++) {
       let p: { x: number; y: number } | null = null;
       for (let t = 0; t < 20; t++) {
-        const c = { x: 320 + Math.random() * 2560, y: 320 + Math.random() * 2560 };
+        const c = { x: 320 + Math.random() * (WORLD - 640), y: 320 + Math.random() * (WORLD - 640) };
         if (pts.every(q => (q.x - c.x) ** 2 + (q.y - c.y) ** 2 > 700 * 700)) { p = c; break; }
       }
-      pts.push(p || { x: 320 + Math.random() * 2560, y: 320 + Math.random() * 2560 });
+      pts.push(p || { x: 320 + Math.random() * (WORLD - 640), y: 320 + Math.random() * (WORLD - 640) });
     }
     return pts.map((p, i) => ({ id: `wh_${i}`, targetId: `wh_${(i + 1) % 4}`, x: p.x, y: p.y, label: '🌀 Wormhole', color: colors[i], wormhole: true }));
   }
@@ -673,8 +680,8 @@ export class GameClient {
     if (this.sanctuaryTimer <= 0) {
       this.sanctuaryTimer = 300;
       const s = this.localState.sanctuaryZone;
-      s.centerX = s.radius + Math.random() * (3200 - 2 * s.radius);
-      s.centerY = s.radius + Math.random() * (3200 - 2 * s.radius);
+      s.centerX = s.radius + Math.random() * (WORLD - 2 * s.radius);
+      s.centerY = s.radius + Math.random() * (WORLD - 2 * s.radius);
     }
   }
 
@@ -745,7 +752,7 @@ export class GameClient {
     state.matchTimer = Math.ceil(this.localMatchTimer);
 
     const sz = state.safeZone;
-    if (sz.radius > sz.targetRadius) sz.radius = Math.max(sz.targetRadius, sz.radius - 8 * dt);
+    if (sz.radius > sz.targetRadius) sz.radius = Math.max(sz.targetRadius, sz.radius - 16 * dt); // §8 scaled to the larger map
     for (const s of state.snakes) {
       if (!s.isAlive || (s.shieldTimer ?? 0) > 0) continue;
       const dx = s.head.x - sz.centerX, dy = s.head.y - sz.centerY;

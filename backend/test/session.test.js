@@ -14,7 +14,7 @@ const { GameSessionService } = require(dist('services/GameSessionService.js'));
 
 const food = (id, x, y, value) => ({ id, x, y, value, type: 'apple', icon: '🍎', color: '#f00', hpRestore: 0 });
 
-test('world setup: 4 linked wormholes, obstacles, 16 stars, 8 bots', () => {
+test('world setup: 4 linked wormholes, obstacles, stars, bots', () => {
   const s = new GameSessionService('w1', 'classic');
   s.stop();
   const st = s.getState();
@@ -22,9 +22,9 @@ test('world setup: 4 linked wormholes, obstacles, 16 stars, 8 bots', () => {
   for (let i = 0; i < 4; i++) assert.equal(st.portals[i].targetId, `wh_${(i + 1) % 4}`, 'ring link');
   assert.ok(st.obstacles.length > 0, 'obstacles present');
   const stars = Object.values(st.food).filter(f => f.type === 'star').length;
-  assert.equal(stars, 16, 'star target');
+  assert.equal(stars, 24, 'star target (§8 scaled)');
   const bots = Object.values(st.snakes).filter(x => x.isBot).length;
-  assert.equal(bots, 8, 'bot count');
+  assert.equal(bots, 20, 'bot count (§8 populated map)');
 });
 
 test('registerPlayer starts small (radius 13, 9 segments)', () => {
