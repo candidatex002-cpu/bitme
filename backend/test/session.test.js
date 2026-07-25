@@ -10,7 +10,7 @@ try { fs.rmSync(process.env.DATA_FILE, { force: true }); } catch { /* */ }
 test.after(() => { try { fs.rmSync(process.env.DATA_FILE, { force: true }); } catch { /* */ } });
 
 const dist = (p) => path.resolve(__dirname, '..', 'dist', p);
-const { GameSessionService } = require(dist('services/GameSessionService.js'));
+const { GameSessionService, getModeConfig } = require(dist('services/GameSessionService.js'));
 
 const food = (id, x, y, value) => ({ id, x, y, value, type: 'apple', icon: '🍎', color: '#f00', hpRestore: 0 });
 

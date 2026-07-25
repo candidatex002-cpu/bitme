@@ -1016,23 +1016,25 @@ class AnacondaPark {
     return `
       <div class="app-shell">
         <div class="app-top">
-          <div class="app-brand">
-            ${icons.logo(38)}
-            <div class="logo-txt">Anaconda Park<small>RECLAIM THE LOST CROWN</small></div>
-          </div>
-          <div class="app-top-actions">
-            <button class="icon-btn ${this.settings.music ? '' : 'off'}" id="music-toggle" title="${this.settings.music ? 'Music on' : 'Music off'}">
-              ${this.settings.music ? icons.music(20) : icons.musicMuted(20)}
-            </button>
-            <button class="icon-btn" id="notif-btn" title="Notifications">
-              ${icons.bell(20)}
-            </button>
-            <button class="icon-btn" data-go="settings" title="Settings">
-              ${icons.settings(20)}
-            </button>
-            <button class="icon-btn avatar-btn" data-go="profile" title="Profile">
-              ${this.avatarGlyph()}
-            </button>
+          <div class="app-top-inner">
+            <div class="app-brand">
+              ${icons.logo(38)}
+              <div class="logo-txt">Anaconda Park<small>RECLAIM THE LOST CROWN</small></div>
+            </div>
+            <div class="app-top-actions">
+              <button class="icon-btn ${this.settings.music ? '' : 'off'}" id="music-toggle" title="${this.settings.music ? 'Music on' : 'Music off'}">
+                ${this.settings.music ? icons.music(20) : icons.musicMuted(20)}
+              </button>
+              <button class="icon-btn" id="notif-btn" title="Notifications">
+                ${icons.bell(20)}
+              </button>
+              <button class="icon-btn" data-go="settings" title="Settings">
+                ${icons.settings(20)}
+              </button>
+              <button class="icon-btn avatar-btn" data-go="profile" title="Profile">
+                ${this.avatarGlyph()}
+              </button>
+            </div>
           </div>
         </div>
         <div class="app-content">
@@ -1049,7 +1051,9 @@ class AnacondaPark {
                           : this.pageSettings()}
         </div>
         <div class="bottom-nav">
-          ${nav.map(([id, ico, label]) => `<button class="nav-item ${this.page === id ? 'active' : ''}" data-go="${id}"><span class="ni-ico">${ico}</span><span class="ni-lbl">${label}</span></button>`).join('')}
+          <div class="bottom-nav-inner">
+            ${nav.map(([id, ico, label]) => `<button class="nav-item ${this.page === id ? 'active' : ''}" data-go="${id}"><span class="ni-ico">${ico}</span><span class="ni-lbl">${label}</span></button>`).join('')}
+          </div>
         </div>
       </div>`;
   }
@@ -1067,33 +1071,39 @@ class AnacondaPark {
     const toNext = p?.xpToNext || 300; const xpPct = Math.min(100, ((p?.xp || 0) / toNext) * 100);
     return `
       <div class="page">
-        <div class="home-welcome card tint">
-          <div class="hw-top">
-            <div class="hw-avatar" data-go="profile">${this.avatarGlyph()}</div>
-            <div class="hw-info">
-              <div class="hw-hi">Welcome back,</div>
-              <div class="hw-name">${p?.displayName || 'Explorer'}</div>
-              <div class="hw-rank">${prince.icon} ${prince.title} · <span class="rank-tag" style="color:${r.color}">🏆 ${r.label}</span></div>
+        <div class="home-grid-layout">
+          <div class="home-left-col">
+            <div class="home-welcome card tint">
+              <div class="hw-top">
+                <div class="hw-avatar" data-go="profile">${this.avatarGlyph()}</div>
+                <div class="hw-info">
+                  <div class="hw-hi">Welcome back,</div>
+                  <div class="hw-name">${p?.displayName || 'Explorer'}</div>
+                  <div class="hw-rank">${prince.icon} ${prince.title} · <span class="rank-tag" style="color:${r.color}">🏆 ${r.label}</span></div>
+                </div>
+                <div class="hw-stars">${icons.star(18)} <span class="val">${p?.stars ?? 0}</span></div>
+              </div>
+              <div class="hw-xp">
+                <div class="xp-bar"><div style="width:${xpPct}%"></div></div>
+                <div class="xp-label"><span>Level ${p?.level ?? 1}${p?.prestige ? ` · ✨${p.prestige}` : ''}</span><span>${p?.xp ?? 0} / ${toNext} XP</span></div>
+              </div>
             </div>
-            <div class="hw-stars">${icons.star(18)} <span class="val">${p?.stars ?? 0}</span></div>
-          </div>
-          <div class="hw-xp">
-            <div class="xp-bar"><div style="width:${xpPct}%"></div></div>
-            <div class="xp-label"><span>Level ${p?.level ?? 1}${p?.prestige ? ` · ✨${p.prestige}` : ''}</span><span>${p?.xp ?? 0} / ${toNext} XP</span></div>
-          </div>
-        </div>
 
-        <button class="btn btn-primary btn-lg btn-block home-play" id="home-play">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> PLAY NOW
-        </button>
+            <button class="btn btn-primary btn-lg btn-block home-play" id="home-play" style="margin-top:14px;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> PLAY NOW
+            </button>
+          </div>
 
-        <div class="home-actions">
-          <button class="home-action story" id="home-explorer"><span class="ha-ico">${icons.explorer(36)}</span><span class="ha-label">Explorer</span></button>
-          <button class="home-action" data-go="missions"><span class="ha-ico">${icons.missions(36)}</span><span class="ha-label">Missions</span></button>
-          <button class="home-action" data-go="inventory"><span class="ha-ico">${icons.inventory(36)}</span><span class="ha-label">Inventory</span></button>
-          <button class="home-action" data-go="social"><span class="ha-ico">${icons.social(36)}</span><span class="ha-label">Friends</span></button>
-          <button class="home-action" data-go="rewards"><span class="ha-ico">${icons.shop(36)}</span><span class="ha-label">Shop</span></button>
-          <button class="home-action" data-go="leaderboard"><span class="ha-ico">${icons.leaderboard(36)}</span><span class="ha-label">Leaderboard</span></button>
+          <div class="home-right-col">
+            <div class="home-actions">
+              <button class="home-action story" id="home-explorer"><span class="ha-ico">${icons.explorer(36)}</span><span class="ha-label">Explorer</span></button>
+              <button class="home-action" data-go="missions"><span class="ha-ico">${icons.missions(36)}</span><span class="ha-label">Missions</span></button>
+              <button class="home-action" data-go="inventory"><span class="ha-ico">${icons.inventory(36)}</span><span class="ha-label">Inventory</span></button>
+              <button class="home-action" data-go="social"><span class="ha-ico">${icons.social(36)}</span><span class="ha-label">Friends</span></button>
+              <button class="home-action" data-go="rewards"><span class="ha-ico">${icons.shop(36)}</span><span class="ha-label">Shop</span></button>
+              <button class="home-action" data-go="leaderboard"><span class="ha-ico">${icons.leaderboard(36)}</span><span class="ha-label">Leaderboard</span></button>
+            </div>
+          </div>
         </div>
       </div>`;
   }
@@ -1228,21 +1238,30 @@ class AnacondaPark {
     ];
     let content = '';
     if (this.invTab === 'skins') {
-      // Grouped by family
+      // Grouped by family with glossy 2D snake preview cards
       content = SKIN_FAMILIES.map(fam => `
         <div class="skin-family">
-          <div class="skin-family-title">${fam.icon} ${fam.family}</div>
-          <div class="skin-family-row">${fam.skins.map(s => `
-            <div class="skin-card ${this.selectedSkin === s.id ? 'equipped' : ''}" data-skin="${s.id}">
-              <div class="skin-swatch" style="background:${s.grad}"></div>
+          <div class="skin-family-title">${fam.icon} ${fam.family} FAMILY</div>
+          <div class="skin-family-row">${fam.skins.map(s => {
+            const isEq = this.selectedSkin === s.id;
+            return `
+            <div class="skin-card ${isEq ? 'equipped' : ''}" data-skin="${s.id}">
+              <div class="skin-swatch-wrap">
+                <div class="skin-swatch" style="background:${s.grad}">
+                  <div class="skin-pattern"></div>
+                  <div class="skin-eye eye-left"></div>
+                  <div class="skin-eye eye-right"></div>
+                </div>
+              </div>
               <div class="skin-name">${s.name}</div>
-              <div class="skin-tag">${s.premium ? '✨ Premium' : this.selectedSkin === s.id ? 'Equipped ✓' : 'Tap to equip'}</div>
-            </div>`).join('')}
+              <div class="skin-tag ${s.premium ? 'premium' : isEq ? 'equipped' : ''}">${s.premium ? '✨ Premium' : isEq ? '✓ Equipped' : 'Tap to Equip'}</div>
+            </div>`;
+          }).join('')}
           </div>
         </div>`).join('');
     } else if (this.invTab === 'accessories') {
       const rarityColors: Record<string, string> = { common: '#6b7280', rare: '#3b82f6', epic: '#a855f7', legendary: '#f59e0b' };
-      content = `<div class="accessories-intro muted" style="font-size:0.8rem;margin-bottom:10px;">🎮 Cosmetic-only — never affects gameplay. Earn via missions, events, and the star shop.</div>
+      content = `<div class="accessories-intro muted" style="font-size:0.82rem;margin-bottom:12px;">🎮 Cosmetic Accessories — Custom crowns, hats & trail visual effects. Collect via missions, events & shop.</div>
         <div class="accessories-grid">${ACCESSORIES.map(a => {
           const eq = this.equippedAccessory === a.id;
           return `<div class="acc-card ${eq ? 'equipped' : ''}" data-acc="${a.id}">
@@ -1253,11 +1272,32 @@ class AnacondaPark {
           </div>`;
         }).join('')}</div>`;
     } else if (this.invTab === 'powerups') {
-      content = `<div class="list">${POWERUPS.map(p => `<div class="item-card"><div class="i-ico">${p.icon}</div><div><div class="i-name">${p.name}</div><div class="i-sub">${p.sub}</div></div><div class="i-val">${p.val}</div></div>`).join('')}
-        <div class="muted" style="font-size:0.78rem;padding:6px 2px;">Boosts, Eggs, Chests & Trails collected in-match will appear here — full inventory storage is coming in a later update.</div></div>`;
+      content = `<div class="powerups-grid">${POWERUPS.map(p => `
+        <div class="item-card">
+          <div class="i-ico">${p.icon}</div>
+          <div style="flex:1;">
+            <div class="i-name">${p.name}</div>
+            <div class="i-sub">${p.sub}</div>
+          </div>
+          <div class="i-val-badge">${p.val}</div>
+        </div>
+      `).join('')}</div>
+      <div class="muted" style="font-size:0.8rem;padding:12px 4px;text-align:center;">Boosters, Mystery Eggs, Golden Chests & Speed Trails collected during gameplay are stored here.</div>`;
     } else {
       const coupons = this.profile?.coupons || [];
-      content = `<div class="list">${coupons.length ? coupons.map((c: any) => `<div class="row-card"><div class="r-ico">${icons.ticket(22)}</div><div class="r-body"><div class="r-title">${c.storeName}</div><div class="r-desc">${c.discountText} · <b>${c.promoCode}</b></div></div><button class="btn btn-ghost copy-btn" data-code="${c.promoCode}" style="padding:7px 12px;font-size:0.78rem;display:inline-flex;align-items:center;gap:4px;">${icons.copy(14)} Copy</button></div>`).join('') : '<div class="muted" style="text-align:center;padding:16px;">No coupons yet — grab a 🎁 box near a store in-match.</div>'}</div>`;
+      content = `<div class="coupons-grid">${coupons.length ? coupons.map((c: any) => `
+        <div class="coupon-card">
+          <div class="coupon-left">
+            <div class="r-ico">${icons.ticket(28)}</div>
+            <div>
+              <div class="coupon-title">${c.storeName}</div>
+              <div class="coupon-desc">${c.discountText}</div>
+              <div class="coupon-code">CODE: <b>${c.promoCode}</b></div>
+            </div>
+          </div>
+          <button class="btn btn-ghost copy-btn" data-code="${c.promoCode}" style="padding:8px 14px;font-size:0.8rem;display:inline-flex;align-items:center;gap:6px;">${icons.copy(16)} Copy</button>
+        </div>
+      `).join('') : '<div class="muted" style="text-align:center;padding:24px;">No coupons collected yet — grab gift boxes near partner stores during matches!</div>'}</div>`;
     }
     return `<div class="page"><div class="section-title">${icons.inventory(22)} Inventory</div><div class="tabs">${tabs.map(([id, l]) => `<button class="tab ${this.invTab === id ? 'active' : ''}" data-inv="${id}">${l}</button>`).join('')}</div><div class="card">${content}</div></div>`;
   }
