@@ -193,12 +193,28 @@ export class GameSessionService {
     return red <= blue ? 'red' : 'blue';
   }
 
+  // Human snakes are born inside the 🛡️ Safe Sanctuary (the safe zone) — never into danger —
+  // and respawns land here too. Bots still scatter across the map to keep the world lively.
+  private safeSpawnPosition(): Vector2D {
+    const zone = this.state.sanctuaryZone ?? {
+      centerX: this.state.safeZone.centerX,
+      centerY: this.state.safeZone.centerY,
+      radius: 340,
+    };
+    const angle = Math.random() * Math.PI * 2;
+    // Stay well inside the zone (≤60% of the radius) so the whole body spawns protected.
+    const dist = Math.random() * zone.radius * 0.6;
+    return {
+      x: this.wrap(zone.centerX + Math.cos(angle) * dist),
+      y: this.wrap(zone.centerY + Math.sin(angle) * dist),
+    };
+  }
+
   // ---------------------------------------------------------------- players
   public registerPlayer(userId: string, displayName: string, skin: string = 'Forest', isBot = false, evolution: string = 'Baby', region?: string): SnakeState {
-    const spawnPos: Vector2D = {
-      x: 400 + Math.random() * (this.WORLD_SIZE - 800),
-      y: 400 + Math.random() * (this.WORLD_SIZE - 800),
-    };
+    const spawnPos: Vector2D = isBot
+      ? { x: 400 + Math.random() * (this.WORLD_SIZE - 800), y: 400 + Math.random() * (this.WORLD_SIZE - 800) }
+      : this.safeSpawnPosition();
     const initialBody = Array.from({ length: 9 }, (_, i) => ({ x: spawnPos.x - i * 14, y: spawnPos.y }));
     const { stage, radius, defense } = this.computeStage(0);
 
