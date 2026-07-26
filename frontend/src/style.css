@@ -632,55 +632,56 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   }
   .tb-a-lb .hud-leaderboard .lb-title { font-size: 0.58rem; margin-bottom: 1px; }
 
-  /* Row 2 — Player Card: compact 2-row card, ~58px tall */
-  .tb-a-player { justify-self: stretch; }
+  /* Row 2 — Player Card: compact 2-row card centered, auto width */
+  .tb-a-player { justify-self: center; max-width: 92%; }
   .tb-player-card {
-    width: 100%; max-width: none; min-width: 0;
+    width: auto; max-width: 100%; min-width: 0;
     box-sizing: border-box;
     flex-direction: column;
-    padding: 5px 10px;   /* tight vertical padding */
+    padding: 5px 14px;   /* tight vertical padding, comfortable horizontal */
     gap: 2px;
-    border-radius: 10px;
+    border-radius: 12px;
   }
   /* Row 1 inside player card: Name (left) + Stage badge (right) */
   .tb-pc-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 4px;
+    gap: 8px;
   }
   .tb-player-name { font-size: 0.78rem; font-weight: 900; }
-  .tb-player-stage-badge { font-size: 0.58rem; padding: 1px 4px; }
+  .tb-player-stage-badge { font-size: 0.58rem; padding: 1px 5px; }
   /* Row 2 inside player card: Score · Kills · Assists in one line */
   .tb-pc-stats {
     font-size: 0.65rem;
-    gap: 5px;
+    gap: 6px;
     flex-wrap: nowrap;
+    justify-content: center;
   }
 
-  /* Row 3 — Team Score: compact card, ~40px tall */
-  .tb-a-score { justify-self: stretch; }
+  /* Row 3 — Team Score: compact card centered, auto width */
+  .tb-a-score { justify-self: center; max-width: 92%; }
   .tb-score-banner {
-    width: 100%; box-sizing: border-box;
+    width: auto; max-width: 100%; box-sizing: border-box;
     justify-content: center;
-    padding: 5px 12px;   /* slimmer vertical */
-    border-radius: 10px;
-    gap: 10px;
+    padding: 5px 16px;   /* slimmer vertical, clean horizontal */
+    border-radius: 14px;
+    gap: 12px;
   }
-  .tb-team-side { font-size: 0.86rem; gap: 3px; }
+  .tb-team-side { font-size: 0.86rem; gap: 4px; }
   .tb-team-score { font-size: 1rem; }
   .tb-team-title { font-size: 0.58rem; }
-  .tb-vs-divider { font-size: 0.6rem; padding: 1px 5px; }
+  .tb-vs-divider { font-size: 0.6rem; padding: 1px 6px; }
 
-  /* Row 4 — Status Pill: compact single-row, ~36px tall */
-  .tb-a-status { justify-self: stretch; }
+  /* Row 4 — Status Pill: compact single-row centered, auto width */
+  .tb-a-status { justify-self: center; max-width: 92%; }
   .tb-status-pill {
-    width: 100%; box-sizing: border-box;
+    width: auto; max-width: 100%; box-sizing: border-box;
     justify-content: center;
-    padding: 4px 10px;   /* minimal vertical padding */
+    padding: 4px 14px;   /* minimal vertical padding */
     font-size: 0.66rem;
-    border-radius: 10px;
-    gap: 6px;
+    border-radius: 12px;
+    gap: 8px;
   }
 }
 
