@@ -2623,17 +2623,19 @@ class AnacondaPark {
           <!-- Grid area: pause -->
           <button id="nav-pause" class="hud-pause tb-a-pause">⏸</button>
 
-          <!-- Grid area: player — ALWAYS a vertical compact card, never a horizontal banner -->
+          <!-- Grid area: player — 2-row compact card: [Name | StageBadge] / [Score · Kills · Assists] -->
           <div class="tb-player-card hud-panel tb-a-player">
-            <div class="tb-player-name" id="tb-player-name">Explorer_7740</div>
-            <div class="tb-player-scoreline">
-              <span class="tb-lbl">Score:</span>
-              <b id="tb-player-score">0</b>
-              <span class="tb-stage" id="tb-player-stage">Baby · Lv.1</span>
+            <!-- Row 1: Name (left) + Stage badge (right) -->
+            <div class="tb-pc-header">
+              <span class="tb-player-name" id="tb-player-name">Explorer_7740</span>
+              <span class="tb-player-stage-badge" id="tb-player-stage">Baby Lv.1</span>
             </div>
-            <div class="tb-player-stats">
-              <span>⚔️ <b id="tb-player-kills">0</b> Kills</span>
-              <span>🤝 <b id="tb-player-assists">0</b> Assists</span>
+            <!-- Row 2: Score · Kills · Assists in one compact line -->
+            <div class="tb-pc-stats">
+              <span class="tb-lbl">Score:</span><b id="tb-player-score">0</b>
+              <span class="tb-pc-sep">|</span>
+              <span>⚔️ <b id="tb-player-kills">0</b></span>
+              <span>🤝 <b id="tb-player-assists">0</b></span>
             </div>
           </div>
 

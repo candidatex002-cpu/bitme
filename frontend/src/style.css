@@ -415,7 +415,7 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   border-radius: 12px;
   box-shadow: var(--shadow);
   min-width: 130px;
-  max-width: 180px;
+  max-width: 190px;
   overflow: hidden;
 }
 .tb-player-card.team-blue {
@@ -426,15 +426,52 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   border-color: #f87171;
   background: linear-gradient(135deg, rgba(254, 242, 242, 0.96), rgba(255, 255, 255, 0.94));
 }
+
+/* ---- Player Card: Row 1 — Name + Stage badge ---- */
+.tb-pc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  min-width: 0;
+}
 .tb-player-name {
   font-family: var(--font-title);
   font-weight: 900;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
 }
+.tb-player-stage-badge {
+  font-size: 0.6rem;
+  font-weight: 800;
+  color: var(--green-deep);
+  background: var(--green-bg);
+  padding: 1px 5px;
+  border-radius: 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ---- Player Card: Row 2 — Score + Kills + Assists ---- */
+.tb-pc-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #334155;
+  white-space: nowrap;
+}
+.tb-pc-stats .tb-lbl { color: var(--muted); font-weight: 600; }
+.tb-pc-stats b { font-weight: 900; }
+.tb-pc-sep { opacity: 0.3; font-size: 0.6rem; }
+
+/* Legacy aliases (used by desktop / updateHUD path) */
 .tb-player-scoreline {
   display: flex;
   align-items: center;
@@ -557,11 +594,13 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 }
 
 /* ==============================================================
-   MOBILE (≤480px) — INDEPENDENT CARD ROWS, ZERO OVERLAP
-   Row 1: [⏸]      [❤️❤️❤️❤️❤️]      [Top10]
-   Row 2: [      Player Card         ]
-   Row 3: [  🔵 BLUE 0  VS  0 RED 🔴 ]
-   Row 4: [  ⏱ 00:00 · 👥 Alive · 🏆 ]
+   MOBILE (≤480px) — COMPACT INDEPENDENT CARDS
+   HUD occupies max 20% of screen height.
+   Row 1: [⏸]  [❤️❤️❤️❤️❤️]  [Top10]    ← ~36px
+   Row 2: [  Player Card (Name+Level / Score·K·A)  ] ← ~58px
+   Row 3: [    🔵 BLUE 0  VS  0 RED 🔴   ]           ← ~40px
+   Row 4: [    ⏱ 00:00 · 👥 Alive · 🏆   ]           ← ~36px
+   Total: ~170–185px on 360px+ screens
    ============================================================== */
 @media (max-width: 480px) {
   .tb-top-bar {
@@ -571,74 +610,94 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
       "player  player   player"
       "score   score    score"
       "status  status   status";
-    column-gap: 6px;
-    row-gap: 5px;
+    column-gap: 5px;
+    row-gap: 3px;   /* ← key: tight gap between rows */
   }
 
-  /* Hearts: fill the center slot, centered */
-  .tb-a-hearts { padding: 2px 0; }
+  /* Row 1 — Hearts: fill center slot */
+  .tb-a-hearts { padding: 0; align-items: center; }
+  .hearts-row { gap: 4px; }
+  .heart-unit { width: 20px; height: 18px; }
+  .heart-fill-svg { width: 20px; height: 18px; }
 
-  /* Player card: full-width, stays vertical (compact card, not a banner) */
+  /* Row 1 — Pause button: compact */
+  .hud-pause { width: 34px; height: 34px; font-size: 0.9rem; border-radius: 9px; }
+
+  /* Row 1 — Leaderboard: compact */
+  .tb-a-lb .hud-leaderboard {
+    width: clamp(80px, 22vw, 108px);
+    font-size: 0.56rem;
+    padding: 3px 5px;
+    border-radius: 9px;
+  }
+  .tb-a-lb .hud-leaderboard .lb-title { font-size: 0.58rem; margin-bottom: 1px; }
+
+  /* Row 2 — Player Card: compact 2-row card, ~58px tall */
   .tb-a-player { justify-self: stretch; }
   .tb-player-card {
-    width: 100%;
-    max-width: none;
-    min-width: 0;
+    width: 100%; max-width: none; min-width: 0;
     box-sizing: border-box;
-    /* Keep as vertical stack — do NOT make horizontal */
     flex-direction: column;
-    padding: 7px 12px;
-    gap: 3px;
+    padding: 5px 10px;   /* tight vertical padding */
+    gap: 2px;
+    border-radius: 10px;
   }
-  .tb-player-name {
-    font-size: 0.85rem;
-    max-width: none;
-    font-weight: 900;
+  /* Row 1 inside player card: Name (left) + Stage badge (right) */
+  .tb-pc-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
   }
-  .tb-player-scoreline { font-size: 0.72rem; gap: 6px; }
-  .tb-player-stats { font-size: 0.68rem; gap: 10px; }
+  .tb-player-name { font-size: 0.78rem; font-weight: 900; }
+  .tb-player-stage-badge { font-size: 0.58rem; padding: 1px 4px; }
+  /* Row 2 inside player card: Score · Kills · Assists in one line */
+  .tb-pc-stats {
+    font-size: 0.65rem;
+    gap: 5px;
+    flex-wrap: nowrap;
+  }
 
-  /* Score banner: full-width centered card */
-  .tb-a-score { justify-self: stretch; align-self: stretch; }
+  /* Row 3 — Team Score: compact card, ~40px tall */
+  .tb-a-score { justify-self: stretch; }
   .tb-score-banner {
     width: 100%; box-sizing: border-box;
     justify-content: center;
-    padding: 7px 16px;
-    border-radius: 14px;
+    padding: 5px 12px;   /* slimmer vertical */
+    border-radius: 10px;
+    gap: 10px;
   }
-  .tb-team-side { font-size: 0.9rem; }
-  .tb-team-score { font-size: 1.05rem; }
+  .tb-team-side { font-size: 0.86rem; gap: 3px; }
+  .tb-team-score { font-size: 1rem; }
+  .tb-team-title { font-size: 0.58rem; }
+  .tb-vs-divider { font-size: 0.6rem; padding: 1px 5px; }
 
-  /* Status pill: full-width centered card */
-  .tb-a-status { justify-self: stretch; align-self: stretch; }
+  /* Row 4 — Status Pill: compact single-row, ~36px tall */
+  .tb-a-status { justify-self: stretch; }
   .tb-status-pill {
     width: 100%; box-sizing: border-box;
     justify-content: center;
-    padding: 5px 12px;
-    font-size: 0.7rem;
-    border-radius: 14px;
-    gap: 8px;
+    padding: 4px 10px;   /* minimal vertical padding */
+    font-size: 0.66rem;
+    border-radius: 10px;
+    gap: 6px;
   }
-
-  /* Leaderboard: compact but visible */
-  .tb-a-lb .hud-leaderboard {
-    width: clamp(88px, 24vw, 115px);
-    font-size: 0.58rem;
-    padding: 4px 6px;
-  }
-  .tb-a-lb .hud-leaderboard .lb-title { font-size: 0.6rem; }
 }
 
 /* Very small screens (≤360px) */
 @media (max-width: 360px) {
-  .tb-top-bar { column-gap: 4px; row-gap: 4px; }
-  .tb-player-name { font-size: 0.78rem; }
-  .tb-player-scoreline { font-size: 0.66rem; }
-  .tb-player-stats { font-size: 0.62rem; gap: 8px; }
-  .tb-team-side { font-size: 0.82rem; gap: 3px; }
-  .tb-team-score { font-size: 0.95rem; }
-  .tb-status-pill { font-size: 0.64rem; gap: 5px; padding: 4px 8px; }
-  .tb-a-lb .hud-leaderboard { width: clamp(75px, 22vw, 100px); font-size: 0.55rem; }
+  .tb-top-bar { column-gap: 3px; row-gap: 2px; }
+  .hud-pause { width: 30px; height: 30px; font-size: 0.82rem; }
+  .tb-player-name { font-size: 0.72rem; }
+  .tb-pc-stats { font-size: 0.6rem; gap: 4px; }
+  .tb-player-stage-badge { font-size: 0.54rem; }
+  .tb-team-side { font-size: 0.78rem; }
+  .tb-team-score { font-size: 0.9rem; }
+  .tb-vs-divider { font-size: 0.55rem; padding: 1px 4px; }
+  .tb-status-pill { font-size: 0.6rem; gap: 4px; padding: 3px 8px; }
+  .tb-a-lb .hud-leaderboard { width: clamp(68px, 20vw, 90px); font-size: 0.5rem; padding: 2px 4px; }
+  .heart-unit { width: 17px; height: 15px; }
+  .heart-fill-svg { width: 17px; height: 15px; }
 }
 
 /* ---- Free Roam / Explorer Top HUD (non-competitive modes) ---- */
