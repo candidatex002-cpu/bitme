@@ -8,7 +8,7 @@ export interface UserAccount {
   mfaEnabled?: boolean;
 }
 
-export type Evolution = 'Baby' | 'Young' | 'Teen' | 'Adult' | 'Elite' | 'Titan' | 'Legend';
+export type Evolution = 'Baby' | 'Young' | 'Teen' | 'Adult' | 'Elite' | 'Titan' | 'Legend' | 'King';
 
 // Score thresholds that drive in-match visual stage (separate from permanent Evolution XP ladder)
 export const SCORE_EVOLUTION_THRESHOLDS: Array<{ stage: Evolution; scoreMin: number }> = [
@@ -50,6 +50,14 @@ export interface PlayerProfile {
   unlockedAccessories: string[]; // list of owned accessory ids
   stats: PlayerStats;
   coupons?: CouponReward[];
+  // §5/§6 Onboarding + editable profile fields (persisted across devices)
+  avatar?: string;               // emoji/avatar chosen at onboarding or profile edit
+  title?: string;                // cosmetic player title
+  country?: string;
+  language?: string;
+  preferredRegion?: string;
+  lastNameChange?: number;       // epoch ms of the last display-name change (cooldown gate)
+  lastAdClaim?: number;          // epoch ms of the last /api/ads/claim (anti-farm cooldown)
 }
 
 export interface PlayerStats {
@@ -192,6 +200,46 @@ export interface CouponReward {
   promoCode: string;
   expiryDate: string;
   icon: string;
+  definitionId?: string; // links an issued voucher back to its CouponDefinition
+}
+
+// §7 Server-driven coupon definition (admin-managed template). Player-facing vouchers
+// (CouponReward) are minted from these. No brand is hard-coded into the client — the
+// definition carries the provider/label so partners are configured on the backend only.
+export interface CouponDefinition {
+  id: string;
+  title: string;              // e.g. "10% Off at Partner Cafe"
+  storeName: string;         // provider / partner label (configurable, not hard-coded client-side)
+  discountText: string;      // human-readable reward text
+  icon: string;
+  enabled: boolean;          // admin enable/disable toggle
+  expiryDate: string;        // ISO date; issued vouchers inherit this
+  regions: string[] | 'all'; // regional availability
+  minLevel: number;          // eligibility: minimum account level
+  minPrestige: number;       // eligibility: minimum prestige
+  costStars: number;         // Stars charged on claim (0 = free grant / earned reward)
+  redemptionLimit: number;   // max total redemptions across all players (-1 = unlimited)
+  perUserLimit: number;      // max redemptions per player (usually 1)
+  redemptionCount: number;   // running total issued (tracking)
+  autoGrant: boolean;        // true = auto-issued the moment a player becomes eligible
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CouponRedemption {
+  definitionId: string;
+  userId: string;
+  voucherId: string;
+  promoCode: string;
+  redeemedAt: string;
+}
+
+// §8 Per-user social graph (friend ids, pending requests both directions, blocked ids).
+export interface SocialGraph {
+  friends: string[];
+  incoming: string[];   // requests awaiting THIS user's accept/reject
+  outgoing: string[];   // requests THIS user has sent
+  blocked: string[];
 }
 
 export type ProgressMetric =

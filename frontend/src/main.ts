@@ -61,15 +61,16 @@ const ACCESSORIES: AccessoryDef[] = [
   { id: 'golden_wings',    name: 'Golden Wings',      icon: '✨', slot: 'back', rarity: 'legendary' },
 ];
 
-// 7-stage evolution ladder — driven by score milestones + Evo XP (not physical length)
+// 8-stage evolution ladder — driven by score milestones + Evo XP (not physical length)
 const EVO_LADDER: Array<{ name: string; scoreReq: number; evoXpReq: number; desc: string }> = [
   { name: 'Baby',   scoreReq: 0,    evoXpReq: 0,     desc: 'Hatchling' },
   { name: 'Young',  scoreReq: 500,  evoXpReq: 500,   desc: 'Growing fast' },
   { name: 'Teen',   scoreReq: 1000, evoXpReq: 1000,  desc: 'Finding strength' },
   { name: 'Adult',  scoreReq: 1500, evoXpReq: 2500,  desc: 'Formidable force' },
   { name: 'Elite',  scoreReq: 2000, evoXpReq: 8000,  desc: 'Apex predator' },
-  { name: 'Titan',  scoreReq: 2500, evoXpReq: 20000, desc: 'Legend of the park' },
-  { name: 'Legend', scoreReq: 2500, evoXpReq: 40000, desc: '✨ Prestige required' },
+  { name: 'Titan',  scoreReq: 2500, evoXpReq: 20000, desc: 'Colossal serpent' },
+  { name: 'Legend', scoreReq: 3000, evoXpReq: 40000, desc: '✨ Prestige I required' },
+  { name: 'King',   scoreReq: 3500, evoXpReq: 80000, desc: '👑 Final stage — Prestige II' },
 ];
 
 
@@ -160,31 +161,27 @@ class AnacondaPark {
   // §7 Local Explorer location
   private localCountry = ''; private localState = ''; private localCity = '';
   private globalPing = 0;
+  private globalPingState: 'idle' | 'measuring' | 'ok' | 'offline' = 'idle';
+  private globalServerLabel = 'Best available server';
 
   // §15 Rewards marketplace
   private rewards: any[] = [];
   private rewardRegion = 'Global';
+  // §7 Server-driven coupons the player can claim into their inventory
+  private availableCoupons: any[] = [];
+  // §12 Server gameplay config (reward formula, XP curve, evolution ladder) — mirrors backend
+  private serverConfig: any = null;
 
   // Story — "The Legend of the Lost Crown"
   private legendIdx = 0;
-  private selectedClan = localStorage.getItem('ap_clan') || '';
 
   // §5 Onboarding
   private onboardName = '';
   private onboardAvatar = '🐍';
   private usernameState: { status: 'idle' | 'checking' | 'ok' | 'bad'; reason?: string; suggestions?: string[] } = { status: 'idle' };
   private usernameTimer: any = null;
-  // Friends & Profile Edit
-  private friends = [
-    { id: 'f1', name: 'Ashraf', avatar: '🐍', online: true, clan: 'Forest' },
-    { id: 'f2', name: 'Rahul', avatar: '🦁', online: true, clan: 'Ocean' },
-    { id: 'f3', name: 'Meera', avatar: '🦉', online: false, lastActiveMinsAgo: 14, clan: 'Fire' },
-    { id: 'f4', name: 'Vikram', avatar: '🐺', online: false, lastActiveMinsAgo: 58, clan: 'Ice' },
-    { id: 'f5', name: 'Sara', avatar: '🌸', online: false, lastActiveMinsAgo: 240, clan: 'Blossom' }
-  ];
-  private friendRequests = [
-    { id: 'fr1', name: 'Karthik', avatar: '🐲' }
-  ];
+  // §8 Server-driven social graph (loaded from /api/social/overview)
+  private social: { friends: any[]; incoming: any[]; outgoing: any[]; blocked: any[] } = { friends: [], incoming: [], outgoing: [], blocked: [] };
   private isEditingProfile = false;
   private editingAvatar = '🐍';
 
@@ -551,12 +548,14 @@ class AnacondaPark {
     if (!this.token) return;
     const h = { Authorization: `Bearer ${this.token}` };
     try {
-      const [m, a, lb] = await Promise.all([
+      const [m, a, lb, cfg] = await Promise.all([
         fetch(API + '/api/missions', { headers: h }), fetch(API + '/api/achievements', { headers: h }), fetch(API + '/api/leaderboard'),
+        fetch(API + '/api/config'), // §12 public gameplay config (no auth)
       ]);
       this.missions = (await m.json()).missions || [];
       this.achievements = (await a.json()).achievements || [];
       this.leaderboard = (await lb.json()).leaderboard || [];
+      this.serverConfig = await cfg.json().catch(() => null);
     } catch { /* */ }
   }
 
@@ -574,7 +573,7 @@ class AnacondaPark {
 
   // ------------------------------------------------------------- navigation
   private setScreen(s: Screen) { this.screen = s; this.render(); }
-  private go(p: Page) { this.page = p; this.screen = 'app'; audio.playClick(); this.render(); if (p === 'rewards') this.loadRewards(); ads.showBanner(); /* §14 lobby-only banner */ }
+  private go(p: Page) { this.page = p; this.screen = 'app'; audio.playClick(); this.render(); if (p === 'rewards') this.loadRewards(); if (p === 'inventory') this.loadAvailableCoupons(); if (p === 'social') this.loadSocial(); if (p === 'play' && this.matchType === 'global') this.measureGlobalPing(); ads.showBanner(); /* §14 lobby-only banner */ }
 
   private async equipSkin(id: string) {
     audio.playClick(); this.selectedSkin = id; if (this.profile) this.profile.equippedSkin = id;
@@ -638,6 +637,7 @@ class AnacondaPark {
     audio.startMusic();
     this.client.onStateUpdate = (s) => this.onTick(s);
     this.client.onRespawnResult = (r) => this.onRespawn(r);
+    this.client.onMatchInvite = (inv) => this.showToast(`🎮 ${inv.from} invited you to a match!`); // §8
     const region = this.matchType === 'local' ? (this.localCity || 'Local') : 'Global'; // §7
     // §2 Each mode carries its own rules/flags into the engine (solo, story, timed).
     this.client.setModeFlags({ ui: this.selectedUIMode, solo: !!this.modeDef.solo, story: !!this.modeDef.story });
@@ -734,9 +734,15 @@ class AnacondaPark {
   // Mirrors the server's /api/match/summary formula so progression works + persists offline.
   private applyLocalMatchRewards(score: number, kills: number, placement: number, survival: number) {
     const won = placement === 1;
-    const earnedStars = Math.floor(score / 10) + kills * 50 + (won ? 500 : 0);
-    const earnedXP = Math.floor(score / 5) + kills * 100 + (won ? 300 : 0);
-    const earnedEvoXP = Math.floor(score / 50) + kills * 10 + (won ? 50 : 0);
+    // §12 Use the server's config-driven reward formula when available; fall back to defaults offline.
+    const m = this.serverConfig?.economy?.match ?? {
+      starsPerScore: 10, starsPerKill: 50, starsWinBonus: 500,
+      xpPerScore: 5, xpPerKill: 100, xpWinBonus: 300,
+      evoXpPerScore: 50, evoXpPerKill: 10, evoXpWinBonus: 50,
+    };
+    const earnedStars = Math.floor(score / m.starsPerScore) + kills * m.starsPerKill + (won ? m.starsWinBonus : 0);
+    const earnedXP = Math.floor(score / m.xpPerScore) + kills * m.xpPerKill + (won ? m.xpWinBonus : 0);
+    const earnedEvoXP = Math.floor(score / m.evoXpPerScore) + kills * m.evoXpPerKill + (won ? m.evoXpWinBonus : 0);
     const p = this.profile = this.profile || {};
     p.stars = (p.stars || 0) + earnedStars;
     p.evolutionXp = (p.evolutionXp || 0) + earnedEvoXP;
@@ -1003,7 +1009,28 @@ class AnacondaPark {
       else evt.style.display = 'none';
     }
     const ts = document.getElementById('team-scores');
-    if (ts) { if (state.teamScores) { ts.style.display = 'flex'; ts.innerHTML = `<div class="ts red">🔴 ${state.teamScores.red}</div><div class="ts blue">🔵 ${state.teamScores.blue}</div>`; } else ts.style.display = 'none'; }
+    if (ts) {
+      if (state.teamScores) {
+        const myTeam = (me as any).team as 'red' | 'blue' | undefined;
+        const redAlive = state.snakes.filter(s => s.team === 'red' && s.isAlive).length;
+        const blueAlive = state.snakes.filter(s => s.team === 'blue' && s.isAlive).length;
+        const rs = state.teamScores.red, bs = state.teamScores.blue;
+        const total = Math.max(1, rs + bs);
+        // Teammate list — your allies with a live/down dot (up to 5 shown).
+        const mates = state.snakes.filter(s => s.team === myTeam && s.id !== me.id).slice(0, 5);
+        const matesHtml = mates.length
+          ? `<div class="team-mates">${mates.map(m => `<span class="tm ${m.isAlive ? '' : 'down'}"><i class="tm-dot"></i>${m.displayName}</span>`).join('')}</div>`
+          : '';
+        ts.style.display = 'flex';
+        ts.innerHTML = `
+          <div class="team-hud-bar">
+            <div class="ts red ${myTeam === 'red' ? 'mine' : ''}">🔴 <b>${rs}</b><span class="ts-alive">${redAlive} alive</span></div>
+            <div class="ts blue ${myTeam === 'blue' ? 'mine' : ''}">🔵 <b>${bs}</b><span class="ts-alive">${blueAlive} alive</span></div>
+          </div>
+          <div class="team-bar"><div class="team-bar-red" style="width:${Math.round(rs / total * 100)}%"></div><div class="team-bar-blue" style="width:${Math.round(bs / total * 100)}%"></div></div>
+          ${matesHtml}`;
+      } else ts.style.display = 'none';
+    }
     const lb = document.getElementById('hud-lb-rows');
     if (lb) lb.innerHTML = state.leaderboard.slice(0, 6).map((r, i) => `<div class="lb-row ${r.id === this.client.localUserId ? 'me' : ''}"><span>${i + 1}. ${r.name}</span><span>${r.score}</span></div>`).join('');
   }
@@ -1025,6 +1052,7 @@ class AnacondaPark {
       // (or create it) so we never draw to a detached canvas (blank-screen fix).
       const canvas = document.getElementById('game-canvas') as HTMLCanvasElement | null;
       if (canvas) { if (this.renderer) this.renderer.attach(canvas); else this.renderer = new Renderer(canvas); }
+      this.applyMapTheme(); // §8 data-driven map theme + seasonal tint
       this.bindTouch();
     }
   }
@@ -1161,14 +1189,58 @@ class AnacondaPark {
   }
 
   // ---------- PLAY (modes + matchmaking only) ----------
-  // §7 Global Adventure — one option, no country picking; auto best server.
+  // §7 Global Adventure — no country picking; auto-selects the lowest-latency reachable server.
+  private serverCandidates(): string[] {
+    // Optional multi-region list via <meta name="anaconda-servers" content="url1,url2">; else the app origin.
+    const meta = document.querySelector('meta[name="anaconda-servers"]')?.getAttribute('content');
+    if (meta) return meta.split(',').map(s => s.trim()).filter(Boolean);
+    return [API].filter(Boolean) as string[];
+  }
+  private async pingServer(url: string): Promise<number> {
+    const samples: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const t0 = performance.now();
+      try {
+        const res = await fetch(`${url.replace(/\/$/, '')}/health`, { cache: 'no-store' });
+        if (!res.ok) return Infinity;
+        samples.push(performance.now() - t0);
+      } catch { return Infinity; }
+    }
+    return samples.reduce((a, b) => a + b, 0) / samples.length;
+  }
+  // Measure real round-trip to each candidate and keep the fastest reachable one.
+  private async measureGlobalPing() {
+    if (this.globalPingState === 'measuring') return;
+    const candidates = this.serverCandidates();
+    if (!candidates.length) { this.globalPingState = 'offline'; if (this.page === 'play') this.render(); return; }
+    this.globalPingState = 'measuring';
+    if (this.page === 'play') this.render();
+    let best = { url: candidates[0], ping: Infinity };
+    for (const url of candidates) {
+      const ping = await this.pingServer(url);
+      if (ping < best.ping) best = { url, ping };
+    }
+    if (best.ping === Infinity) {
+      this.globalPingState = 'offline';
+      this.globalServerLabel = 'Offline — local play';
+    } else {
+      this.globalPing = Math.round(best.ping);
+      this.globalPingState = 'ok';
+      this.client.preferredServer = best.url === API ? '' : best.url;
+      this.globalServerLabel = candidates.length > 1 ? `Best of ${candidates.length} servers` : 'Best available server';
+    }
+    if (this.page === 'play') this.render();
+  }
   private renderGlobalMatch() {
-    if (!this.globalPing) this.globalPing = 22 + Math.floor(Math.random() * 26);
+    const pingHtml = this.globalPingState === 'measuring' ? '<span class="mm-ping measuring">…</span>'
+      : this.globalPingState === 'offline' ? '<span class="mm-ping offline">local</span>'
+      : this.globalPingState === 'ok' ? `<span class="mm-ping">${this.globalPing}ms</span>`
+      : '<span class="mm-ping">—</span>';
     return `<div class="mm-global">
       <div class="mm-server">
-        <span class="mm-dot"></span>
-        <div style="flex:1;"><div style="font-weight:800;">Best available server</div><div class="muted" style="font-size:0.76rem;">Auto-selected by latency, load &amp; match quality</div></div>
-        <div class="mm-ping">${this.globalPing}ms</div>
+        <span class="mm-dot ${this.globalPingState === 'offline' ? 'off' : ''}"></span>
+        <div style="flex:1;"><div style="font-weight:800;">${this.globalServerLabel}</div><div class="muted" style="font-size:0.76rem;">Auto-selected by measured latency &amp; availability</div></div>
+        ${pingHtml}
       </div>
       <div class="muted" style="font-size:0.8rem;margin-top:8px;">Global Adventure connects you to the strongest worldwide server automatically — nothing to pick.</div>
     </div>`;
@@ -1312,7 +1384,24 @@ class AnacondaPark {
       <div class="muted" style="font-size:0.8rem;padding:12px 4px;text-align:center;">Boosters, Mystery Eggs, Golden Chests & Speed Trails collected during gameplay are stored here.</div>`;
     } else {
       const coupons = this.profile?.coupons || [];
-      content = `<div class="coupons-grid">${coupons.length ? coupons.map((c: any) => `
+      const claimable = this.availableCoupons.filter(c => c.eligible);
+      const claimSection = claimable.length ? `
+        <div class="section-subtitle" style="font-weight:800;font-size:0.85rem;margin:2px 0 10px;">🎟️ Available to Claim</div>
+        <div class="coupons-grid" style="margin-bottom:18px;">${claimable.map((c: any) => `
+          <div class="coupon-card">
+            <div class="coupon-left">
+              <div class="r-ico">${c.icon || '🎟️'}</div>
+              <div>
+                <div class="coupon-title">${c.title}</div>
+                <div class="coupon-desc">${c.discountText} · ${c.storeName}</div>
+                <div class="coupon-code">${c.costStars > 0 ? `Cost: <b>${c.costStars} ⭐</b>` : '<b>Free reward</b>'}</div>
+              </div>
+            </div>
+            <button class="btn btn-primary coupon-claim-btn" data-coupon="${c.id}" style="padding:8px 14px;font-size:0.8rem;">Claim</button>
+          </div>
+        `).join('')}</div>` : '';
+      const ownedSection = `<div class="section-subtitle" style="font-weight:800;font-size:0.85rem;margin:2px 0 10px;">🎫 My Coupons</div>
+        <div class="coupons-grid">${coupons.length ? coupons.map((c: any) => `
         <div class="coupon-card">
           <div class="coupon-left">
             <div class="r-ico">${icons.ticket(28)}</div>
@@ -1324,7 +1413,8 @@ class AnacondaPark {
           </div>
           <button class="btn btn-ghost copy-btn" data-code="${c.promoCode}" style="padding:8px 14px;font-size:0.8rem;display:inline-flex;align-items:center;gap:6px;">${icons.copy(16)} Copy</button>
         </div>
-      `).join('') : '<div class="muted" style="text-align:center;padding:24px;">No coupons collected yet — grab gift boxes near partner stores during matches!</div>'}</div>`;
+      `).join('') : '<div class="muted" style="text-align:center;padding:24px;">No coupons collected yet — claim one above or grab gift boxes near partner stores during matches!</div>'}</div>`;
+      content = claimSection + ownedSection;
     }
     return `<div class="page"><div class="section-title">${icons.inventory(22)} Inventory</div><div class="tabs">${tabs.map(([id, l]) => `<button class="tab ${this.invTab === id ? 'active' : ''}" data-inv="${id}">${l}</button>`).join('')}</div><div class="card">${content}</div></div>`;
   }
@@ -1492,104 +1582,74 @@ class AnacondaPark {
       <div class="muted" style="font-size:0.78rem;">Seasonal maps and live world events rotate automatically. More on the roadmap.</div></div>`;
   }
 
-  // ---------- CLANS (join a kingdom clan) ----------
-  private joinClan(id: string) {
-    audio.playClick();
-    this.selectedClan = this.selectedClan === id ? '' : id;
-    try { localStorage.setItem('ap_clan', this.selectedClan); } catch { /* */ }
-    const c = story.CLANS.find(x => x.id === this.selectedClan);
-    this.showToast(this.selectedClan ? `${c?.icon ?? '🏳️'} Joined ${c?.name}` : '🏳️ Left your clan');
-    this.render();
-  }
-
   private pageSocial() {
-    const season = story.SEASONS[story.CURRENT_SEASON - 1];
-    const clanIcons: Record<string, string> = {
-      forest: icons.clanForest(34),
-      ocean: icons.clanOcean(34),
-      fire: icons.clanFire(34),
-      ice: icons.clanIce(34),
-      blossom: icons.clanBlossom(34),
-    };
+    const s = this.social;
+    const req = s.incoming;
+    const pending = s.outgoing;
+    const blocked = s.blocked;
     return `<div class="page">
       <!-- Add Friend & Pending Requests -->
       <div class="card">
         <div class="section-title">${icons.addFriend(20)} Add Friends</div>
         <div class="friend-search-wrap">
-          <input type="text" id="friend-search-input" placeholder="Enter username or player ID..." class="friend-search-input" />
+          <input type="text" id="friend-search-input" placeholder="Enter exact username..." class="friend-search-input" />
           <button class="btn btn-primary" id="friend-send-btn" style="padding:9px 14px;font-size:0.82rem;">Send Request</button>
         </div>
-        ${this.friendRequests.length ? `
+        ${req.length ? `
           <div style="margin-top:12px;">
-            <div style="font-size:0.75rem;font-weight:800;color:var(--muted);margin-bottom:6px;letter-spacing:0.5px;">PENDING REQUESTS (${this.friendRequests.length})</div>
-            ${this.friendRequests.map(r => `
+            <div style="font-size:0.75rem;font-weight:800;color:var(--muted);margin-bottom:6px;letter-spacing:0.5px;">FRIEND REQUESTS (${req.length})</div>
+            ${req.map(r => `
               <div class="row-card" style="padding:8px 12px;margin-bottom:6px;">
                 <div class="friend-avatar" style="width:34px;height:34px;font-size:1rem;">${r.avatar || '👤'}</div>
                 <div class="r-body">
                   <div class="r-title" style="font-size:0.88rem;">${r.name}</div>
-                  <div class="r-desc" style="font-size:0.72rem;">Sent you a friend request</div>
+                  <div class="r-desc" style="font-size:0.72rem;">Lv ${r.level} · wants to be friends</div>
                 </div>
                 <div style="display:flex;gap:6px;">
-                  <button class="btn btn-primary freq-accept" data-id="${r.id}" data-name="${r.name}" style="padding:5px 10px;font-size:0.72rem;">Accept</button>
+                  <button class="btn btn-primary freq-accept" data-id="${r.id}" style="padding:5px 10px;font-size:0.72rem;">Accept</button>
                   <button class="btn btn-ghost freq-decline" data-id="${r.id}" style="padding:5px 10px;font-size:0.72rem;">Decline</button>
                 </div>
               </div>
             `).join('')}
           </div>
         ` : ''}
+        ${pending.length ? `<div style="margin-top:10px;font-size:0.72rem;color:var(--muted);">Sent (awaiting): ${pending.map(p => p.name).join(', ')}</div>` : ''}
       </div>
 
       <!-- Friends List Card -->
       <div class="card">
-        <div class="section-title">${icons.social(20)} Friends (${this.friends.length})</div>
+        <div class="section-title">${icons.social(20)} Friends (${s.friends.length})</div>
         <div class="list">
-          ${this.friends.length ? this.friends.map(f => {
-            let statusHtml = '';
-            if (f.online) {
-              statusHtml = `<span style="color:#059669;font-weight:700;">Online</span>`;
-            } else {
-              const mins = f.lastActiveMinsAgo || 12;
-              let timeStr = `${mins}m ago`;
-              if (mins >= 1440) timeStr = `${Math.floor(mins / 1440)}d ago`;
-              else if (mins >= 60) timeStr = `${Math.floor(mins / 60)}h ago`;
-              statusHtml = `<span class="muted">Active ${timeStr}</span>`;
-            }
+          ${s.friends.length ? s.friends.map(f => {
+            const statusHtml = f.online ? `<span style="color:#059669;font-weight:700;">🟢 Online</span>` : `<span class="muted">Offline</span>`;
             return `
               <div class="friend-card">
-                <div class="friend-avatar">${(f.name || 'F')[0].toUpperCase()}</div>
+                <div class="friend-avatar">${f.avatar || (f.name || 'F')[0].toUpperCase()}</div>
                 <div class="friend-info">
                   <div style="display:flex;align-items:center;justify-content:space-between;">
-                    <div class="friend-name">${f.name}</div>
+                    <div class="friend-name">${f.name} <span class="muted" style="font-weight:600;font-size:0.72rem;">Lv ${f.level}</span></div>
                     <div class="dot ${f.online ? '' : 'off'}" title="${f.online ? 'Online' : 'Offline'}"></div>
                   </div>
-                  <div class="friend-status">${statusHtml}${f.clan ? ` · <span class="pill gold" style="font-size:0.64rem;">${f.clan} Clan</span>` : ''}</div>
+                  <div class="friend-status">${statusHtml}</div>
                   <div class="friend-actions-row">
-                    <button class="btn btn-ghost friend-invite-match" data-friend="${f.name}" style="padding:5px 9px;font-size:0.72rem;display:inline-flex;align-items:center;gap:4px;">🎮 Room Match</button>
-                    <button class="btn btn-ghost friend-invite-clan" data-friend="${f.name}" style="padding:5px 9px;font-size:0.72rem;display:inline-flex;align-items:center;gap:4px;">🛡️ Clan Invite</button>
+                    <button class="btn btn-ghost friend-invite-match" data-id="${f.id}" ${f.online ? '' : 'disabled'} style="padding:5px 9px;font-size:0.72rem;">🎮 Invite</button>
+                    <button class="btn btn-ghost friend-unfriend" data-id="${f.id}" style="padding:5px 9px;font-size:0.72rem;">Remove</button>
+                    <button class="btn btn-ghost friend-block" data-id="${f.id}" style="padding:5px 9px;font-size:0.72rem;color:#b91c1c;">Block</button>
                   </div>
                 </div>
               </div>`;
-          }).join('') : '<div class="muted" style="text-align:center;padding:16px;">No friends yet. Add your first friend above!</div>'}
+          }).join('') : '<div class="muted" style="text-align:center;padding:16px;">No friends yet. Add someone by their exact username above!</div>'}
         </div>
       </div>
 
-      <!-- Clans Section -->
-      <div class="section-title">${icons.social(22)} Choose Your Clan</div>
-      <div class="card tint">
-        <div class="muted" style="font-size:0.82rem;margin-bottom:6px;">Each season, clans compete to restore more of the Seven Kingdoms. Pick a clan and fight for a shared goal.</div>
-        <div class="pill gold">Season ${season.n}: ${season.title}</div>
-      </div>
-      <div class="card"><div class="clan-grid">
-        ${story.CLANS.map(c => {
-          const joined = this.selectedClan === c.id;
-          const ico = clanIcons[c.id] || icons.clanForest(34);
-          return `<div class="clan-card ${joined ? 'joined' : ''}" data-clan="${c.id}" style="--clan:${c.color}">
-            <div class="clan-ico">${ico}</div>
-            <div class="clan-name">${c.name}</div>
-            <div class="clan-tag">${joined ? '✓ Your Clan' : 'Tap to join'}</div>
-          </div>`;
-        }).join('')}
-      </div></div>
+      ${blocked.length ? `<div class="card">
+        <div class="section-title">🚫 Blocked (${blocked.length})</div>
+        <div class="list">${blocked.map(b => `
+          <div class="friend-card"><div class="friend-avatar">${b.avatar || '👤'}</div>
+            <div class="friend-info"><div class="friend-name">${b.name}</div>
+              <div class="friend-actions-row"><button class="btn btn-ghost friend-unblock" data-id="${b.id}" style="padding:5px 9px;font-size:0.72rem;">Unblock</button></div>
+            </div></div>`).join('')}</div>
+      </div>` : ''}
     </div>`;
   }
 
@@ -1621,6 +1681,91 @@ class AnacondaPark {
         this.showToast(`❌ ${data.message || 'Redeem failed'}`);
       }
     } catch { this.showToast('❌ Redeem failed'); }
+    this.render();
+  }
+
+  // §8 Data-driven map theme — Explorer advances biomes with story progress; a seasonal
+  // tint auto-applies by month. Themes/seasons come from the server maps config (addable
+  // via game-config.json with no code change). No-ops offline (renderer keeps its default).
+  private applyMapTheme() {
+    if (!this.renderer) return;
+    const maps = this.serverConfig?.maps;
+    const themes = maps?.themes || [];
+    if (!themes.length) return;
+    let themeId = 'forest';
+    if (this.selectedUIMode === 'explorer') {
+      const chapterIdx = Math.max(0, Math.floor(((this.profile?.level || 1) - 1) / 20));
+      themeId = themes[chapterIdx % themes.length].id;
+    } else if (this.selectedUIMode === 'nokia') {
+      themeId = 'forest'; // classic stays clean
+    }
+    const theme = themes.find((t: any) => t.id === themeId) || themes[0];
+    const season = (maps.seasons || []).find((s: any) => s.id === maps.activeSeason);
+    this.renderer.applyTheme({ sky: theme.sky, grid: theme.grid, accent: theme.accent, tint: season?.tint || '' });
+  }
+
+  // §8 Load the server-driven social graph (friends / requests / blocked + online status).
+  private async loadSocial() {
+    if (!this.token) return;
+    try {
+      const res = await fetch(`${API}/api/social/overview`, { headers: { Authorization: `Bearer ${this.token}` } });
+      if (!res.ok) return;
+      const d = await res.json();
+      this.social = { friends: d.friends || [], incoming: d.incoming || [], outgoing: d.outgoing || [], blocked: d.blocked || [] };
+      if (this.page === 'social') this.render();
+    } catch { /* offline — keep last known */ }
+  }
+
+  // Any social mutation returns the fresh overview, which we apply and re-render.
+  private async socialAction(path: string, body: any) {
+    audio.playClick();
+    try {
+      const res = await fetch(`${API}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify(body) });
+      const d = await res.json();
+      if (d.friends !== undefined) this.social = { friends: d.friends, incoming: d.incoming, outgoing: d.outgoing, blocked: d.blocked };
+      this.showToast(`${d.success ? '✅' : '⚠️'} ${d.message || (d.success ? 'Done' : 'Action failed')}`);
+      this.render();
+    } catch { this.showToast('⚠️ Network error'); }
+  }
+
+  private async inviteFriend(userId: string) {
+    audio.playClick();
+    try {
+      const res = await fetch(`${API}/api/social/invite`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify({ userId }) });
+      const d = await res.json();
+      this.showToast(`${d.success ? '🎮' : '⚠️'} ${d.message}`);
+    } catch { this.showToast('⚠️ Could not send invite'); }
+  }
+
+  // §7 Load coupons the player is eligible to claim (server-driven).
+  private async loadAvailableCoupons() {
+    if (!this.token) return;
+    try {
+      const res = await fetch(`${API}/api/coupons/available?region=${encodeURIComponent(this.rewardRegion)}`, { headers: { Authorization: `Bearer ${this.token}` } });
+      const data = await res.json();
+      this.availableCoupons = data.coupons || [];
+    } catch { this.availableCoupons = []; }
+    if (this.page === 'inventory' && this.invTab === 'coupons') this.render();
+  }
+
+  private async claimCoupon(couponId: string) {
+    audio.playClick();
+    try {
+      const res = await fetch(`${API}/api/coupons/claim`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
+        body: JSON.stringify({ couponId, region: this.rewardRegion }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (data.profile) { this.profile = data.profile; this.persistSession(); }
+        audio.playFanfare();
+        this.showToast(`🎟️ ${data.message} — added to your coupons`);
+        await this.loadAvailableCoupons();
+      } else {
+        this.showToast(`❌ ${data.message || 'Claim failed'}`);
+      }
+    } catch { this.showToast('❌ Claim failed'); }
     this.render();
   }
 
@@ -1906,9 +2051,10 @@ class AnacondaPark {
     const on = (id: string, fn: () => void) => document.getElementById(id)?.addEventListener('click', fn);
     document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => this.go((b as HTMLElement).dataset.go as Page)));
     document.querySelectorAll('[data-mcat]').forEach(b => b.addEventListener('click', () => { this.missionCat = (b as HTMLElement).dataset.mcat as any; audio.playClick(); this.render(); }));
-    document.querySelectorAll('[data-inv]').forEach(b => b.addEventListener('click', () => { this.invTab = (b as HTMLElement).dataset.inv as any; audio.playClick(); this.render(); }));
+    document.querySelectorAll('[data-inv]').forEach(b => b.addEventListener('click', () => { this.invTab = (b as HTMLElement).dataset.inv as any; audio.playClick(); this.render(); if (this.invTab === 'coupons') this.loadAvailableCoupons(); }));
+    document.querySelectorAll('.coupon-claim-btn').forEach(b => b.addEventListener('click', () => this.claimCoupon((b as HTMLElement).dataset.coupon!)));
     document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { audio.playClick(); const m = (b as HTMLElement).dataset.mode as UIMode; if (UI_MODES[m]) { this.selectedUIMode = m; this.render(); } }));
-    document.querySelectorAll('[data-mt]').forEach(b => b.addEventListener('click', () => { this.matchType = (b as HTMLElement).dataset.mt as any; audio.playClick(); this.render(); }));
+    document.querySelectorAll('[data-mt]').forEach(b => b.addEventListener('click', () => { this.matchType = (b as HTMLElement).dataset.mt as any; audio.playClick(); this.render(); if (this.matchType === 'global') this.measureGlobalPing(); }));
     document.querySelectorAll('[data-region]').forEach(b => b.addEventListener('click', () => { this.selectedRegion = (b as HTMLElement).dataset.region!; audio.playClick(); this.render(); }));
     // §7 Local Explorer cascading location selectors
     document.getElementById('loc-country')?.addEventListener('change', (e) => { this.localCountry = (e.target as HTMLSelectElement).value; this.localState = Object.keys(LOCATIONS[this.localCountry])[0]; this.localCity = LOCATIONS[this.localCountry][this.localState][0]; audio.playClick(); this.render(); });
@@ -1921,7 +2067,6 @@ class AnacondaPark {
     document.querySelectorAll('.copy-btn').forEach(b => b.addEventListener('click', (e) => { const c = (e.currentTarget as HTMLElement).dataset.code!; navigator.clipboard?.writeText(c); this.showToast(`📋 Copied ${c}`); }));
     document.querySelectorAll('[data-rwregion]').forEach(b => b.addEventListener('click', () => { this.rewardRegion = (b as HTMLElement).dataset.rwregion!; audio.playClick(); this.render(); this.loadRewards(); }));
     document.querySelectorAll('.redeem-btn').forEach(b => b.addEventListener('click', () => this.redeemReward((b as HTMLElement).dataset.reward!)));
-    document.querySelectorAll('[data-clan]').forEach(b => b.addEventListener('click', () => this.joinClan((b as HTMLElement).dataset.clan!)));
     document.getElementById('replay-legend')?.addEventListener('click', () => { audio.playClick(); this.showLegend(); });
     document.getElementById('replay-story')?.addEventListener('click', () => { audio.playClick(); this.showLegend(); });
     document.getElementById('replay-tutorial')?.addEventListener('click', () => { audio.playClick(); this.showTutorial(); });
@@ -1938,49 +2083,20 @@ class AnacondaPark {
     on('edit-profile-btn', () => this.showEditProfile());
     on('side-btn', () => { this.settings.controlSide = this.settings.controlSide === 'right' ? 'left' : 'right'; this.saveSettings(); this.render(); });
 
-    // Friends list & social handlers
+    // §8 Friends list & social handlers — all server-driven.
     on('friend-send-btn', () => {
       const input = (document.getElementById('friend-search-input') as HTMLInputElement)?.value?.trim();
-      if (!input) {
-        this.showToast('⚠️ Please enter a player name or ID');
-        return;
-      }
+      if (!input) { this.showToast('⚠️ Please enter a username'); return; }
       audio.playClick();
-      this.friends.push({ id: 'f_' + Date.now(), name: input, avatar: '👤', online: true, clan: 'Forest' });
       (document.getElementById('friend-search-input') as HTMLInputElement).value = '';
-      this.render();
-      this.showToast(`🎉 Friend request sent to ${input}!`);
+      this.socialAction('/api/social/request', { username: input });
     });
-
-    document.querySelectorAll('.freq-accept').forEach(b => b.addEventListener('click', (e) => {
-      const id = (e.currentTarget as HTMLElement).dataset.id!;
-      const name = (e.currentTarget as HTMLElement).dataset.name!;
-      audio.playClick();
-      this.friendRequests = this.friendRequests.filter(r => r.id !== id);
-      this.friends.push({ id: 'f_' + Date.now(), name, avatar: '👤', online: true, clan: 'Forest' });
-      this.render();
-      this.showToast(`🎉 Accepted ${name}'s friend request!`);
-    }));
-
-    document.querySelectorAll('.freq-decline').forEach(b => b.addEventListener('click', (e) => {
-      const id = (e.currentTarget as HTMLElement).dataset.id!;
-      audio.playClick();
-      this.friendRequests = this.friendRequests.filter(r => r.id !== id);
-      this.render();
-      this.showToast('Friend request declined.');
-    }));
-
-    document.querySelectorAll('.friend-invite-match').forEach(b => b.addEventListener('click', (e) => {
-      const name = (e.currentTarget as HTMLElement).dataset.friend!;
-      audio.playClick();
-      this.showToast(`🎮 Room match invitation sent to ${name}!`);
-    }));
-
-    document.querySelectorAll('.friend-invite-clan').forEach(b => b.addEventListener('click', (e) => {
-      const name = (e.currentTarget as HTMLElement).dataset.friend!;
-      audio.playClick();
-      this.showToast(`🛡️ Clan invitation sent to ${name}!`);
-    }));
+    document.querySelectorAll('.freq-accept').forEach(b => b.addEventListener('click', (e) => this.socialAction('/api/social/respond', { userId: (e.currentTarget as HTMLElement).dataset.id!, action: 'accept' })));
+    document.querySelectorAll('.freq-decline').forEach(b => b.addEventListener('click', (e) => this.socialAction('/api/social/respond', { userId: (e.currentTarget as HTMLElement).dataset.id!, action: 'reject' })));
+    document.querySelectorAll('.friend-unfriend').forEach(b => b.addEventListener('click', (e) => this.socialAction('/api/social/unfriend', { userId: (e.currentTarget as HTMLElement).dataset.id! })));
+    document.querySelectorAll('.friend-block').forEach(b => b.addEventListener('click', (e) => this.socialAction('/api/social/block', { userId: (e.currentTarget as HTMLElement).dataset.id! })));
+    document.querySelectorAll('.friend-unblock').forEach(b => b.addEventListener('click', (e) => this.socialAction('/api/social/unblock', { userId: (e.currentTarget as HTMLElement).dataset.id! })));
+    document.querySelectorAll('.friend-invite-match').forEach(b => b.addEventListener('click', (e) => this.inviteFriend((e.currentTarget as HTMLElement).dataset.id!)));
 
     on('nav-pause', () => this.togglePause());
     on('btn-resume', () => this.togglePause());

@@ -1,0 +1,54 @@
+{
+  "_comment": "§12 Copy this file to 'game-config.json' (same folder) or point GAME_CONFIG_FILE at it to override gameplay tunables WITHOUT a code deploy. Any key you omit keeps its built-in default. Arrays (e.g. evolutionLadder) replace the whole default array. This file itself is NOT loaded — only game-config.json is.",
+  "progression": {
+    "maxLevel": 1000,
+    "xpBase": 300,
+    "xpPerLevel": 80,
+    "missionEvoXp": { "daily": 5, "weekly": 25, "event": 50 },
+    "evolutionLadder": [
+      { "evolution": "Baby",   "level": 1,    "evoXp": 0,     "minPrestige": 0 },
+      { "evolution": "Young",  "level": 51,   "evoXp": 500,   "minPrestige": 0 },
+      { "evolution": "Teen",   "level": 101,  "evoXp": 1000,  "minPrestige": 0 },
+      { "evolution": "Adult",  "level": 201,  "evoXp": 2500,  "minPrestige": 0 },
+      { "evolution": "Elite",  "level": 501,  "evoXp": 8000,  "minPrestige": 0 },
+      { "evolution": "Titan",  "level": 801,  "evoXp": 20000, "minPrestige": 0 },
+      { "evolution": "Legend", "level": 1000, "evoXp": 40000, "minPrestige": 1 },
+      { "evolution": "King",   "level": 1000, "evoXp": 80000, "minPrestige": 2 }
+    ]
+  },
+  "economy": {
+    "match": {
+      "starsPerScore": 10, "starsPerKill": 50, "starsWinBonus": 500,
+      "xpPerScore": 5, "xpPerKill": 100, "xpWinBonus": 300,
+      "evoXpPerScore": 50, "evoXpPerKill": 10, "evoXpWinBonus": 50
+    },
+    "clamps": { "maxScore": 100000, "maxKills": 100, "maxSurvivalSeconds": 3600, "maxDistanceKm": 500 },
+    "ad": { "stars": 500, "tickets": 2, "cooldownMs": 30000 },
+    "respawn": {
+      "stars":  { "stars": 20, "tickets": 0, "label": "Stars" },
+      "ticket": { "stars": 0,  "tickets": 1, "label": "Ticket" },
+      "ad":     { "stars": 0,  "tickets": 0, "label": "Watch Ad" },
+      "wait":   { "stars": 0,  "tickets": 0, "label": "Free Wait" }
+    }
+  },
+  "world": {
+    "size": 6000,
+    "foodCount": 180,
+    "starTarget": 24,
+    "starMax": 30,
+    "sanctuaryRelocateSeconds": 300,
+    "wormholeRelocateSeconds": 120,
+    "eventDurationSeconds": 180
+  },
+  "maps": {
+    "_comment": "Add a biome by appending to themes[] (no code change). Seasons auto-apply by month; festivals use months:[] and are triggered on demand.",
+    "themes": [
+      { "id": "forest", "name": "Forest", "sky": "#D4EEF9", "grid": "rgba(120,180,150,0.18)", "accent": "#2E7D32", "obstacleSet": ["tree", "bush", "pond", "log", "hill"] },
+      { "id": "my_new_biome", "name": "Crystal Caverns", "sky": "#E8E1FF", "grid": "rgba(150,120,220,0.2)", "accent": "#7C3AED", "obstacleSet": ["rock", "hill"] }
+    ],
+    "seasons": [
+      { "id": "spring", "name": "Spring", "tint": "rgba(120,220,150,0.05)", "months": [3, 4, 5] },
+      { "id": "diwali", "name": "Diwali", "tint": "rgba(255,170,40,0.07)", "months": [] }
+    ]
+  }
+}

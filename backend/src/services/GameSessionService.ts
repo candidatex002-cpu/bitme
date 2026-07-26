@@ -13,6 +13,7 @@ import {
 } from '../types';
 import { db } from '../db/Database';
 import { antiCheat } from './AntiCheatService';
+import { gameConfig } from '../config/GameConfig';
 
 interface CollectibleTemplate {
   type: CollectibleType;
@@ -64,11 +65,12 @@ const OBSTACLE_TEMPLATES: Array<{ type: ObstacleType; icon: string; radius: numb
   { type: 'poison', icon: '☠️', radius: 36, blocking: false, damage: 14 }, // §3 toxic pool, passable
 ];
 
-// §8 Bot counts populate the large map (real players replace bots as they join, ~25 total).
+// §8/V6 Bot policy — Free Roam & Event fill empty space with bots (real players replace them
+// as they join). Battle Royale & Team Battle are strictly real-player experiences (no bots).
 const MODE_CONFIGS: Record<GameMode, GameModeConfig> = {
   classic: { mode: 'classic', label: 'Free Roam', tagline: 'Free For All', shrinkingZone: false, teamsEnabled: false, worldEvents: false, botCount: 20 },
-  battle_royale: { mode: 'battle_royale', label: 'Battle Royale', tagline: 'Last Snake Standing', shrinkingZone: true, teamsEnabled: false, worldEvents: true, botCount: 24 },
-  team: { mode: 'team', label: 'Team Mode', tagline: 'Team Battle', shrinkingZone: false, teamsEnabled: true, worldEvents: false, botCount: 24 },
+  battle_royale: { mode: 'battle_royale', label: 'Battle Royale', tagline: 'Last Snake Standing', shrinkingZone: true, teamsEnabled: false, worldEvents: true, botCount: 0 },
+  team: { mode: 'team', label: 'Team Mode', tagline: 'Team Battle', shrinkingZone: false, teamsEnabled: true, worldEvents: false, botCount: 0 },
   event: { mode: 'event', label: 'Event Mode', tagline: 'Special Events', shrinkingZone: true, teamsEnabled: false, worldEvents: true, botCount: 20 },
 };
 
@@ -81,22 +83,23 @@ export class GameSessionService {
   private config: GameModeConfig;
   private simulationInterval: NodeJS.Timeout | null = null;
   private readonly TICK_RATE = 30;
-  private readonly WORLD_SIZE = 6000; // §8 large map — wide exploration, room for ~25 players
+  // §12 World/spawn/timer tunables sourced from the central config (JSON-overridable).
+  private readonly WORLD_SIZE = gameConfig.world.size; // §8 large map — room for ~25 players
   private readonly BASE_SPEED = 240; // Faster, smooth, responsive movement
   private readonly BOOST_MULT = 1.7;
   private readonly MAX_LENGTH = 90; // shorter snakes → easier to see everyone (esp. on mobile)
 
   // §3 moving stars
-  private readonly STAR_MAX = 30;
-  private readonly STAR_TARGET = 24;
+  private readonly STAR_MAX = gameConfig.world.starMax;
+  private readonly STAR_TARGET = gameConfig.world.starTarget;
   private starCooldown = 0;
   // §7 Four linked wormholes — always present; entering one exits from another (escape route).
   // They relocate together periodically to stay dynamic.
-  private wormholeRelocate = 120;
+  private wormholeRelocate = gameConfig.world.wormholeRelocateSeconds;
   // §8 dynamic safe/sanctuary zone relocation
-  private sanctuaryTimer = 300;
+  private sanctuaryTimer = gameConfig.world.sanctuaryRelocateSeconds;
 
-  private eventTimer = 180;
+  private eventTimer = gameConfig.world.eventDurationSeconds;
   private currentEventIndex = 0;
   private availableEvents: WorldEvent[] = [
     { id: 'evt_rain', type: 'rain_storm', title: '🌧️ Monsoon Rain Storm', description: 'Vision restricted! Frog & Star spawns tripled!', active: true, timerSeconds: 180, icon: '🌧️' },
@@ -140,7 +143,7 @@ export class GameSessionService {
       currentEvent: this.config.worldEvents ? this.availableEvents[0] : undefined,
     };
 
-    this.spawnInitialCollectibles(180); // §8 scaled to the large map
+    this.spawnInitialCollectibles(gameConfig.world.foodCount); // §12 config-driven
     this.spawnMovingStars(this.STAR_TARGET); // §3
     this.spawnObstacles(); // §2
     this.spawnWormholes(); // §7 four linked wormholes
@@ -844,9 +847,10 @@ export class GameSessionService {
 
   // ---------------------------------------------------------------- §7 linked wormholes
   private updateWormhole(dt: number) {
-    if (!this.state.portals || this.state.portals.length < 4) { this.spawnWormholes(); this.wormholeRelocate = 120; return; }
+    const relocate = gameConfig.world.wormholeRelocateSeconds;
+    if (!this.state.portals || this.state.portals.length < 4) { this.spawnWormholes(); this.wormholeRelocate = relocate; return; }
     this.wormholeRelocate -= dt;
-    if (this.wormholeRelocate <= 0) { this.spawnWormholes(); this.wormholeRelocate = 120; }
+    if (this.wormholeRelocate <= 0) { this.spawnWormholes(); this.wormholeRelocate = relocate; }
   }
 
   // Four wormholes linked in a ring — entering wh_i exits at wh_(i+1). Spread across the map.
@@ -873,7 +877,7 @@ export class GameSessionService {
     if (!this.state.sanctuaryZone) return;
     this.sanctuaryTimer -= dt;
     if (this.sanctuaryTimer <= 0) {
-      this.sanctuaryTimer = 300; // relocate every 5 minutes
+      this.sanctuaryTimer = gameConfig.world.sanctuaryRelocateSeconds; // §12 config-driven
       const r = this.state.sanctuaryZone.radius;
       this.state.sanctuaryZone.centerX = r + Math.random() * (this.WORLD_SIZE - 2 * r);
       this.state.sanctuaryZone.centerY = r + Math.random() * (this.WORLD_SIZE - 2 * r);

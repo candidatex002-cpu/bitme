@@ -114,7 +114,10 @@ test('modes load distinct rules', () => {
   assert.equal(fr.shrinkingZone, false);
   assert.equal(tm.teamsEnabled, true);
   assert.equal(fr.teamsEnabled, false);
-  assert.ok(br.botCount >= 20 && fr.botCount >= 20, '§8 populated map');
+  // V6 bot policy: Free Roam is bot-populated; Battle Royale & Team Battle are real-players only.
+  assert.ok(fr.botCount >= 20, 'Free Roam is bot-populated (§8)');
+  assert.equal(br.botCount, 0, 'Battle Royale has no bots');
+  assert.equal(tm.botCount, 0, 'Team Battle has no bots');
 });
 
 // §8 larger world

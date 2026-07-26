@@ -148,13 +148,27 @@ export class Renderer {
     return this.snakeAnimState.get(id)!;
   }
 
+  // §Team the local player's team this frame (undefined outside Team Battle)
+  private selfTeam?: 'red' | 'blue';
+
+  // §8 Data-driven map theme + seasonal tint (applied from the server maps config).
+  private theme = { sky: '#D4EEF9', ground: '#EBF5FB', grid: 'rgba(120,180,150,0.18)', accent: '#2E7D32', tint: '' };
+  public applyTheme(t: { sky?: string; ground?: string; grid?: string; accent?: string; tint?: string }) {
+    this.theme = { ...this.theme, ...t, ground: t.ground || t.sky || this.theme.ground };
+  }
+  private teamColor(team?: 'red' | 'blue'): string {
+    return team === 'red' ? '#EF4444' : team === 'blue' ? '#3B82F6' : '#70C1B3';
+  }
+
   public render(state: GameStateTick, targetUserId: string) {
     this.animFrame++;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
+    // Team Battle: remember our team so allies/enemies can be color-coded consistently.
+    this.selfTeam = state.snakes.find(s => s.id === targetUserId)?.team;
 
-    // Soft Pastel Blue Canvas
-    this.ctx.fillStyle = '#D4EEF9';
+    // §8 Theme-driven sky/background (data-driven per map theme).
+    this.ctx.fillStyle = this.theme.sky;
     this.ctx.fillRect(0, 0, vw, vh);
 
     let target = state.snakes.find(s => s.id === targetUserId);
@@ -217,6 +231,12 @@ export class Renderer {
 
     this.ctx.restore();
 
+    // §8 Seasonal tint overlay (thin, non-intrusive) — auto-selected by month or festival.
+    if (this.theme.tint) {
+      this.ctx.fillStyle = this.theme.tint;
+      this.ctx.fillRect(0, 0, vw, vh);
+    }
+
     this.renderMinimap(state, targetUserId);
   }
 
@@ -262,8 +282,8 @@ export class Renderer {
     const cam = this.cameraPos;
     const R = 5000; // covers the viewport at any zoom — §6 seamless, borderless ground
 
-    // 1. Light Dreamy Uniform Pastel Base (No red/blue/yellow stroke lines)
-    ctx.fillStyle = '#EBF5FB';
+    // 1. Theme ground base (§8) — uniform, borderless.
+    ctx.fillStyle = this.theme.ground;
     ctx.fillRect(cam.x - R, cam.y - R, R * 2, R * 2);
 
     // 2. Soft Park Meadow Patches (Organic subtle filled patches without border lines)
@@ -489,6 +509,21 @@ export class Renderer {
 
     const baseRadius = Math.max(16, snake.radius);
 
+    // §Team Battle — a team-colored ground ring makes allies/enemies instantly readable.
+    if (snake.team) {
+      const ally = snake.team === this.selfTeam;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(headX, headY, baseRadius * 1.9, 0, Math.PI * 2);
+      ctx.strokeStyle = this.teamColor(snake.team);
+      ctx.globalAlpha = ally ? 0.9 : 0.7;
+      ctx.setLineDash(ally ? [] : [6, 5]); // solid ring = ally, dashed = enemy
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
     // Power aura around the head — 🍄 super (pink) / 🛡️ shield (blue)
     const superOn = ((snake as any).superTimer ?? 0) > 0;
     const shieldOn = snake.shieldTimer > 0;
@@ -653,8 +688,10 @@ export class Renderer {
     ctx.font = `bold ${nameFontSize}px Outfit, sans-serif`;
     ctx.textAlign = 'center';
 
-    const label = isTarget ? `👑 ${snake.displayName}` : `${snake.displayName}`;
-    ctx.fillStyle = isTarget ? '#1E3A8A' : '#475569';
+    // Team Battle: tag allies/enemies with a colored square + team-colored name.
+    const teamMark = snake.team ? (snake.team === this.selfTeam ? '🟩 ' : '🟥 ') : '';
+    const label = isTarget ? `👑 ${snake.displayName}` : `${teamMark}${snake.displayName}`;
+    ctx.fillStyle = snake.team ? this.teamColor(snake.team) : (isTarget ? '#1E3A8A' : '#475569');
     ctx.shadowColor = 'rgba(255,255,255,0.9)';
     ctx.shadowBlur = 4;
     ctx.fillText(label, headX, y - 4);
@@ -733,7 +770,9 @@ export class Renderer {
       const isT = s.id === targetUserId;
       ctx.beginPath();
       ctx.arc(x + s.head.x * scale, y + s.head.y * scale, isT ? myDotR : dotR, 0, Math.PI * 2);
-      ctx.fillStyle = isT ? '#FFB7B2' : '#70C1B3'; ctx.fill();
+      // Team Battle: dots colored by team so you can read the battlefield at a glance.
+      ctx.fillStyle = isT ? '#111827' : (s.team ? this.teamColor(s.team) : '#70C1B3'); ctx.fill();
+      if (isT) { ctx.lineWidth = 1.5; ctx.strokeStyle = '#fff'; ctx.stroke(); }
     }
     ctx.restore();
   }

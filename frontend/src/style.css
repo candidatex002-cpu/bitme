@@ -643,12 +643,23 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 }
 .team-scores {
   position: absolute; top: clamp(6px, 1.5vh, 14px); left: 50%; transform: translateX(-50%);
-  display: flex; gap: clamp(4px, 1vw, 10px);
-  font-family: var(--font-title); font-weight: 800;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  font-family: var(--font-title); font-weight: 800; max-width: min(92vw, 460px);
 }
-.team-scores .ts { padding: clamp(4px, 0.8vw, 8px) clamp(8px, 1.5vw, 16px); border-radius: 40px; font-size: clamp(0.65rem, 1.6vw, 0.85rem); }
+.team-hud-bar { display: flex; gap: clamp(4px, 1vw, 10px); }
+.team-scores .ts { display: flex; align-items: center; gap: 6px; padding: clamp(4px, 0.8vw, 8px) clamp(8px, 1.5vw, 16px); border-radius: 40px; font-size: clamp(0.65rem, 1.6vw, 0.85rem); }
 .team-scores .ts.red { background: rgba(239,90,69,0.16); color: #c0392b; border: 1px solid #f0a99e; }
 .team-scores .ts.blue { background: rgba(63,158,232,0.16); color: #1f6fb0; border: 1px solid #a9d3f2; }
+.team-scores .ts.mine { box-shadow: 0 0 0 2px currentColor; }
+.team-scores .ts-alive { font-size: 0.62rem; font-weight: 700; opacity: 0.8; }
+.team-bar { width: min(80vw, 320px); height: 6px; border-radius: 6px; overflow: hidden; display: flex; background: rgba(0,0,0,0.08); }
+.team-bar-red { background: #ef5a45; }
+.team-bar-blue { background: #3f9ee8; }
+.team-mates { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 8px; margin-top: 2px; }
+.team-mates .tm { display: inline-flex; align-items: center; gap: 4px; font-size: 0.62rem; font-weight: 700; color: #334155; background: rgba(255,255,255,0.7); padding: 2px 7px; border-radius: 30px; }
+.team-mates .tm .tm-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; }
+.team-mates .tm.down { opacity: 0.5; }
+.team-mates .tm.down .tm-dot { background: #94a3b8; }
 
 /* ---- Power Status Badges ---- */
 .power-status {
@@ -980,7 +991,10 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 /* §7 matchmaking */
 .mm-server { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--card-2); border: 1px solid var(--line); border-radius: var(--r-md); }
 .mm-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px rgba(47,191,91,0.18); flex-shrink: 0; }
+.mm-dot.off { background: #94a3b8; box-shadow: 0 0 0 4px rgba(148,163,184,0.18); }
 .mm-ping { font-family: var(--font-title); font-weight: 800; color: var(--green-deep); font-size: 0.9rem; }
+.mm-ping.measuring { color: var(--muted); }
+.mm-ping.offline { color: #b45309; font-size: 0.78rem; }
 .mm-loc-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 .mm-loc { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .mm-loc > span { font-family: var(--font-title); font-weight: 800; font-size: 0.68rem; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; }
@@ -1098,17 +1112,6 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .kd-name, .bs-name { font-size: 0.72rem; font-weight: 700; color: var(--ink-soft); margin-top: 4px; }
 .boss-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 @media (max-width: 520px) { .kingdom-grid, .boss-grid { grid-template-columns: repeat(3, 1fr); } }
-
-/* ---------------------------------------------------------------- CLANS */
-.clan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.clan-card { text-align: center; padding: 14px 8px; border-radius: var(--r-md); background: var(--card); border: 2px solid var(--line); cursor: pointer; transition: transform 0.15s ease, border-color 0.15s ease; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: var(--shadow); }
-.clan-card:active { transform: scale(0.96); }
-.clan-card.joined { border-color: var(--clan); background: color-mix(in srgb, var(--clan) 10%, #fff); box-shadow: 0 0 0 3px color-mix(in srgb, var(--clan) 25%, transparent); }
-.clan-ico { width: 42px; height: 42px; display: grid; place-items: center; margin-bottom: 4px; }
-.clan-name { font-family: var(--font-title); font-weight: 800; font-size: 0.85rem; margin-top: 4px; color: var(--ink); }
-.clan-tag { font-size: 0.7rem; font-weight: 700; color: var(--muted); margin-top: 2px; }
-.clan-card.joined .clan-tag { color: var(--clan); font-weight: 800; }
-@media (max-width: 420px) { .clan-grid { grid-template-columns: repeat(2, 1fr); } }
 
 /* ---------------------------------------------------------------- FRIENDS & SOCIAL */
 .friend-search-wrap {

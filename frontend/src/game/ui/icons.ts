@@ -1,6 +1,6 @@
 /**
  * Anaconda Park — Modern SVG Icon & Vector Logo Registry
- * High quality vector icons for all screens, navigation, modes, clans, and actions.
+ * High quality vector icons for all screens, navigation, modes, and actions.
  */
 
 export const icons = {
@@ -300,70 +300,6 @@ export const icons = {
           <stop offset="100%" stop-color="#BE185D"/>
         </linearGradient>
       </defs>
-    </svg>
-  `,
-
-  // ── CLAN ICONS ──
-  clanForest: (size = 28) => `
-    <svg width="${size}" height="${size}" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M16 3L6 14H10L4 23H13V29H19V23H28L22 14H26L16 3Z" fill="url(#cfG)"/>
-      <defs>
-        <linearGradient id="cfG" x1="16" y1="3" x2="16" y2="29" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stop-color="#4ADE80"/>
-          <stop offset="100%" stop-color="#15803D"/>
-        </linearGradient>
-      </defs>
-    </svg>
-  `,
-
-  clanOcean: (size = 28) => `
-    <svg width="${size}" height="${size}" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M4 22C8 22 10 18 14 18C18 18 20 22 24 22C27 22 29 20 30 19V27H2V19C3 20 5 22 8 22Z" fill="url(#coG)"/>
-      <path d="M4 14C8 14 10 10 14 10C18 10 20 14 24 14C27 14 29 12 30 11V16H2V11C3 12 5 14 8 14Z" fill="#38BDF8"/>
-      <defs>
-        <linearGradient id="coG" x1="16" y1="10" x2="16" y2="27" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stop-color="#38BDF8"/>
-          <stop offset="100%" stop-color="#0369A1"/>
-        </linearGradient>
-      </defs>
-    </svg>
-  `,
-
-  clanFire: (size = 28) => `
-    <svg width="${size}" height="${size}" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M16 3C16 3 20 9 20 13C20 15.2 19 17 17.5 18C19.5 18 23 16 23 12C23 12 27 17 27 22C27 26.5 22.5 29 16 29C9.5 29 5 26.5 5 22C5 15 12 8 16 3Z" fill="url(#cfireG)"/>
-      <path d="M16 16C16 16 18 19 18 21C18 22.5 17 24 16 24C15 24 14 22.5 14 21C14 19 16 16 16 16Z" fill="#FEF08A"/>
-      <defs>
-        <linearGradient id="cfireG" x1="16" y1="3" x2="16" y2="29" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stop-color="#FBBF24"/>
-          <stop offset="50%" stop-color="#F97316"/>
-          <stop offset="100%" stop-color="#DC2626"/>
-        </linearGradient>
-      </defs>
-    </svg>
-  `,
-
-  clanIce: (size = 28) => `
-    <svg width="${size}" height="${size}" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M16 2V30M2 16H30M6 6L26 26M26 6L6 26" stroke="url(#ciG)" stroke-width="2.5" stroke-linecap="round"/>
-      <circle cx="16" cy="16" r="4" fill="#0284C7"/>
-      <defs>
-        <linearGradient id="ciG" x1="16" y1="2" x2="16" y2="30" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stop-color="#BAE6FD"/>
-          <stop offset="100%" stop-color="#0284C7"/>
-        </linearGradient>
-      </defs>
-    </svg>
-  `,
-
-  clanBlossom: (size = 28) => `
-    <svg width="${size}" height="${size}" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="16" cy="10" r="5" fill="#F472B6"/>
-      <circle cx="22" cy="14" r="5" fill="#F472B6"/>
-      <circle cx="20" cy="22" r="5" fill="#F472B6"/>
-      <circle cx="12" cy="22" r="5" fill="#F472B6"/>
-      <circle cx="10" cy="14" r="5" fill="#F472B6"/>
-      <circle cx="16" cy="16" r="4" fill="#FDE047"/>
     </svg>
   `,
 

@@ -2,7 +2,15 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { db } from '../db/Database';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'anaconda_park_super_secret_jwt_key_2026';
+// Never ship the fallback secret to production — anyone knowing it can forge tokens.
+const DEV_FALLBACK_SECRET = 'anaconda_park_dev_only_secret_change_me';
+const JWT_SECRET = process.env.JWT_SECRET || DEV_FALLBACK_SECRET;
+if (process.env.NODE_ENV === 'production' && JWT_SECRET === DEV_FALLBACK_SECRET) {
+  throw new Error('[security] JWT_SECRET must be set in production — refusing to boot with the dev fallback secret.');
+}
+if (JWT_SECRET === DEV_FALLBACK_SECRET) {
+  console.warn('[security] Using the development JWT secret. Set JWT_SECRET before deploying.');
+}
 
 // §5 Username rules — reserved handles + a small profanity guard (extend as needed).
 const RESERVED_NAMES = new Set(['admin', 'administrator', 'root', 'system', 'moderator', 'mod', 'staff', 'support', 'anacondapark', 'anaconda', 'official', 'server', 'null', 'undefined', 'guest', 'player', 'you']);
@@ -46,17 +54,18 @@ export class AuthService {
     return { token, user: { id: user.id, username: user.username, email: user.email }, profile: db.getProfile(user.id) };
   }
 
-  public static async login(username: string, passwordHashOrPlain: string): Promise<{ token: string; user: any; profile: any } | { error: string }> {
+  public static async login(username: string, password: string): Promise<{ token: string; user: any; profile: any } | { error: string }> {
     const user = db.getUserByUsername(username);
-    if (!user) {
+    // Guests have no password and cannot be logged into via this endpoint.
+    if (!user || user.isGuest || !user.passwordHash) {
       return { error: 'Invalid username or password' };
     }
 
-    if (user.passwordHash) {
-      const match = await bcrypt.compare(passwordHashOrPlain, user.passwordHash);
-      if (!match && passwordHashOrPlain !== user.passwordHash) {
-        return { error: 'Invalid username or password' };
-      }
+    // Compare the supplied plaintext against the stored bcrypt hash ONLY.
+    // (Never accept the raw hash as a password — that would be an auth bypass.)
+    const match = await bcrypt.compare(password, user.passwordHash);
+    if (!match) {
+      return { error: 'Invalid username or password' };
     }
 
     const profile = db.getProfile(user.id);

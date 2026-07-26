@@ -140,6 +140,9 @@ export class GameClient {
   public onAuthSuccess?: (userId: string, snake: SnakeData, config: ModeConfig) => void;
   public onRespawnResult?: (result: { success: boolean; message?: string; profile?: any; method?: string }) => void;
   public onAbilityResult?: (used: boolean) => void;
+  public onMatchInvite?: (r: { from: string; fromId: string; mode?: string }) => void; // §8 friend invite
+  // §7 Matchmaking-chosen server URL for Global Adventure ('' = default origin from serverBase()).
+  public preferredServer = '';
 
   // Local Authoritative Simulation Engine (for serverless environments like Vercel Cloud)
   private isLocalEngineRunning = false;
@@ -184,7 +187,8 @@ export class GameClient {
     }
 
     try {
-      this.socket = io(serverBase(), {
+      // §7 Global Adventure may pick a lower-latency regional server; '' = default origin.
+      this.socket = io(this.preferredServer || serverBase(), {
         transports: ['polling', 'websocket'],
         reconnection: true,
         reconnectionAttempts: 3,
@@ -212,6 +216,7 @@ export class GameClient {
 
       this.socket.on('respawn_result', (r: any) => this.onRespawnResult?.(r));
       this.socket.on('ability_result', (r: { used: boolean }) => this.onAbilityResult?.(r.used));
+      this.socket.on('match_invite', (r: { from: string; fromId: string; mode?: string }) => this.onMatchInvite?.(r)); // §8
       this.socket.on('disconnect', () => { this.isConnected = false; });
     } catch { /* ignored */ }
 

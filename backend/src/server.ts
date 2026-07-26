@@ -7,32 +7,68 @@ import { EconomyService } from './services/EconomyService';
 import { MissionService } from './services/MissionService';
 import { AdminService } from './services/AdminService';
 import { RewardsService } from './services/RewardsService';
+import { CouponService } from './services/CouponService';
+import { SocialService } from './services/SocialService';
+import { presence } from './services/Presence';
 import { sessionManager } from './services/GameSessionManager';
 import { getModeConfig } from './services/GameSessionService';
 import { ProgressionService } from './services/ProgressionService';
+import { gameConfig, clientConfig } from './config/GameConfig';
 import { GameMode, Evolution } from './types';
 import { db } from './db/Database';
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+
+// CORS — locked to an allowlist when ALLOWED_ORIGINS is set (comma-separated),
+// otherwise open for local dev. Set it in production to your web/app origins.
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
+const corsOrigin: any = ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS : '*';
+app.use(cors({ origin: corsOrigin }));
+app.use(express.json({ limit: '256kb' })); // cap body size — reject oversized payloads
 
 const server = http.createServer(app);
-const io = new SocketIOServer(server, { cors: { origin: '*', methods: ['GET', 'POST'] } });
+const io = new SocketIOServer(server, { cors: { origin: corsOrigin, methods: ['GET', 'POST'] } });
 
-interface SocketUser { userId: string; username: string; mode: GameMode; skin: string; evolution: string; region?: string; }
+// §sec Admin allowlist — comma-separated user ids in ADMIN_USER_IDS; the seeded demo
+// ranger is included so a fresh dev install still has an admin.
+const ADMIN_USER_IDS = new Set((process.env.ADMIN_USER_IDS || 'usr_ranger_alpha').split(',').map(s => s.trim()).filter(Boolean));
+
+// §sec Dependency-free in-memory rate limiter (per client IP + route bucket). Protects
+// auth (credential stuffing) and economy (reward farming) endpoints. Behind a proxy,
+// trust the first X-Forwarded-For hop. Buckets self-expire; a sweep prevents unbounded growth.
+const clientIp = (req: express.Request): string =>
+  (req.headers['x-forwarded-for']?.toString().split(',')[0].trim()) || req.socket.remoteAddress || 'unknown';
+
+function rateLimit(bucket: string, windowMs: number, max: number) {
+  const hits = new Map<string, { count: number; reset: number }>();
+  setInterval(() => { const now = Date.now(); for (const [k, v] of hits) if (v.reset < now) hits.delete(k); }, windowMs).unref?.();
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const key = bucket + ':' + clientIp(req);
+    const now = Date.now();
+    let e = hits.get(key);
+    if (!e || e.reset < now) { e = { count: 0, reset: now + windowMs }; hits.set(key, e); }
+    e.count++;
+    if (e.count > max) {
+      const retry = Math.ceil((e.reset - now) / 1000);
+      res.setHeader('Retry-After', String(retry));
+      return res.status(429).json({ error: `Too many requests — retry in ${retry}s` });
+    }
+    next();
+  };
+}
+
+// Strict on auth (credential stuffing / guest-spam); looser on general economy writes.
+const authLimiter = rateLimit('auth', 60_000, 20);
+const writeLimiter = rateLimit('write', 60_000, 90);
+
+interface SocketUser { userId: string; username: string; mode: GameMode; skin: string; evolution: string; region?: string; lastSeq: number; }
 const connectedSockets: Map<string, SocketUser> = new Map();
 
 const VALID_MODES: GameMode[] = ['classic', 'battle_royale', 'team', 'event'];
 const asMode = (m: any): GameMode => (VALID_MODES.includes(m) ? m : 'classic');
 
-// Respawn pricing — mirrors the RESPAWN OPTIONS panel.
-const RESPAWN_COST: Record<string, { stars: number; tickets: number; label: string }> = {
-  stars: { stars: 20, tickets: 0, label: 'Stars' },
-  ticket: { stars: 0, tickets: 1, label: 'Ticket' },
-  ad: { stars: 0, tickets: 0, label: 'Watch Ad' },
-  wait: { stars: 0, tickets: 0, label: 'Free Wait' },
-};
+// §12 Respawn pricing — sourced from the central config (mirrors the RESPAWN OPTIONS panel).
+const RESPAWN_COST = gameConfig.economy.respawn;
 
 const auth = (req: express.Request, res: express.Response) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
@@ -42,29 +78,37 @@ const auth = (req: express.Request, res: express.Response) => {
   return a;
 };
 
+// Admin-gated: valid token AND in the ADMIN_USER_IDS allowlist.
+const adminAuth = (req: express.Request, res: express.Response) => {
+  const a = auth(req, res); if (!a) return null;
+  if (!ADMIN_USER_IDS.has(a.userId)) { res.status(403).json({ error: 'Forbidden — admin access required' }); return null; }
+  return a;
+};
+
 // --------------------------------------------------------------- REST API
-app.post('/api/auth/register', async (req, res) => {
-  const { username, email, password } = req.body;
+app.post('/api/auth/register', authLimiter, async (req, res) => {
+  const { username, email, password } = req.body || {};
   if (!username || !email || !password) return res.status(400).json({ error: 'Missing required registration fields' });
-  const result = await AuthService.register(username, email, password);
+  if (typeof password !== 'string' || password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  const result = await AuthService.register(String(username), String(email), password);
   if ('error' in result) return res.status(400).json(result);
   res.json(result);
 });
 
-app.post('/api/auth/login', async (req, res) => {
-  const { username, password } = req.body;
+app.post('/api/auth/login', authLimiter, async (req, res) => {
+  const { username, password } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'Missing username or password' });
-  const result = await AuthService.login(username, password);
+  const result = await AuthService.login(String(username), String(password));
   if ('error' in result) return res.status(400).json(result);
   res.json(result);
 });
 
-app.post('/api/auth/guest', (req, res) => res.json(AuthService.createGuestAccount()));
+app.post('/api/auth/guest', authLimiter, (req, res) => res.json(AuthService.createGuestAccount()));
 
 // §5 Username availability + first-time onboarding
 app.get('/api/auth/username-check', (req, res) => res.json(AuthService.checkUsername(String(req.query.name || ''))));
 
-app.post('/api/auth/onboard', (req, res) => {
+app.post('/api/auth/onboard', authLimiter, (req, res) => {
   const { name, country, language } = req.body || {};
   const result = AuthService.onboardGuest(name, country, language);
   if ('error' in result) return res.status(400).json(result);
@@ -99,6 +143,10 @@ app.get('/api/modes', (_req, res) => {
   res.json({ modes: VALID_MODES.map(getModeConfig) });
 });
 
+// §12 Public gameplay config — lets the client mirror server balancing (XP curve,
+// evolution ladder, reward formula, world tunables) so offline play stays consistent.
+app.get('/api/config', (_req, res) => res.json(clientConfig()));
+
 app.get('/api/world/events', (_req, res) => {
   const events = sessionManager.getActiveSessions().map(s => s.getState().currentEvent).filter(Boolean);
   res.json({ events });
@@ -112,15 +160,17 @@ app.get('/api/rewards/catalog', (req, res) => {
   res.json(RewardsService.getCatalog(region));
 });
 
-app.post('/api/rewards/redeem', (req, res) => {
+app.post('/api/rewards/redeem', writeLimiter, (req, res) => {
   const a = auth(req, res); if (!a) return;
-  const { itemId, region } = req.body;
+  const { itemId, region } = req.body || {};
+  if (!itemId || typeof itemId !== 'string') return res.status(400).json({ error: 'itemId is required' });
   const result = RewardsService.redeem(a.userId, itemId, region || 'Global');
   res.json({ ...result, profile: result.profile ? withRank(result.profile) : undefined });
 });
 
-app.post('/api/shop/purchase', (req, res) => {
+app.post('/api/shop/purchase', writeLimiter, (req, res) => {
   const a = auth(req, res); if (!a) return;
+  if (!req.body?.itemId || typeof req.body.itemId !== 'string') return res.status(400).json({ error: 'itemId is required' });
   res.json(EconomyService.purchaseItem(a.userId, req.body.itemId));
 });
 
@@ -175,7 +225,14 @@ app.get('/api/missions', (req, res) => {
 
 app.post('/api/missions/claim', (req, res) => {
   const a = auth(req, res); if (!a) return;
-  res.json(MissionService.claimReward(a.userId, req.body.missionId));
+  const result = MissionService.claimReward(a.userId, req.body.missionId);
+  // §7 Claiming a mission may cross a coupon eligibility threshold — auto-grant if so.
+  if (result.success) {
+    const profile = db.getProfile(a.userId);
+    const grantedCoupons = CouponService.autoGrantEligible(a.userId, profile?.preferredRegion || 'Global');
+    return res.json({ ...result, grantedCoupons, profile: grantedCoupons.length ? withRank(db.getProfile(a.userId)) : withRank(result.profile) });
+  }
+  res.json(result);
 });
 
 app.get('/api/achievements', (req, res) => {
@@ -185,25 +242,45 @@ app.get('/api/achievements', (req, res) => {
 
 app.get('/api/leaderboard', (_req, res) => res.json({ leaderboard: db.getLeaderboard() }));
 
-app.post('/api/ads/claim', (req, res) => {
+app.post('/api/ads/claim', writeLimiter, (req, res) => {
   const a = auth(req, res); if (!a) return;
   const profile = db.getProfile(a.userId);
   if (!profile) return res.status(404).json({ error: 'Profile not found' });
-  const bonusStars = 500, bonusTickets = 2;
-  const updated = db.updateProfile(a.userId, { stars: profile.stars + bonusStars, tickets: profile.tickets + bonusTickets });
-  res.json({ success: true, message: `Claimed Double Reward! +${bonusStars} Stars & +${bonusTickets} Tickets.`, bonusStars, bonusTickets, profile: updated });
+  const { stars: bonusStars, tickets: bonusTickets, cooldownMs } = gameConfig.economy.ad;
+  const last = profile.lastAdClaim || 0;
+  const remaining = cooldownMs - (Date.now() - last);
+  if (remaining > 0) return res.status(429).json({ error: `Please wait ${Math.ceil(remaining / 1000)}s before claiming another ad reward` });
+  const updated = db.updateProfile(a.userId, { stars: profile.stars + bonusStars, tickets: profile.tickets + bonusTickets, lastAdClaim: Date.now() });
+  res.json({ success: true, message: `Claimed Double Reward! +${bonusStars} Stars & +${bonusTickets} Tickets.`, bonusStars, bonusTickets, profile: withRank(updated) });
 });
 
-app.post('/api/match/summary', (req, res) => {
+// Clamp a client-reported number into a sane, finite range (anti-cheat: the client
+// is never trusted, so a forged match summary can't mint unbounded currency).
+const clampNum = (v: any, min: number, max: number): number => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return min;
+  return Math.min(max, Math.max(min, n));
+};
+
+app.post('/api/match/summary', writeLimiter, (req, res) => {
   const a = auth(req, res); if (!a) return;
-  const { score = 0, kills = 0, placement = 10, survivalSeconds = 60, distanceKm = 0, areasVisited = 0, cherriesEaten = 0 } = req.body;
+  const b = req.body || {};
+  const cl = gameConfig.economy.clamps;
+  const score = clampNum(b.score, 0, cl.maxScore);          // hard cap per match
+  const kills = clampNum(b.kills, 0, cl.maxKills);
+  const placement = Math.round(clampNum(b.placement, 1, 100));
+  const survivalSeconds = clampNum(b.survivalSeconds, 0, cl.maxSurvivalSeconds);
+  const distanceKm = clampNum(b.distanceKm, 0, cl.maxDistanceKm);
+  const areasVisited = Math.round(clampNum(b.areasVisited, 0, 50));
+  const cherriesEaten = Math.round(clampNum(b.cherriesEaten, 0, 10000));
   const profile = db.getProfile(a.userId);
   if (!profile) return res.status(404).json({ error: 'Profile not found' });
 
   const won = placement === 1;
-  const earnedStars = Math.floor(score / 10) + kills * 50 + (won ? 500 : 0);
-  const earnedXP = Math.floor(score / 5) + kills * 100 + (won ? 300 : 0);
-  const earnedEvoXP = Math.floor(score / 50) + kills * 10 + (won ? 50 : 0);
+  const m = gameConfig.economy.match;
+  const earnedStars = Math.floor(score / m.starsPerScore) + kills * m.starsPerKill + (won ? m.starsWinBonus : 0);
+  const earnedXP = Math.floor(score / m.xpPerScore) + kills * m.xpPerKill + (won ? m.xpWinBonus : 0);
+  const earnedEvoXP = Math.floor(score / m.evoXpPerScore) + kills * m.evoXpPerKill + (won ? m.evoXpWinBonus : 0);
 
   // Persistent stats
   db.updateProfile(a.userId, {
@@ -230,8 +307,12 @@ app.post('/api/match/summary', (req, res) => {
   // Server-authoritative XP / Evolution XP with account level-ups
   const { profile: updated, levelsGained } = db.grantRewards(a.userId, { stars: earnedStars, xp: earnedXP, evoXp: earnedEvoXP });
 
+  // §7 Auto-grant any coupons the player just became eligible for (appears in inventory).
+  const grantedCoupons = CouponService.autoGrantEligible(a.userId, updated?.preferredRegion || 'Global');
+  const finalProfile = grantedCoupons.length ? db.getProfile(a.userId) : updated;
+
   const scoreEvolution = ProgressionService.scoreToEvolution(Math.round(score));
-  res.json({ success: true, earnedStars, earnedXP, earnedEvoXP, levelsGained, placement, kills, score: Math.round(score), scoreEvolution, profile: withRank(updated) });
+  res.json({ success: true, earnedStars, earnedXP, earnedEvoXP, levelsGained, placement, kills, score: Math.round(score), scoreEvolution, grantedCoupons, profile: withRank(finalProfile) });
 });
 
 app.post('/api/match/abandon', (req, res) => {
@@ -246,8 +327,116 @@ app.get('/api/screens/:screenId', (req, res) => {
   res.json({ screenId: req.params.screenId, status: 'active', config: { adInventoryReady: true, region: 'North America East 30Hz' } });
 });
 
-app.get('/api/admin/telemetry', (_req, res) => {
+app.get('/api/admin/telemetry', (req, res) => {
+  if (!adminAuth(req, res)) return;
   res.json({ telemetry: AdminService.getTelemetry(sessionManager.getActiveModeCount(), connectedSockets.size), auditLogs: AdminService.getAuditLogs() });
+});
+
+// --------------------------------------------------------------- §7 Coupon Management
+// Admin: full CRUD + enable/disable + redemption tracking. All admin-gated.
+app.get('/api/admin/coupons', (req, res) => {
+  if (!adminAuth(req, res)) return;
+  res.json({ coupons: CouponService.list() });
+});
+app.post('/api/admin/coupons', (req, res) => {
+  if (!adminAuth(req, res)) return;
+  if (!req.body?.title || !req.body?.storeName) return res.status(400).json({ error: 'title and storeName are required' });
+  res.json({ success: true, coupon: CouponService.create(req.body) });
+});
+app.patch('/api/admin/coupons/:id', (req, res) => {
+  if (!adminAuth(req, res)) return;
+  const updated = CouponService.update(req.params.id, req.body || {});
+  if (!updated) return res.status(404).json({ error: 'Coupon not found' });
+  res.json({ success: true, coupon: updated });
+});
+app.post('/api/admin/coupons/:id/enable', (req, res) => {
+  if (!adminAuth(req, res)) return;
+  const updated = CouponService.setEnabled(req.params.id, true);
+  if (!updated) return res.status(404).json({ error: 'Coupon not found' });
+  res.json({ success: true, coupon: updated });
+});
+app.post('/api/admin/coupons/:id/disable', (req, res) => {
+  if (!adminAuth(req, res)) return;
+  const updated = CouponService.setEnabled(req.params.id, false);
+  if (!updated) return res.status(404).json({ error: 'Coupon not found' });
+  res.json({ success: true, coupon: updated });
+});
+app.delete('/api/admin/coupons/:id', (req, res) => {
+  if (!adminAuth(req, res)) return;
+  res.json({ success: CouponService.remove(req.params.id) });
+});
+app.get('/api/admin/coupons/:id/redemptions', (req, res) => {
+  if (!adminAuth(req, res)) return;
+  res.json({ redemptions: CouponService.redemptions(req.params.id) });
+});
+
+// Player: list claimable coupons + claim one (server-driven grant into inventory).
+app.get('/api/coupons/available', (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const region = (req.query.region as string) || 'Global';
+  res.json({ coupons: CouponService.availableFor(a.userId, region) });
+});
+app.post('/api/coupons/claim', writeLimiter, (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  if (!req.body?.couponId || typeof req.body.couponId !== 'string') return res.status(400).json({ error: 'couponId is required' });
+  const result = CouponService.claim(a.userId, req.body.couponId, req.body?.region || 'Global');
+  if (!result.success) return res.status(400).json(result);
+  res.json({ ...result, profile: withRank(result.profile) });
+});
+
+// --------------------------------------------------------------- §8 Social (server-driven)
+app.get('/api/social/overview', (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  res.json(SocialService.overview(a.userId));
+});
+app.post('/api/social/request', writeLimiter, (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const r = SocialService.sendRequest(a.userId, req.body?.username);
+  res.status(r.success ? 200 : 400).json({ ...r, ...SocialService.overview(a.userId) });
+});
+app.post('/api/social/respond', (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const action = req.body?.action === 'accept' ? 'accept' : 'reject';
+  const r = SocialService.respond(a.userId, String(req.body?.userId || ''), action);
+  res.status(r.success ? 200 : 400).json({ ...r, ...SocialService.overview(a.userId) });
+});
+app.post('/api/social/unfriend', (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const r = SocialService.unfriend(a.userId, String(req.body?.userId || ''));
+  res.json({ ...r, ...SocialService.overview(a.userId) });
+});
+app.post('/api/social/block', (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const r = SocialService.block(a.userId, String(req.body?.userId || ''));
+  res.status(r.success ? 200 : 400).json({ ...r, ...SocialService.overview(a.userId) });
+});
+app.post('/api/social/unblock', (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const r = SocialService.unblock(a.userId, String(req.body?.userId || ''));
+  res.json({ ...r, ...SocialService.overview(a.userId) });
+});
+// Invite a friend to your current match — delivered live to their sockets if online.
+app.post('/api/social/invite', writeLimiter, (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const otherId = String(req.body?.userId || '');
+  if (!SocialService.canInvite(a.userId, otherId)) return res.status(400).json({ success: false, message: 'Friend is offline or not on your list' });
+  const mode = connectedSockets.get([...connectedSockets].find(([, u]) => u.userId === a.userId)?.[0] || '')?.mode;
+  for (const [sid, u] of connectedSockets) {
+    if (u.userId === otherId) io.to(sid).emit('match_invite', { from: a.username, fromId: a.userId, mode });
+  }
+  res.json({ success: true, message: 'Invite sent' });
+});
+
+// Liveness/readiness probe for hosting platforms + uptime checks.
+app.get('/health', (_req, res) => res.json({ status: 'ok', uptime: process.uptime(), modes: sessionManager.getActiveModeCount() }));
+
+// Unknown API route → clean JSON 404 (never an HTML error page the client can't parse).
+app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
+
+// Central error handler — any thrown/next(err) returns JSON, never leaks a stack trace.
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('[api-error]', err?.message || err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 // --------------------------------------------------------------- realtime
@@ -269,7 +458,8 @@ io.on('connection', (socket) => {
       sessionManager.findPlayerSession(a.userId)?.removePlayer(a.userId);
     }
 
-    connectedSockets.set(socket.id, { userId: a.userId, username: a.username, mode, skin, evolution, region });
+    connectedSockets.set(socket.id, { userId: a.userId, username: a.username, mode, skin, evolution, region, lastSeq: 0 });
+    presence.add(a.userId); // §8 mark online for friends' status
     socket.join(mode);
 
     const session = sessionManager.getSession(mode);
@@ -280,7 +470,12 @@ io.on('connection', (socket) => {
   socket.on('client_input', (data: { seq: number; angle: number; boosting: boolean }) => {
     const user = connectedSockets.get(socket.id);
     if (!user) return;
-    sessionManager.getSession(user.mode).handlePlayerInput(user.userId, data.angle, !!data.boosting, data.seq);
+    // §sec Replay/reorder protection — only accept strictly-increasing sequence numbers,
+    // so a captured input frame can't be replayed and stale/duplicate frames are dropped.
+    const seq = Number(data?.seq);
+    if (!Number.isFinite(seq) || seq <= user.lastSeq) return;
+    user.lastSeq = seq;
+    sessionManager.getSession(user.mode).handlePlayerInput(user.userId, data.angle, !!data.boosting, seq);
   });
 
   socket.on('activate_ability', () => {
@@ -324,6 +519,7 @@ io.on('connection', (socket) => {
     if (user) {
       sessionManager.getSession(user.mode).handlePlayerDisconnect(user.userId);
       connectedSockets.delete(socket.id);
+      presence.remove(user.userId); // §8 last socket gone → offline
     }
   });
 });

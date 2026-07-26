@@ -1,4 +1,4 @@
-import { UserAccount, PlayerProfile, MissionObjective, Achievement, AntiCheatViolation, ProgressMetric, Evolution } from '../types';
+import { UserAccount, PlayerProfile, MissionObjective, Achievement, AntiCheatViolation, ProgressMetric, Evolution, CouponDefinition, CouponRedemption, SocialGraph } from '../types';
 import { ProgressionService } from '../services/ProgressionService';
 import { SupabaseSync } from './SupabaseSync';
 import bcrypt from 'bcryptjs';
@@ -12,6 +12,11 @@ export class Database {
   private achievements: Map<string, Achievement[]> = new Map();
   private auditLogs: AntiCheatViolation[] = [];
   private globalLeaderboard: Map<string, { displayName: string; score: number; wins: number }> = new Map();
+  // §7 Server-driven coupon system — admin-managed definitions + redemption ledger.
+  private couponDefs: Map<string, CouponDefinition> = new Map();
+  private couponRedemptions: CouponRedemption[] = [];
+  // §8 Social graph — per-user friends / pending requests / blocks (persisted).
+  private social: Map<string, SocialGraph> = new Map();
 
   // §10 File-based persistence — profiles/progress/leaderboard survive restarts.
   // Swap load()/flush() for a Postgres/Redis client to go fully cloud/multi-node.
@@ -58,6 +63,9 @@ export class Database {
       missions: Array.from(this.missions.entries()),
       achievements: Array.from(this.achievements.entries()),
       leaderboard: Array.from(this.globalLeaderboard.entries()),
+      couponDefs: Array.from(this.couponDefs.values()),
+      couponRedemptions: this.couponRedemptions,
+      social: Array.from(this.social.entries()),
     };
     try {
       fs.mkdirSync(path.dirname(this.dataFile), { recursive: true });
@@ -75,6 +83,9 @@ export class Database {
     if (data.missions) for (const [k, v] of data.missions) this.missions.set(k, v);
     if (data.achievements) for (const [k, v] of data.achievements) this.achievements.set(k, v);
     if (data.leaderboard) for (const [k, v] of data.leaderboard) this.globalLeaderboard.set(k, v);
+    if (data.couponDefs) for (const d of data.couponDefs) this.couponDefs.set(d.id, d);
+    if (data.couponRedemptions) this.couponRedemptions = data.couponRedemptions;
+    if (data.social) for (const [k, v] of data.social) this.social.set(k, v);
   }
 
   private load() {
@@ -146,6 +157,16 @@ export class Database {
     this.globalLeaderboard.set('bot_2', { displayName: 'JunglePython', score: 14100, wins: 7 });
     this.globalLeaderboard.set('bot_3', { displayName: 'CobraNova', score: 12800, wins: 5 });
     this.globalLeaderboard.set('bot_4', { displayName: 'MambaMint', score: 9400, wins: 3 });
+
+    // §7 Example coupon definitions — generic partner labels only (no hard-coded real brands).
+    // Admins edit/add these at runtime; nothing here is baked into the client.
+    const now = new Date().toISOString();
+    const seedCoupons: CouponDefinition[] = [
+      { id: 'cpn_partner_cafe', title: '10% Off at Partner Cafe', storeName: 'Approved Food Partner', discountText: '10% off your next order', icon: '☕', enabled: true, expiryDate: '2026-12-31', regions: 'all', minLevel: 3, minPrestige: 0, costStars: 800, redemptionLimit: 500, perUserLimit: 1, redemptionCount: 0, autoGrant: false, createdAt: now, updatedAt: now },
+      { id: 'cpn_partner_retail', title: 'Partner Retail Voucher', storeName: 'Approved Retail Partner', discountText: '₹100 store credit', icon: '🛍️', enabled: true, expiryDate: '2026-12-31', regions: ['India', 'Global'], minLevel: 8, minPrestige: 0, costStars: 2000, redemptionLimit: 200, perUserLimit: 1, redemptionCount: 0, autoGrant: false, createdAt: now, updatedAt: now },
+      { id: 'cpn_welcome', title: 'Welcome Explorer Gift', storeName: 'Anaconda Park', discountText: 'Free seasonal trail effect', icon: '🎁', enabled: true, expiryDate: '2026-12-31', regions: 'all', minLevel: 1, minPrestige: 0, costStars: 0, redemptionLimit: -1, perUserLimit: 1, redemptionCount: 0, autoGrant: true, createdAt: now, updatedAt: now },
+    ];
+    for (const c of seedCoupons) this.couponDefs.set(c.id, c);
   }
 
   public createUser(username: string, email: string, passwordHash: string, isGuest: boolean = false): { user: UserAccount; profile: PlayerProfile } {
@@ -302,6 +323,32 @@ export class Database {
       .sort((a, b) => b.score - a.score)
       .map((entry, index) => ({ rank: index + 1, ...entry }));
   }
+
+  // ------------------------------------------------------------- §7 coupons
+  public listCouponDefs(): CouponDefinition[] { return Array.from(this.couponDefs.values()); }
+  public getCouponDef(id: string): CouponDefinition | undefined { return this.couponDefs.get(id); }
+  public upsertCouponDef(def: CouponDefinition): CouponDefinition { this.couponDefs.set(def.id, def); this.markDirty(); return def; }
+  public deleteCouponDef(id: string): boolean { const ok = this.couponDefs.delete(id); if (ok) this.markDirty(); return ok; }
+
+  public recordCouponRedemption(r: CouponRedemption) {
+    this.couponRedemptions.unshift(r);
+    if (this.couponRedemptions.length > 5000) this.couponRedemptions.pop();
+    this.markDirty();
+  }
+  public getCouponRedemptions(definitionId?: string): CouponRedemption[] {
+    return definitionId ? this.couponRedemptions.filter(r => r.definitionId === definitionId) : this.couponRedemptions;
+  }
+  public countUserCouponRedemptions(definitionId: string, userId: string): number {
+    return this.couponRedemptions.filter(r => r.definitionId === definitionId && r.userId === userId).length;
+  }
+
+  // ------------------------------------------------------------- §8 social graph
+  public getSocial(userId: string): SocialGraph {
+    let g = this.social.get(userId);
+    if (!g) { g = { friends: [], incoming: [], outgoing: [], blocked: [] }; this.social.set(userId, g); }
+    return g;
+  }
+  public saveSocial() { this.markDirty(); }
 }
 
 export const db = new Database();

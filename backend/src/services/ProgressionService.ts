@@ -1,25 +1,21 @@
 import { Evolution, EvolutionRequirement, RankInfo, SCORE_EVOLUTION_THRESHOLDS } from '../types';
+import { gameConfig } from '../config/GameConfig';
 
-export const MAX_LEVEL = 1000;
+// §12 All progression tunables now come from the central config (JSON-overridable).
+export const MAX_LEVEL = gameConfig.progression.maxLevel;
 
 // Evolution XP awarded per mission category on claim
-export const MISSION_EVO_XP: Record<string, number> = {
-  daily: 5,
-  weekly: 25,
-  event: 50,
-};
+export const MISSION_EVO_XP: Record<string, number> = gameConfig.progression.missionEvoXp;
 
 // Evolution ladder — gated by BOTH account level and Evolution XP (never by score alone).
 // Score milestones are for the in-match visual stage only (see SCORE_EVOLUTION_THRESHOLDS).
-export const EVOLUTION_REQS: EvolutionRequirement[] = [
-  { evolution: 'Baby',   level: 1,    evoXp: 0 },
-  { evolution: 'Young',  level: 51,   evoXp: 500 },
-  { evolution: 'Teen',   level: 101,  evoXp: 1000 },
-  { evolution: 'Adult',  level: 201,  evoXp: 2500 },
-  { evolution: 'Elite',  level: 501,  evoXp: 8000 },
-  { evolution: 'Titan',  level: 801,  evoXp: 20000 },
-  { evolution: 'Legend', level: 1000, evoXp: 40000 }, // also requires prestige >= 1
-];
+// `minPrestige` gates the endgame stages (Legend = 1, King = 2).
+export const EVOLUTION_REQS: EvolutionRequirement[] = gameConfig.progression.evolutionLadder.map(
+  ({ evolution, level, evoXp }) => ({ evolution, level, evoXp })
+);
+const EVO_MIN_PRESTIGE: Record<string, number> = Object.fromEntries(
+  gameConfig.progression.evolutionLadder.map(r => [r.evolution, r.minPrestige])
+);
 
 // Rank ladder by account level band; each band has 3 divisions (III -> I).
 const RANK_TIERS: Array<{ tier: string; min: number; max: number; color: string }> = [
@@ -35,7 +31,7 @@ export class ProgressionService {
   // XP required to advance FROM `level` to `level+1`. Long-term curve.
   static xpToNext(level: number): number {
     if (level >= MAX_LEVEL) return Infinity;
-    return 300 + (level - 1) * 80;
+    return gameConfig.progression.xpBase + (level - 1) * gameConfig.progression.xpPerLevel;
   }
 
   // Apply XP, rolling level-ups. Returns the new level/xp and how many levels gained.
@@ -53,10 +49,9 @@ export class ProgressionService {
   }
 
   static unlockedEvolutions(level: number, evoXp: number, prestige: number): Evolution[] {
-    return EVOLUTION_REQS.filter(r => {
-      if (r.evolution === 'Legend') return prestige >= 1 && level >= r.level && evoXp >= r.evoXp;
-      return level >= r.level && evoXp >= r.evoXp;
-    }).map(r => r.evolution);
+    return EVOLUTION_REQS.filter(r =>
+      prestige >= (EVO_MIN_PRESTIGE[r.evolution] ?? 0) && level >= r.level && evoXp >= r.evoXp
+    ).map(r => r.evolution);
   }
 
   static nextEvolution(level: number, evoXp: number, prestige: number): EvolutionRequirement | null {

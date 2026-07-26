@@ -72,15 +72,6 @@ export const BOSSES = [
   { name: 'Venom Emperor', icon: '👑', kingdom: 'Final' },
 ];
 
-export interface Clan { id: string; name: string; icon: string; color: string; }
-export const CLANS: Clan[] = [
-  { id: 'forest',  name: 'Forest Clan',  icon: '🌳', color: '#2E7D32' },
-  { id: 'ocean',   name: 'Ocean Clan',   icon: '🌊', color: '#0D47A1' },
-  { id: 'fire',    name: 'Fire Clan',    icon: '🔥', color: '#C62828' },
-  { id: 'ice',     name: 'Ice Clan',     icon: '❄️', color: '#0097A7' },
-  { id: 'blossom', name: 'Blossom Clan', icon: '🌸', color: '#AD1457' },
-];
-
 export const SEASONS = [
   { n: 1, title: 'The Lost Prince' },
   { n: 2, title: 'Rise of the Venom Order' },
