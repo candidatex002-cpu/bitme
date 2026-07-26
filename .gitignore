@@ -22,3 +22,7 @@ backend/data/
 # Logs
 *.log
 npm-debug.log*
+
+# Mobile Binaries
+*.apk
+*.aab
