@@ -134,6 +134,11 @@ const LANDMARKS = [
   { name: 'College', x: 2365, y: 2245 }, { name: 'Bridge', x: 1565, y: 2445 },
 ];
 
+const HAT_ICONS: Record<string, string> = {
+  crown: '👑', pirate: '🏴‍☠️', viking: '🪓', cowboy: '🤠', santa: '🎅',
+  graduation: '🎓', chef: '🧑‍🍳', samurai: '⚔️', wizard: '🧙', police: '👮',
+};
+
 interface Settings {
   sfx: boolean;
   music: boolean;
@@ -161,6 +166,14 @@ class AnacondaPark {
   private missions: any[] = [];
   private achievements: any[] = [];
   private leaderboard: any[] = [];
+
+  private showKillToast(msg: string) {
+    const el = document.createElement('div');
+    el.className = 'kill-toast-pop';
+    el.innerText = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1200);
+  }
 
   private screen: Screen = 'app';
   private page: Page = 'home';
@@ -1279,12 +1292,21 @@ class AnacondaPark {
     const heartsRow = document.getElementById('hud-hearts-row');
     if (heartsRow) heartsRow.innerHTML = this.renderHeartsHTML(hp, maxHp, this.lastHp);
     this.lastHp = hp;
+
+    // Floating Kill Toast Notification
+    const kills = me.kills ?? 0;
+    if (this.lastKills !== undefined && kills > this.lastKills) {
+      this.showKillToast(`⚔️ +${kills - this.lastKills} Kill!`);
+    }
+    this.lastKills = kills;
+
     setT('hv-score', String(Math.round(me.score)));
     setT('hud-stage', `${me.evolution || me.stage} · Lv ${me.level}`);
     const cd = me.abilityCooldown ?? 0;
     const badge = document.getElementById('ability-badge'); const cdEl = document.getElementById('ability-cd');
     if (badge && cdEl) { badge.classList.toggle('ready', cd <= 0); cdEl.innerText = cd <= 0 ? 'READY' : `${Math.ceil(cd)}s`; }
-    // Active power status (🍄 super / 🛡️ shield / ⚡ speed) with live countdown
+
+    // Active power status (🍄 super / 🛡️ shield / ⚡ speed)
     const powers: string[] = [];
     const superT = (me as any).superTimer ?? 0;
     if (superT > 0) powers.push(`<span class="pwr super">🍄 ${Math.ceil(superT)}s</span>`);
@@ -1293,15 +1315,24 @@ class AnacondaPark {
     const ps = document.getElementById('power-status');
     if (ps) { if (powers.length) { ps.style.display = 'flex'; ps.innerHTML = powers.join(''); } else ps.style.display = 'none'; }
     document.getElementById('touch-ability')?.classList.toggle('cooling', cd > 0);
+
+    // Event & Battle Royale Mode Header
     const evt = document.getElementById('hud-event');
     const matchTimer = (state as any).matchTimer as number | undefined;
+    const aliveCount = state.snakes.filter(s => s.isAlive).length;
     if (evt) {
-      if (typeof matchTimer === 'number') { // §2 Battle Royale countdown
-        const mm = Math.floor(matchTimer / 60), ss = matchTimer % 60;
-        evt.style.display = 'block'; evt.innerText = `⏱️ ${mm}:${String(ss).padStart(2, '0')}`;
-      } else if (state.currentEvent) { evt.style.display = 'block'; evt.innerText = `${state.currentEvent.icon} ${state.currentEvent.timerSeconds}s`; }
-      else evt.style.display = 'none';
+      if (this.selectedUIMode === 'battle_royale' || typeof matchTimer === 'number') {
+        const mm = Math.floor((matchTimer || 0) / 60), ss = (matchTimer || 0) % 60;
+        evt.style.display = 'block';
+        evt.innerHTML = `👥 <b>${aliveCount}</b> Alive · ⚔️ <b>${kills}</b> Kills · ⏱️ <b>${mm}:${String(ss).padStart(2, '0')}</b>`;
+      } else if (state.currentEvent) {
+        evt.style.display = 'block'; evt.innerText = `${state.currentEvent.icon} ${state.currentEvent.timerSeconds}s`;
+      } else {
+        evt.style.display = 'none';
+      }
     }
+
+    // Team Battle HUD Header
     const ts = document.getElementById('team-scores');
     if (ts) {
       if (state.teamScores) {
@@ -1310,7 +1341,10 @@ class AnacondaPark {
         const blueAlive = state.snakes.filter(s => s.team === 'blue' && s.isAlive).length;
         const rs = state.teamScores.red, bs = state.teamScores.blue;
         const total = Math.max(1, rs + bs);
-        // Teammate list — your allies with a live/down dot (up to 5 shown).
+        const myTeamSnakes = state.snakes.filter(s => s.team === myTeam && s.isAlive);
+        const topTeamScore = Math.max(...myTeamSnakes.map(s => s.score), 0);
+        const isMVP = me.score >= topTeamScore && me.score > 0;
+
         const mates = state.snakes.filter(s => s.team === myTeam && s.id !== me.id).slice(0, 5);
         const matesHtml = mates.length
           ? `<div class="team-mates">${mates.map(m => `<span class="tm ${m.isAlive ? '' : 'down'}"><i class="tm-dot"></i>${m.displayName}</span>`).join('')}</div>`
@@ -1320,13 +1354,25 @@ class AnacondaPark {
           <div class="team-hud-bar">
             <div class="ts red ${myTeam === 'red' ? 'mine' : ''}">🔴 <b>${rs}</b><span class="ts-alive">${redAlive} alive</span></div>
             <div class="ts blue ${myTeam === 'blue' ? 'mine' : ''}">🔵 <b>${bs}</b><span class="ts-alive">${blueAlive} alive</span></div>
+            ${isMVP ? '<div class="ts mvp-badge">⭐ MVP</div>' : ''}
           </div>
           <div class="team-bar"><div class="team-bar-red" style="width:${Math.round(rs / total * 100)}%"></div><div class="team-bar-blue" style="width:${Math.round(bs / total * 100)}%"></div></div>
           ${matesHtml}`;
       } else ts.style.display = 'none';
     }
+
+    // Top 10 Leaderboard
     const lb = document.getElementById('hud-lb-rows');
-    if (lb) lb.innerHTML = state.leaderboard.slice(0, 6).map((r, i) => `<div class="lb-row ${r.id === this.client.localUserId ? 'me' : ''}"><span>${i + 1}. ${r.name}</span><span>${r.score}</span></div>`).join('');
+    if (lb) {
+      lb.innerHTML = state.leaderboard.slice(0, 10).map((r, i) => {
+        const crown = i === 0 ? '👑 ' : i === 1 ? '🥈 ' : i === 2 ? '🥉 ' : `<span class="lb-num">${i + 1}.</span> `;
+        const hatIco = (r as any).hat ? `${HAT_ICONS[(r as any).hat] || ''} ` : '';
+        return `<div class="lb-row ${r.id === this.client.localUserId ? 'me' : ''}">
+          <span>${crown}${hatIco}${r.name}</span>
+          <span>${r.score}</span>
+        </div>`;
+      }).join('');
+    }
   }
 
   // ------------------------------------------------------------- render dispatch

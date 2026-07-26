@@ -670,6 +670,35 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .team-scores .ts.red { background: rgba(239,90,69,0.16); color: #c0392b; border: 1px solid #f0a99e; }
 .team-scores .ts.blue { background: rgba(63,158,232,0.16); color: #1f6fb0; border: 1px solid #a9d3f2; }
 .team-scores .ts.mine { box-shadow: 0 0 0 2px currentColor; }
+.team-scores .ts.mvp-badge {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #ffffff;
+  border: 1px solid #fbbf24;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.6);
+}
+.kill-toast-pop {
+  position: fixed;
+  top: 18vh;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: #ffffff;
+  font-family: var(--font-title);
+  font-weight: 900;
+  font-size: clamp(0.9rem, 2.4vw, 1.3rem);
+  padding: 8px 18px;
+  border-radius: 30px;
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.4);
+  z-index: 90;
+  pointer-events: none;
+  animation: killToastPop 1.2s cubic-bezier(0.2, 1.2, 0.4, 1) forwards;
+}
+@keyframes killToastPop {
+  0% { transform: translate(-50%, 20px) scale(0.7); opacity: 0; }
+  20% { transform: translate(-50%, 0) scale(1.15); opacity: 1; }
+  80% { transform: translate(-50%, -10px) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -30px) scale(0.9); opacity: 0; }
+}
 .team-scores .ts-alive { font-size: 0.62rem; font-weight: 700; opacity: 0.8; }
 .team-bar { width: min(80vw, 320px); height: 6px; border-radius: 6px; overflow: hidden; display: flex; background: rgba(0,0,0,0.08); }
 .team-bar-red { background: #ef5a45; }
