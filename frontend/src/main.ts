@@ -937,6 +937,27 @@ class AnacondaPark {
     if (mini) mini.addEventListener('click', (e) => { e.stopPropagation(); document.querySelector('.hud')?.classList.toggle('mini-hidden'); });
   }
 
+  private renderHeartsHTML(hp: number, maxHp: number = 100): string {
+    const totalHearts = 5;
+    const hpPerHeart = maxHp / totalHearts; // 20 HP per heart
+    let html = '';
+    for (let i = 0; i < totalHearts; i++) {
+      const fillPct = Math.max(0, Math.min(100, ((hp - i * hpPerHeart) / hpPerHeart) * 100));
+      html += `
+        <div class="heart-unit" title="${Math.max(0, Math.round(hp))}/${maxHp} HP">
+          <svg class="heart-bg" viewBox="0 0 24 24">
+            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="#E2E8F0" stroke="#94A3B8" stroke-width="1.5"/>
+          </svg>
+          <div class="heart-fill-clip" style="height:${fillPct}%;">
+            <svg class="heart-fill-svg" viewBox="0 0 24 24">
+              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="#EF4444"/>
+            </svg>
+          </div>
+        </div>`;
+    }
+    return html;
+  }
+
   // ------------------------------------------------------------- HUD
   private updateHUD(state: GameStateTick, me?: SnakeData) {
     if (!me) return;
@@ -954,6 +975,9 @@ class AnacondaPark {
           ? 'linear-gradient(90deg, #f59e0b, #fbbf24)'
           : 'linear-gradient(90deg, #10b981, #34d399)';
     }
+    const heartsRow = document.getElementById('hud-hearts-row');
+    if (heartsRow) heartsRow.innerHTML = this.renderHeartsHTML(hp, maxHp);
+    setT('hud-hearts-hp-text', `${hp} / ${maxHp} HP`);
     this.lastHp = hp;
     setT('hv-score', String(Math.round(me.score)));
     setT('hud-stage', `${me.evolution || me.stage} · Lv ${me.level}`);
@@ -1739,16 +1763,17 @@ class AnacondaPark {
         <button id="nav-pause" class="hud-pause">⏸</button>
         <div class="hud-tl-main">
           <div class="hud-scoreline"><span class="hud-score" id="hv-score">0</span><span class="hud-stage" id="hud-stage">Baby · Lv 1</span></div>
-          <div class="hud-life-bar" id="hud-hp-bar">
-            <span class="hud-heart-ico">❤️</span>
-            <div class="hud-hp-track">
-              <div class="hud-hp-fill" id="hs-health" style="width:100%"></div>
-              <div class="hud-hp-txt" id="hv-health">100 / 100 HP</div>
-            </div>
-            <div class="hud-chances-badge" id="hud-chances" title="Play Chances">❤️ × 3</div>
-          </div>
         </div>
       </div>
+
+      <!-- Separate Top-Middle Floating Hearts Section -->
+      <div class="hud-top-middle-hearts hud-panel" id="hud-hearts-container">
+        <div class="hearts-row" id="hud-hearts-row">
+          ${this.renderHeartsHTML(100, 100)}
+        </div>
+        <div class="hearts-hp-text" id="hud-hearts-hp-text">100 / 100 HP</div>
+      </div>
+
       <div class="power-status" id="power-status" style="display:none;"></div>
       <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
       <div class="team-scores" id="team-scores" style="display:none;"></div>
@@ -1766,7 +1791,13 @@ class AnacondaPark {
   private renderPause() {
     const sw = (on: boolean, key: string) => `<button class="switch ${on ? 'on' : ''}" data-pset="${key}"></button>`;
     const cpos = this.settings.controlPos || 'right';
+    const hp = Math.max(0, Math.round(this.lastHp || 100));
     return `<div class="overlay"><div class="modal" style="text-align:center;max-width:400px;"><div class="section-title" style="justify-content:center;">⏸️ Paused</div>
+      <div class="pause-hearts-card">
+        <div class="hearts-title">❤️ Snake Health</div>
+        <div class="hearts-row">${this.renderHeartsHTML(hp, 100)}</div>
+        <div class="hearts-hp-text">${hp} / 100 HP</div>
+      </div>
       <div class="pause-settings">
         <div class="toggle" style="flex-direction:column;align-items:flex-start;gap:6px;">
           <span class="t-label">🕹️ Controller Position</span>

@@ -382,33 +382,94 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   font-family: var(--font-title); font-weight: 800;
   font-size: clamp(0.5rem, 1.4vw, 0.7rem); color: var(--green-deep);
 }
-.hud-life-bar {
-  display: flex; align-items: center; gap: 5px; margin-top: 3px; width: 100%;
+/* ---------------------------------------------------------------- Top Middle Floating Hearts HUD */
+.hud-top-middle-hearts {
+  position: absolute;
+  top: clamp(6px, 1.5vh, 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 5px 16px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1.5px solid var(--line);
+  border-radius: 30px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
 }
-.hud-heart-ico {
-  font-size: clamp(0.75rem, 2vw, 0.95rem); animation: heartBeat 1.8s infinite ease-in-out; flex-shrink: 0;
+
+.hearts-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
 }
-@keyframes heartBeat {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.18); }
+
+.heart-unit {
+  position: relative;
+  width: 22px;
+  height: 20px;
+  flex-shrink: 0;
+  display: inline-block;
 }
-.hud-hp-track {
-  position: relative; flex: 1; height: clamp(10px, 1.8vh, 15px); background: #e2e8f0; border-radius: 8px; overflow: hidden;
-  box-shadow: inset 0 1px 3px rgba(0,0,0,0.15); min-width: 60px;
+
+.heart-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
-.hud-hp-fill {
-  position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 8px;
-  transition: width 0.25s ease, background 0.25s ease;
+
+.heart-fill-clip {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  overflow: hidden;
+  transition: height 0.25s ease;
 }
-.hud-hp-txt {
-  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  font-size: clamp(0.44rem, 1.2vw, 0.62rem); font-weight: 800; color: #0f172a; line-height: 1;
-  text-shadow: 0 0 3px rgba(255,255,255,0.85);
+
+.heart-fill-svg {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 22px;
+  height: 20px;
 }
-.hud-chances-badge {
-  font-family: var(--font-title); font-weight: 900; font-size: clamp(0.52rem, 1.4vw, 0.72rem);
-  color: #dc2626; background: #fee2e2; border: 1px solid #fca5a5;
-  padding: 1px 6px; border-radius: 12px; flex-shrink: 0; display: flex; align-items: center; gap: 2px;
+
+.hearts-hp-text {
+  font-family: var(--font-title);
+  font-weight: 800;
+  font-size: 0.65rem;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+
+/* Pause Hearts Display Card */
+.pause-hearts-card {
+  background: linear-gradient(160deg, #FFF5F5, #FEF2F2);
+  border: 1.5px solid #FECACA;
+  border-radius: var(--r-md);
+  padding: 12px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.08);
+}
+.pause-hearts-card .hearts-title {
+  font-family: var(--font-title);
+  font-weight: 800;
+  font-size: 0.88rem;
+  color: #DC2626;
 }
 
 /* ---- Top-Right: Leaderboard ---- */

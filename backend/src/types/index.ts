@@ -114,6 +114,7 @@ export interface SnakeState {
   isBot?: boolean;
   isBoss?: boolean;
   isPaused?: boolean;        // §12 backgrounded player — frozen, invisible, takes no damage
+  lastHitTick?: number;      // tick timestamp of last obstacle collision hit
 }
 
 export type CollectibleType =

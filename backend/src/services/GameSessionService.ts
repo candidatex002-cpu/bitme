@@ -412,8 +412,12 @@ export class GameSessionService {
           const push = (minDist - dist);
           snake.head.x += (dx / dist) * push;
           snake.head.y += (dy / dist) * push;
-          // Impact damages snake HP instead of instant death
-          this.damageSnake(snake, 25 * dt, `Hit ${ob.type || 'obstacle'}`);
+          // Bumping an obstacle immediately subtracts 20 HP (drains 1 heart container!)
+          const now = this.state.tick;
+          if (!snake.lastHitTick || now - snake.lastHitTick > 10) { // 0.33s hit cooldown
+            snake.lastHitTick = now;
+            this.damageSnake(snake, 20, `Hit ${ob.type || 'obstacle'}`);
+          }
           if (!snake.isAlive) return;
         }
         if (ob.damage) { // environmental hazard
