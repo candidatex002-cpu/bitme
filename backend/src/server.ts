@@ -120,7 +120,9 @@ const withRank = (profile: any) => profile ? { ...profile, rank: ProgressionServ
 
 app.get('/api/player/profile', (req, res) => {
   const a = auth(req, res); if (!a) return;
-  res.json({ user: { id: a.userId, username: a.username, isGuest: a.isGuest }, profile: withRank(db.getProfile(a.userId)) });
+  const isAdmin = ADMIN_USER_IDS.has(a.userId);
+  const rawProfile = db.getProfile(a.userId);
+  res.json({ user: { id: a.userId, username: a.username, isGuest: a.isGuest, isAdmin }, profile: withRank(rawProfile ? { ...rawProfile, isAdmin } : rawProfile) });
 });
 
 app.post('/api/player/evolution', (req, res) => {

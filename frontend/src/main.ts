@@ -549,7 +549,13 @@ class AnacondaPark {
       let valid = false;
       if (this.token && this.token !== 'guest_local_token' && this.tokenLooksValid(this.token)) {
         const res = await fetch(API + '/api/player/profile', { headers: { Authorization: `Bearer ${this.token}` } });
-        if (res.ok) { const d = await res.json(); if (d?.profile) { this.profile = d.profile; valid = true; } }
+        if (res.ok) {
+          const d = await res.json();
+          if (d?.profile) {
+            this.profile = { ...d.profile, isAdmin: d.user?.isAdmin ?? d.profile?.isAdmin };
+            valid = true;
+          }
+        }
       }
       if (!valid) {
         const res = await fetch(API + '/api/auth/guest', { method: 'POST' });
@@ -560,7 +566,7 @@ class AnacondaPark {
       await this.fetchAux();
       this.persistSession();
       this.startPresenceHeartbeat(); // §8 keep online status live across the app
-      this.loadAdminCoupons();       // §7 detect admin (silent 403 for regular players)
+      if (this.profile?.isAdmin) this.loadAdminCoupons(); // §7 only check admin coupons for verified admin profiles
       this.render();
     } catch {
       if (this.profile) { this.persistSession(); this.render(); return; }
@@ -2208,7 +2214,7 @@ class AnacondaPark {
   private isAdmin = false;
   private adminCoupons: any[] = [];
   private async loadAdminCoupons() {
-    if (!this.token) return;
+    if (!this.token || (!this.profile?.isAdmin && this.page !== 'admin')) return;
     try {
       const res = await fetch(API + '/api/admin/coupons', { headers: { Authorization: `Bearer ${this.token}` } });
       if (res.status === 200) { this.isAdmin = true; this.adminCoupons = (await res.json()).coupons || []; if (this.page === 'admin' || this.page === 'settings') this.render(); }
