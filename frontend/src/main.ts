@@ -1375,24 +1375,22 @@ class AnacondaPark {
     if (ps) { if (powers.length) { ps.style.display = 'flex'; ps.innerHTML = powers.join(''); } else ps.style.display = 'none'; }
     document.getElementById('touch-ability')?.classList.toggle('cooling', cd > 0);
 
-    // Event & Battle Royale Mode Header
+    // Event Header (only for temporary map events e.g. Cherry Rain)
     const evt = document.getElementById('hud-event');
-    const matchTimer = (state as any).matchTimer as number | undefined;
-    const aliveCount = state.snakes.filter(s => s.isAlive).length;
     if (evt) {
-      if (this.selectedUIMode === 'battle_royale' || typeof matchTimer === 'number') {
-        const mm = Math.floor((matchTimer || 0) / 60), ss = (matchTimer || 0) % 60;
+      if (state.currentEvent) {
         evt.style.display = 'block';
-        evt.innerHTML = `👥 <b>${aliveCount}</b> Alive · ⚔️ <b>${kills}</b> Kills · ⏱️ <b>${mm}:${String(ss).padStart(2, '0')}</b>`;
-      } else if (state.currentEvent) {
-        evt.style.display = 'block'; evt.innerText = `${state.currentEvent.icon} ${state.currentEvent.timerSeconds}s`;
+        evt.innerText = `${state.currentEvent.icon} ${state.currentEvent.timerSeconds}s`;
       } else {
         evt.style.display = 'none';
       }
     }
 
+    const matchTimer = (state as any).matchTimer as number | undefined;
+
     // Dedicated Battle Royale Real-Time Updates
     if (this.selectedUIMode === 'battle_royale') {
+      const aliveCount = state.snakes.filter(s => s.isAlive).length;
       const mm = Math.floor((matchTimer || 0) / 60), ss = Math.floor((matchTimer || 0) % 60);
       const timerStr = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
       setT('br-timer', timerStr);
