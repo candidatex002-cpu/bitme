@@ -420,6 +420,34 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   margin-top: 2px;
 }
 
+/* Match Objective Toast Banner (Auto-fade 5s) */
+.match-obj-toast {
+  position: absolute;
+  top: clamp(75px, 14vh, 110px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 35;
+  pointer-events: none;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1.5px solid var(--line);
+  color: #ffffff;
+  font-family: var(--font-title);
+  font-weight: 800;
+  font-size: clamp(0.78rem, 2vw, 0.95rem);
+  padding: 6px 16px;
+  border-radius: 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  animation: matchObjFade 5.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes matchObjFade {
+  0% { opacity: 0; transform: translate(-50%, -10px) scale(0.9); }
+  12% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  80% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -12px) scale(0.95); }
+}
+
 .tb-top-center {
   display: flex;
   flex-direction: column;

@@ -676,12 +676,37 @@ class AnacondaPark {
     const t = setInterval(() => { n--; const el = document.getElementById('mm-count'); if (el) el.innerText = String(n); if (n <= 0) { clearInterval(t); this.startMatch(); } }, 750);
   }
 
+  private showMatchObjectiveBanner() {
+    const banners: Record<string, string> = {
+      team: '🛡️ Work with your team to defeat the enemy team!',
+      battle_royale: '⚔️ Survive until you are the last snake standing!',
+      nokia: '🕹️ Eat, grow, and survive!',
+      explorer: '📜 Reclaim the Seven Kingdoms!',
+      free_roam: '🌿 Eat 🍒, outgrow rivals, complete daily missions!',
+    };
+    const text = banners[this.selectedUIMode] || '⚔️ Defeat rivals and survive!';
+
+    let el = document.getElementById('match-obj-toast');
+    if (el) el.remove();
+
+    el = document.createElement('div');
+    el.id = 'match-obj-toast';
+    el.className = 'match-obj-toast';
+    el.innerHTML = `<span>${text}</span>`;
+    document.body.appendChild(el);
+
+    setTimeout(() => {
+      if (el && el.parentNode) el.remove();
+    }, 5200);
+  }
+
   private startMatch() {
     this.matchStart = Date.now(); this.lastAlive = true; this.visitedAreas.clear(); this.summary = null;
     // §V7 reset per-match tracking
     this.matchStats = { cherry: 0, apple: 0, frog: 0, star: 0, mushroom: 0, shield: 0, speed: 0, powerup: 0, kills: 0, deaths: 0 };
     this.lastKills = 0; this.liveMissionDone.clear();
     this.setScreen('play'); // render() creates/attaches the renderer to the live canvas
+    this.showMatchObjectiveBanner();
     ads.hideBanner(); // §14 never show ads during active gameplay
     audio.startMusic();
     this.client.onStateUpdate = (s) => this.onTick(s);
@@ -2574,12 +2599,6 @@ class AnacondaPark {
         <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
         <div class="team-scores" id="team-scores" style="display:none;"></div>
 
-        <!-- Left: Ultra-Compact Daily Mission Tracker -->
-        ${this.settings.missionTracker === false ? '' : `
-        <div class="mission-tracker ${this.settings.trackerPos === 'right' ? 'mt-right' : ''}" id="mission-tracker">
-          <div id="mission-tracker-rows"></div>
-        </div>`}
-
         <!-- Bottom Controls Cluster -->
         <div class="hud-bottom-controls">
           <div class="touch-joystick joy-${jsize} joy-op-${jop}" id="touch-joystick">
@@ -2603,6 +2622,7 @@ class AnacondaPark {
     const cpos = this.settings.controlPos || 'center';
     const jsize = this.settings.joySize || 'medium';
     const jop = this.settings.joyOpacity || 70;
+    const showMissions = this.settings.missionTracker !== false && (this.selectedUIMode === 'free_roam' || this.selectedUIMode === 'explorer');
     return `
       <div class="hud ctrl-${cpos}">
         <!-- Top HUD Header Grid: Pause | Score | Hearts | Leaderboard -->
@@ -2635,11 +2655,11 @@ class AnacondaPark {
         <div class="team-scores" id="team-scores" style="display:none;"></div>
         <div class="power-status" id="power-status" style="display:none;"></div>
 
-        <!-- Ultra-Compact Daily Mission Tracker (Icon-Only Progress) -->
-        ${this.settings.missionTracker === false ? '' : `
+        <!-- Daily Mission Tracker (Shown only in Free For All & Explorer modes) -->
+        ${showMissions ? `
         <div class="mission-tracker ${this.settings.trackerPos === 'right' ? 'mt-right' : ''}" id="mission-tracker">
           <div id="mission-tracker-rows"></div>
-        </div>`}
+        </div>` : ''}
 
         <!-- Bottom Controls Cluster: Joystick (Center) & Action Buttons (Right) -->
         <div class="hud-bottom-controls">
