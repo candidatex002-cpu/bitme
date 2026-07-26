@@ -1,0 +1,9 @@
+{
+  "appId": "com.anacondapark.game",
+  "appName": "Anaconda Park",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}

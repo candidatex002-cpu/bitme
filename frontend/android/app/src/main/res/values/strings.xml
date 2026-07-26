@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Anaconda Park</string>
+    <string name="title_activity_main">Anaconda Park</string>
+    <string name="package_name">com.anacondapark.game</string>
+    <string name="custom_url_scheme">com.anacondapark.game</string>
+</resources>
