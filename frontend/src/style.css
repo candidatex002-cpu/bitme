@@ -577,6 +577,47 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   flex-shrink: 0;
 }
 
+/* Pause Modal Layout Alignment */
+.pause-modal {
+  max-width: 440px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 20px 22px;
+  border-radius: var(--r-lg);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
+}
+.pause-modal::-webkit-scrollbar {
+  width: 5px;
+}
+.pause-modal::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+}
+
+.pause-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+  font-size: 1.25rem;
+}
+
+.pause-settings-card {
+  background: var(--card-2);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  text-align: left;
+}
+
+.pause-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 /* ---- Top-Right: Leaderboard ---- */
 .hud-leaderboard {
   position: absolute;
