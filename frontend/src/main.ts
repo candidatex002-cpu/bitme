@@ -1366,10 +1366,48 @@ class AnacondaPark {
       }
     }
 
-    // Team Battle HUD Header
+    // Team Battle Dedicated Real-Time Updates
+    if (this.selectedUIMode === 'team') {
+      const myTeam = (me as any).team as 'red' | 'blue' | undefined;
+      const redAlive = state.snakes.filter(s => s.team === 'red' && s.isAlive).length;
+      const blueAlive = state.snakes.filter(s => s.team === 'blue' && s.isAlive).length;
+      const rs = state.teamScores?.red ?? 0;
+      const bs = state.teamScores?.blue ?? 0;
+      const mm = Math.floor((matchTimer || 0) / 60), ss = Math.floor((matchTimer || 0) % 60);
+      const timerStr = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+      const assists = (me as any).assists ?? Math.floor(kills * 0.5);
+
+      setT('tb-player-name', me.displayName || 'Explorer');
+      setT('tb-player-score', String(Math.round(me.score)));
+      setT('tb-player-stage', `${me.evolution || me.stage} · Lv.${me.level}`);
+      setT('tb-player-kills', String(kills));
+      setT('tb-player-assists', String(assists));
+      setT('tb-blue-score', String(bs));
+      setT('tb-red-score', String(rs));
+      setT('tb-match-timer', timerStr);
+      setT('tb-alive-counts', `${blueAlive} vs ${redAlive} Alive`);
+
+      const myScore = myTeam === 'blue' ? bs : rs;
+      const otherScore = myTeam === 'blue' ? rs : bs;
+      const isLeading = myScore >= otherScore;
+      setT('tb-team-rank', isLeading ? '🏆 #1 Leading' : '⚔️ #2 Chasing');
+
+      const blueSide = document.getElementById('tb-blue-side');
+      const redSide = document.getElementById('tb-red-side');
+      if (blueSide) blueSide.classList.toggle('leading', bs >= rs);
+      if (redSide) redSide.classList.toggle('leading', rs > bs);
+
+      const playerCard = document.querySelector('.tb-player-card');
+      if (playerCard && myTeam) {
+        playerCard.classList.toggle('team-blue', myTeam === 'blue');
+        playerCard.classList.toggle('team-red', myTeam === 'red');
+      }
+    }
+
+    // Team Battle HUD Header (Legacy bar hidden in dedicated mode)
     const ts = document.getElementById('team-scores');
     if (ts) {
-      if (state.teamScores) {
+      if (this.selectedUIMode !== 'team' && state.teamScores) {
         const myTeam = (me as any).team as 'red' | 'blue' | undefined;
         const redAlive = state.snakes.filter(s => s.team === 'red' && s.isAlive).length;
         const blueAlive = state.snakes.filter(s => s.team === 'blue' && s.isAlive).length;
@@ -2465,7 +2503,103 @@ class AnacondaPark {
     </div></div>`;
   }
 
+  private renderTeamBattleHUD() {
+    const cpos = this.settings.controlPos || 'center';
+    const jsize = this.settings.joySize || 'medium';
+    const jop = this.settings.joyOpacity || 70;
+    return `
+      <div class="hud ctrl-${cpos} mode-team-battle">
+        <!-- Dedicated Team Battle Top Header Architecture -->
+        <div class="tb-top-bar">
+          <!-- Top-Left: Player Personal Info Panel -->
+          <div class="tb-top-left">
+            <button id="nav-pause" class="hud-pause">⏸</button>
+            <div class="tb-player-card hud-panel">
+              <div class="tb-player-name" id="tb-player-name">Explorer_7740</div>
+              <div class="tb-player-scoreline">
+                <span class="tb-lbl">Score:</span> <b id="tb-player-score">0</b>
+                <span class="tb-stage" id="tb-player-stage">Lv.1</span>
+              </div>
+              <div class="tb-player-stats">
+                <span>⚔️ <b id="tb-player-kills">0</b> Kills</span>
+                <span>🤝 <b id="tb-player-assists">0</b> Assists</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Top-Center: Hearts + Centered Real-Time Team Score Panel + Match Status -->
+          <div class="tb-top-center">
+            <!-- Floating Hearts Row -->
+            <div class="hearts-row" id="hud-hearts-row">
+              ${this.renderHeartsHTML(100, 100)}
+            </div>
+
+            <!-- Centered Team Score Banner -->
+            <div class="tb-score-banner hud-panel" id="tb-score-banner">
+              <div class="tb-team-side blue" id="tb-blue-side">
+                <span class="tb-team-ico">🔵</span>
+                <span class="tb-team-title">BLUE</span>
+                <b class="tb-team-score" id="tb-blue-score">0</b>
+              </div>
+
+              <div class="tb-vs-divider">VS</div>
+
+              <div class="tb-team-side red" id="tb-red-side">
+                <b class="tb-team-score" id="tb-red-score">0</b>
+                <span class="tb-team-title">RED</span>
+                <span class="tb-team-ico">🔴</span>
+              </div>
+            </div>
+
+            <!-- Match Status Sub-Pill -->
+            <div class="tb-status-pill hud-panel" id="tb-status-pill">
+              <span>⏱️ <b id="tb-match-timer">00:00</b></span>
+              <span class="tb-dot-sep">·</span>
+              <span>👥 <b id="tb-alive-counts">10 vs 10</b></span>
+              <span class="tb-dot-sep">·</span>
+              <span class="tb-rank-tag" id="tb-team-rank">🏆 #1</span>
+            </div>
+          </div>
+
+          <!-- Top-Right: Top 10 Leaderboard -->
+          <div class="tb-top-right">
+            <div class="hud-leaderboard hud-panel">
+              <div class="lb-title">🏆 Top 10</div>
+              <div id="hud-lb-rows"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="power-status" id="power-status" style="display:none;"></div>
+        <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
+        <div class="team-scores" id="team-scores" style="display:none;"></div>
+
+        <!-- Left: Ultra-Compact Daily Mission Tracker -->
+        ${this.settings.missionTracker === false ? '' : `
+        <div class="mission-tracker ${this.settings.trackerPos === 'right' ? 'mt-right' : ''}" id="mission-tracker">
+          <div id="mission-tracker-rows"></div>
+        </div>`}
+
+        <!-- Bottom Controls Cluster -->
+        <div class="hud-bottom-controls">
+          <div class="touch-joystick joy-${jsize} joy-op-${jop}" id="touch-joystick">
+            <div class="touch-knob" id="touch-knob"></div>
+          </div>
+
+          <div class="touch-actions">
+            <div class="touch-row">
+              <div class="touch-btn mini" id="touch-mini" title="Fullscreen Tactical Map">🗺️</div>
+              <div class="touch-btn zoom" id="touch-zoom" title="Camera Zoom Preset">🔍<span class="tz-label" id="touch-zoom-label">Far</span></div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+
   private renderHUD() {
+    if (this.selectedUIMode === 'team') {
+      return this.renderTeamBattleHUD();
+    }
     const cpos = this.settings.controlPos || 'center';
     const jsize = this.settings.joySize || 'medium';
     const jop = this.settings.joyOpacity || 70;
