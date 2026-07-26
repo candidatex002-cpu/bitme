@@ -1767,7 +1767,7 @@ class AnacondaPark {
       </div>
 
       <!-- Separate Top-Middle Floating Hearts Section -->
-      <div class="hud-top-middle-hearts hud-panel" id="hud-hearts-container">
+      <div class="hud-top-middle-hearts" id="hud-hearts-container">
         <div class="hearts-row" id="hud-hearts-row">
           ${this.renderHeartsHTML(100, 100)}
         </div>

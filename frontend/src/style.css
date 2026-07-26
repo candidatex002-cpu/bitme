@@ -382,10 +382,10 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   font-family: var(--font-title); font-weight: 800;
   font-size: clamp(0.5rem, 1.4vw, 0.7rem); color: var(--green-deep);
 }
-/* ---------------------------------------------------------------- Top Middle Floating Hearts HUD */
+/* ---------------------------------------------------------------- Top Middle Floating Hearts HUD (Clean, No Card Background) */
 .hud-top-middle-hearts {
   position: absolute;
-  top: clamp(6px, 1.5vh, 14px);
+  top: clamp(8px, 1.8vh, 16px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 25;
@@ -394,29 +394,29 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   align-items: center;
   justify-content: center;
   gap: 2px;
-  padding: 5px 16px;
-  background: rgba(255, 255, 255, 0.95);
-  border: 1.5px solid var(--line);
-  border-radius: 30px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
-  pointer-events: auto;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  pointer-events: none;
 }
 
 .hearts-row {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 6px;
 }
 
 .heart-unit {
   position: relative;
-  width: 22px;
-  height: 20px;
+  width: 24px;
+  height: 22px;
   flex-shrink: 0;
   display: inline-block;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.22));
 }
 
 .heart-bg {
@@ -440,16 +440,17 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   position: absolute;
   bottom: 0;
   left: 0;
-  width: 22px;
-  height: 20px;
+  width: 24px;
+  height: 22px;
 }
 
 .hearts-hp-text {
   font-family: var(--font-title);
-  font-weight: 800;
-  font-size: 0.65rem;
+  font-weight: 900;
+  font-size: 0.72rem;
   color: var(--ink);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.03em;
+  text-shadow: 0 1px 3px rgba(255, 255, 255, 0.9), 0 0 8px rgba(255, 255, 255, 0.9);
 }
 
 /* Pause Hearts Display Card */
