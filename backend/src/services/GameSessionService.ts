@@ -196,6 +196,12 @@ export class GameSessionService {
   // Test helper: advance the simulation deterministically by one tick.
   public stepForTest(dt: number = 1 / this.TICK_RATE) { this.updateTick(dt); }
 
+  // Test helper: fast-forward the round clock (the zone reads wall time, not tick count).
+  public advanceRoundClockForTest(seconds: number) {
+    this.roundStartedAt -= seconds * 1000;
+    if (this.roundEndedAt) this.roundEndedAt -= seconds * 1000;
+  }
+
   // §6 Toroidal (wrap-around) world helpers — no borders; exit one edge, appear on the other.
   private wrap(v: number): number { const w = this.WORLD_SIZE; return ((v % w) + w) % w; }
   private wrapDelta(d: number): number { const w = this.WORLD_SIZE; let r = ((d % w) + w) % w; if (r > w / 2) r -= w; return r; }
@@ -233,14 +239,32 @@ export class GameSessionService {
     const angle = Math.random() * Math.PI * 2;
     // Stay well inside the zone (≤60% of the radius) so the whole body spawns protected.
     const dist = Math.random() * zone.radius * 0.6;
-    return {
+    const pos = {
       x: this.wrap(zone.centerX + Math.cos(angle) * dist),
       y: this.wrap(zone.centerY + Math.sin(angle) * dist),
     };
+
+    // §2 Storm modes: the zone may have closed past the sanctuary since it last relocated.
+    // Never hand back a spawn point that is already in the storm — fall back to the zone core.
+    if (this.config.shrinkingZone) {
+      const sz = this.state.safeZone;
+      const dx = this.wrapDelta(pos.x - sz.centerX);
+      const dy = this.wrapDelta(pos.y - sz.centerY);
+      if (Math.sqrt(dx * dx + dy * dy) > sz.radius * 0.7) {
+        const a = Math.random() * Math.PI * 2;
+        const d = Math.random() * sz.radius * 0.5;
+        return { x: this.wrap(sz.centerX + Math.cos(a) * d), y: this.wrap(sz.centerY + Math.sin(a) * d) };
+      }
+    }
+    return pos;
   }
 
   // ---------------------------------------------------------------- players
   public registerPlayer(userId: string, displayName: string, skin: string = 'Forest', isBot = false, evolution: string = 'Baby', region?: string): SnakeState {
+    // §2 A human arriving during the between-rounds intermission starts the next round now,
+    // instead of dropping into a finished match and being shown results immediately.
+    if (!isBot && this.state.matchOver) this.startNewRound();
+
     const spawnPos: Vector2D = isBot
       ? { x: 400 + Math.random() * (this.WORLD_SIZE - 800), y: 400 + Math.random() * (this.WORLD_SIZE - 800) }
       : this.safeSpawnPosition();
@@ -367,6 +391,68 @@ export class GameSessionService {
     if (this.state.tick % 900 === 0) this.maintainObstacles(); // §2 re-scale ~every 30s
     this.updateLeaderboard();
     this.trackPeakStats(); // §V7/P1 record server-observed peaks
+  }
+
+  // §2 A mode has a timed round when its zone shrinks AND the mode declares a duration.
+  private isTimedMode(): boolean {
+    return this.config.shrinkingZone && (this.config.matchDurationSeconds ?? 0) > 0;
+  }
+
+  // Seconds elapsed in the CURRENT round (wall clock, so a laggy event loop can never make
+  // the storm drift away from the countdown the player is watching).
+  public getRoundElapsed(): number {
+    return (Date.now() - this.roundStartedAt) / 1000;
+  }
+
+  // §2 Round timer + shrinking zone, both driven off the same per-round clock.
+  //
+  // The zone holds full size for a grace period (players spawn and gear up), then closes
+  // smoothly, reaching its final radius at `zoneCloseAtPct` of the round so the last stretch
+  // is a fight in a fixed small circle. When the round ends the session runs a short
+  // intermission and then starts a fresh round with the zone reopened — sessions are shared
+  // and long-lived, so without the reset the zone would stay closed forever for every player
+  // who joined after the first round.
+  private updateMatchClock() {
+    if (!this.isTimedMode()) return;
+    const duration = this.config.matchDurationSeconds!;
+
+    if (this.state.matchOver) {
+      // Intermission — hold the results, then reopen the map for the next round.
+      if ((Date.now() - this.roundEndedAt) / 1000 >= gameConfig.world.zoneIntermissionSeconds) this.startNewRound();
+      return;
+    }
+
+    const elapsed = this.getRoundElapsed();
+    const remaining = Math.max(0, duration - elapsed);
+    this.state.matchTimer = Math.ceil(remaining);
+    this.state.safeZone.radius = this.zoneRadiusAt(elapsed);
+
+    if (remaining <= 0) {
+      this.state.matchOver = true;
+      this.state.matchTimer = 0;
+      this.roundEndedAt = Date.now();
+    }
+  }
+
+  // Zone radius for a given point in the round — the single source of truth for the storm.
+  private zoneRadiusAt(elapsed: number): number {
+    const duration = this.config.matchDurationSeconds ?? this.MATCH_SECONDS;
+    const closeAt = Math.max(1, duration * gameConfig.world.zoneCloseAtPct);
+    const shrinkWindow = Math.max(1, closeAt - this.ZONE_GRACE);
+    const progress = Math.min(1, Math.max(0, (elapsed - this.ZONE_GRACE) / shrinkWindow));
+    return this.ZONE_FINAL_R + (this.ZONE_START_R - this.ZONE_FINAL_R) * (1 - progress);
+  }
+
+  // Reopen the map and restart the clock for the next round of a long-lived mode session.
+  private startNewRound() {
+    this.roundStartedAt = Date.now();
+    this.roundEndedAt = 0;
+    this.state.matchOver = false;
+    this.state.round = (this.state.round ?? 1) + 1;
+    this.state.matchTimer = this.config.matchDurationSeconds ?? this.MATCH_SECONDS;
+    this.state.safeZone.radius = this.ZONE_START_R;
+    if (this.state.teamScores) this.state.teamScores = { red: 0, blue: 0 };
+    console.log(`[SESSION] ${this.state.mode} — round ${this.state.round} started, zone reopened.`);
   }
 
   // §V7/P1 Keep each tracked player's peak score/kills up to date from the authoritative snake.
@@ -499,8 +585,10 @@ export class GameSessionService {
       prev = { x: seg.x, y: seg.y };
     }
 
-    // Storm damage outside the safe zone (only when shrinkingZone is active e.g. Battle Royale & Team Battle)
-    if (this.config.shrinkingZone) {
+    // Storm damage outside the safe zone (only when shrinkingZone is active e.g. Battle Royale
+    // & Team Battle). Never during the between-rounds intermission, and never inside the
+    // Safe Sanctuary — a player who spawned there must always get a chance to run for the zone.
+    if (this.config.shrinkingZone && !this.state.matchOver && !this.isInsideSanctuary(snake)) {
       const dCx = this.wrapDelta(snake.head.x - this.state.safeZone.centerX);
       const dCy = this.wrapDelta(snake.head.y - this.state.safeZone.centerY);
       if (Math.sqrt(dCx * dCx + dCy * dCy) > this.state.safeZone.radius && snake.shieldTimer <= 0) {
@@ -946,8 +1034,39 @@ export class GameSessionService {
     if (this.sanctuaryTimer <= 0) {
       this.sanctuaryTimer = gameConfig.world.sanctuaryRelocateSeconds; // §12 config-driven
       const r = this.state.sanctuaryZone.radius;
-      this.state.sanctuaryZone.centerX = r + Math.random() * (this.WORLD_SIZE - 2 * r);
-      this.state.sanctuaryZone.centerY = r + Math.random() * (this.WORLD_SIZE - 2 * r);
+      if (this.config.shrinkingZone) {
+        // §2 The sanctuary is where players spawn, so in storm modes it moves within the
+        // current safe zone — never out into the storm.
+        const sz = this.state.safeZone;
+        const angle = Math.random() * Math.PI * 2;
+        const dist = Math.random() * Math.max(0, sz.radius - r - 60);
+        this.state.sanctuaryZone.centerX = this.wrap(sz.centerX + Math.cos(angle) * dist);
+        this.state.sanctuaryZone.centerY = this.wrap(sz.centerY + Math.sin(angle) * dist);
+      } else {
+        this.state.sanctuaryZone.centerX = r + Math.random() * (this.WORLD_SIZE - 2 * r);
+        this.state.sanctuaryZone.centerY = r + Math.random() * (this.WORLD_SIZE - 2 * r);
+      }
+    }
+    if (this.config.shrinkingZone) this.keepSanctuaryInsideZone();
+  }
+
+  // §2 The storm closes continuously, so the shelter has to keep up with it every tick:
+  // it scales down with the zone (never letting a no-damage bubble dominate the endgame)
+  // and is pulled back inside whenever the ring passes over it.
+  private keepSanctuaryInsideZone() {
+    const sanc = this.state.sanctuaryZone;
+    if (!sanc) return;
+    const sz = this.state.safeZone;
+    sanc.radius = Math.min(360, Math.max(120, sz.radius * 0.33));
+
+    const dx = this.wrapDelta(sanc.centerX - sz.centerX);
+    const dy = this.wrapDelta(sanc.centerY - sz.centerY);
+    const d = Math.sqrt(dx * dx + dy * dy);
+    const maxD = Math.max(0, sz.radius - sanc.radius - 60);
+    if (d > maxD) {
+      const k = d > 0 ? maxD / d : 0;
+      sanc.centerX = this.wrap(sz.centerX + dx * k);
+      sanc.centerY = this.wrap(sz.centerY + dy * k);
     }
   }
 

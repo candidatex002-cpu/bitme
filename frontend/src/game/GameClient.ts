@@ -97,6 +97,14 @@ export function serverBase(): string {
 export const WORLD = 6000;
 const HALF = WORLD / 2;
 
+// §2 Competitive round pacing — mirrors the server's world config (GameConfig.world) so the
+// offline engine shrinks the storm on exactly the same curve the authoritative server uses.
+const MATCH_SECONDS = 180;      // Battle Royale AND Team Battle both run a 3-minute round
+const ZONE_GRACE = 15;          // zone holds full size while players spawn in
+const ZONE_CLOSE_AT_PCT = 0.9;  // fully closed at 90% of the round → final showdown
+const ZONE_START_R = WORLD * 0.47;
+const ZONE_FINAL_R = WORLD * 0.09;
+
 const FOOD_TYPES = [
   { type: 'cherry', val: 10, icon: '🍒', color: '#ff4d4d' },
   { type: 'apple', val: 15, icon: '🍎', color: '#ff3333' },
@@ -166,8 +174,9 @@ export class GameClient {
   private localNokia = false;      // solo classic snake — walls + self kill, no wrap
   private localBR = false;         // battle royale — timer + shrinking storm + last standing
   private localTeam = false;       // team battle — team scoring
-  private localMatchTimer = 0;     // seconds remaining (BR); 0 = untimed
+  private localMatchTimer = 0;     // seconds remaining (BR / Team); 0 = untimed
   private localMatchOver = false;
+  private localMatchLastTs = 0;    // wall clock of the last match tick → real dt, no drift
 
   constructor() {
     this.localUserId = 'usr_' + Math.random().toString(36).substring(2, 9);
@@ -280,8 +289,14 @@ export class GameClient {
         me.isAlive = true;
         me.hp = 100;
         me.score = 150; me.level = 1; me.radius = 13; me.length = 9; // reset to a small snake
-        me.head = { x: HALF + (Math.random() - 0.5) * 400, y: HALF + (Math.random() - 0.5) * 400 };
+        // §2 Respawn inside the CURRENT safe zone — by late game it is far smaller than the
+        // map centre spread, so a fixed ±200 box could drop the player straight into the storm.
+        const sz = this.localState.safeZone;
+        const spawnR = Math.min(200, Math.max(0, sz.radius * 0.5));
+        const ang = Math.random() * Math.PI * 2, d = Math.random() * spawnR;
+        me.head = { x: this.wrapLocal(sz.centerX + Math.cos(ang) * d), y: this.wrapLocal(sz.centerY + Math.sin(ang) * d) };
         me.body = Array.from({ length: 9 }, (_, i) => ({ x: me.head.x - i * 10, y: me.head.y }));
+        (me as any).stormT = 0; // fresh storm grace after respawning
         this.onRespawnResult?.({ success: true, method });
       }
       return;
@@ -297,8 +312,12 @@ export class GameClient {
     this.localNokia = this.modeSolo || this.modeUI === 'nokia';
     this.localBR = mode === 'battle_royale';
     this.localTeam = mode === 'team';
-    this.localMatchTimer = this.localBR ? 180 : 0; // 3-minute Battle Royale
+    // §2 BOTH timed modes get the round clock. Team Battle used to start at 0, which made
+    // elapsed == the full match on tick 1 — the zone snapped straight to its final radius and
+    // the match ended instantly.
+    this.localMatchTimer = (this.localBR || this.localTeam) ? MATCH_SECONDS : 0;
     this.localMatchOver = false;
+    this.localMatchLastTs = 0;
 
     const me: SnakeData = {
       id: this.localUserId,
@@ -374,13 +393,19 @@ export class GameClient {
       mode,
       snakes: [me, ...bots],
       food: foodItems,
-      // Battle Royale storm shrinks toward a small radius; other modes stay open.
-      safeZone: { centerX: HALF, centerY: HALF, radius: HALF * 0.94, targetRadius: this.localBR ? 420 : HALF * 0.94, damagePerSecond: 2 },
+      // Battle Royale AND Team Battle shrink toward the same small radius; other modes stay open.
+      safeZone: {
+        centerX: HALF,
+        centerY: HALF,
+        radius: this.localBR || this.localTeam ? ZONE_START_R : HALF * 0.94,
+        targetRadius: this.localBR || this.localTeam ? ZONE_FINAL_R : HALF * 0.94,
+        damagePerSecond: 15,
+      },
       sanctuaryZone: this.localNokia ? undefined : { centerX: HALF, centerY: HALF, radius: 360, label: '🛡️ Safe Sanctuary', icon: '🛡️' }, // §8
       portals: this.localNokia ? [] : this.genWormholes(), // §7 four linked wormholes
       obstacles: this.localNokia ? [] : this.genObstacles(30), // §2 (scaled to the bigger map)
       teamScores: this.localTeam ? { red: 0, blue: 0 } : undefined,
-      matchTimer: this.localBR ? this.localMatchTimer : undefined,
+      matchTimer: (this.localBR || this.localTeam) ? this.localMatchTimer : undefined,
       leaderboard: [],
     };
 
@@ -528,7 +553,9 @@ export class GameClient {
       this.followBodyLocal(b);
     }
 
-    // 2.5 World systems — skipped in solo Classic Snake (a bare grid arena).
+    // 2.5 Round clock first (it sets this frame's zone radius), then the world systems that
+    // read it — same ordering as the server tick.
+    this.updateLocalMatch(0.033); // §2 Battle Royale / Team Battle timer + shrinking storm
     if (!this.localNokia) {
       this.updateLocalStars(0.033);
       this.updateLocalWormhole(0.033);
@@ -536,7 +563,6 @@ export class GameClient {
       this.resolveLocalObstacles();
       this.resolveLocalWormholeTeleport();
     }
-    this.updateLocalMatch(0.033); // §2 Battle Royale timer + shrinking storm + last-standing
 
     // 3. Check Food Collisions & Spawning
     for (const s of state.snakes) {
@@ -690,8 +716,34 @@ export class GameClient {
     if (this.sanctuaryTimer <= 0) {
       this.sanctuaryTimer = 300;
       const s = this.localState.sanctuaryZone;
-      s.centerX = s.radius + Math.random() * (WORLD - 2 * s.radius);
-      s.centerY = s.radius + Math.random() * (WORLD - 2 * s.radius);
+      if (this.localBR || this.localTeam) {
+        // §2 Players spawn in the sanctuary, so in storm modes it has to stay inside the zone.
+        const sz = this.localState.safeZone;
+        const angle = Math.random() * Math.PI * 2;
+        const dist = Math.random() * Math.max(0, sz.radius - s.radius - 60);
+        s.centerX = this.wrapLocal(sz.centerX + Math.cos(angle) * dist);
+        s.centerY = this.wrapLocal(sz.centerY + Math.sin(angle) * dist);
+      } else {
+        s.centerX = s.radius + Math.random() * (WORLD - 2 * s.radius);
+        s.centerY = s.radius + Math.random() * (WORLD - 2 * s.radius);
+      }
+    }
+
+    // §2 The storm closes continuously, so the shelter scales down with it and gets pulled
+    // back inside whenever the ring passes over it (mirrors the server).
+    if (this.localBR || this.localTeam) {
+      const sz = this.localState.safeZone;
+      const s = this.localState.sanctuaryZone;
+      s.radius = Math.min(360, Math.max(120, sz.radius * 0.33));
+      const dx = this.wrapDeltaLocal(s.centerX - sz.centerX);
+      const dy = this.wrapDeltaLocal(s.centerY - sz.centerY);
+      const d = Math.hypot(dx, dy);
+      const maxD = Math.max(0, sz.radius - s.radius - 60);
+      if (d > maxD) {
+        const k = d > 0 ? maxD / d : 0;
+        s.centerX = this.wrapLocal(sz.centerX + dx * k);
+        s.centerY = this.wrapLocal(sz.centerY + dy * k);
+      }
     }
   }
 
@@ -763,29 +815,47 @@ export class GameClient {
   }
 
   // §2 Battle Royale & Team Battle — timer, shrinking storm that eliminates snakes left outside, victory on timer / last standing / team wipe.
-  private updateLocalMatch(dt: number) {
+  private updateLocalMatch(_dt: number) {
     const state = this.localState;
     const isCompetitive = this.localBR || this.localTeam;
     if (!state || !isCompetitive || this.localMatchOver) return;
 
+    // Real elapsed time, not the nominal 33 ms: a throttled/backgrounded tab would otherwise
+    // let the HUD countdown drift away from the storm the player is actually standing in.
+    const now = Date.now();
+    const dt = this.localMatchLastTs ? Math.min(0.5, (now - this.localMatchLastTs) / 1000) : 0;
+    this.localMatchLastTs = now;
+
+    // §12 The round is frozen while the app is backgrounded — the player can't steer, so the
+    // clock must not run and the storm must not close in or bite.
+    if (this.localPaused) return;
+
     this.localMatchTimer = Math.max(0, this.localMatchTimer - dt);
     state.matchTimer = Math.ceil(this.localMatchTimer);
 
+    // Same curve as the server: hold full size through the grace period, then close smoothly
+    // and reach the final radius at ZONE_CLOSE_AT_PCT of the round.
     const sz = state.safeZone;
-    const totalTime = 180; // 3 minute match
-    const elapsed = Math.max(0, totalTime - this.localMatchTimer);
-    const progress = Math.min(1, elapsed / totalTime);
-    const initialR = HALF * 0.94;
-    const targetR = 350;
-    sz.radius = Math.max(targetR, initialR - (initialR - targetR) * progress);
+    const elapsed = Math.max(0, MATCH_SECONDS - this.localMatchTimer);
+    const shrinkWindow = Math.max(1, MATCH_SECONDS * ZONE_CLOSE_AT_PCT - ZONE_GRACE);
+    const progress = Math.min(1, Math.max(0, (elapsed - ZONE_GRACE) / shrinkWindow));
+    sz.radius = ZONE_FINAL_R + (ZONE_START_R - ZONE_FINAL_R) * (1 - progress);
+    sz.targetRadius = ZONE_FINAL_R;
 
+    const sanctuary = state.sanctuaryZone;
     for (const s of state.snakes) {
       if (!s.isAlive || (s.shieldTimer ?? 0) > 0) continue;
-      const dx = s.head.x - sz.centerX, dy = s.head.y - sz.centerY;
+      // Inside the 🛡️ Safe Sanctuary the storm can't reach you (matches the server).
+      if (sanctuary) {
+        const sdx = this.wrapDeltaLocal(s.head.x - sanctuary.centerX);
+        const sdy = this.wrapDeltaLocal(s.head.y - sanctuary.centerY);
+        if (sdx * sdx + sdy * sdy < sanctuary.radius * sanctuary.radius) { (s as any).stormT = 0; continue; }
+      }
+      const dx = this.wrapDeltaLocal(s.head.x - sz.centerX), dy = this.wrapDeltaLocal(s.head.y - sz.centerY);
       if (dx * dx + dy * dy > sz.radius * sz.radius) {
         (s as any).stormT = ((s as any).stormT ?? 0) + dt;
         if ((s as any).stormT > 2) {
-          s.hp = Math.max(0, (s.hp ?? 100) - 15 * dt);
+          s.hp = Math.max(0, (s.hp ?? 100) - sz.damagePerSecond * dt);
           if (s.hp <= 0) this.eliminateLocal(s, null);
         }
       } else {

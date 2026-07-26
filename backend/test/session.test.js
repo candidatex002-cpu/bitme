@@ -143,6 +143,102 @@ test('environmental hazard (lava) burns hp then eliminates', () => {
   assert.equal(p.isAlive, false, 'sustained lava contact eliminates');
 });
 
+// §2 Shrinking zone — Battle Royale & Team Battle both close on the ROUND clock.
+for (const mode of ['battle_royale', 'team']) {
+  test(`${mode}: zone shrinks on the round clock and the HUD timer matches`, () => {
+    const s = new GameSessionService(`z_${mode}`, mode);
+    s.stop();
+    const st = s.getState();
+    const duration = getModeConfig(mode).matchDurationSeconds;
+    assert.ok(duration > 0, 'timed mode declares a duration');
+
+    const startR = st.safeZone.radius;
+    assert.equal(st.matchTimer, duration, 'timer starts at the full round length');
+
+    // Grace period — the zone must NOT have moved yet.
+    s.advanceRoundClockForTest(10);
+    s.stepForTest();
+    assert.equal(st.safeZone.radius, startR, 'zone holds full size during the grace period');
+    assert.equal(st.matchTimer, duration - 10, 'timer counts down during the grace period');
+
+    // Mid-round — partially closed, strictly between start and target.
+    s.advanceRoundClockForTest(duration / 2);
+    s.stepForTest();
+    assert.ok(st.safeZone.radius < startR, 'zone has started closing');
+    assert.ok(st.safeZone.radius > st.safeZone.targetRadius, 'zone is not fully closed at mid-round');
+
+    // End of round — fully closed, timer at zero, round flagged over.
+    s.advanceRoundClockForTest(duration);
+    s.stepForTest();
+    assert.ok(Math.abs(st.safeZone.radius - st.safeZone.targetRadius) < 0.001, 'zone reaches its target radius');
+    assert.equal(st.matchTimer, 0, 'timer hits zero');
+    assert.equal(st.matchOver, true, 'round ends when the timer expires');
+  });
+}
+
+test('battle_royale: a new round reopens the zone (session outlives one match)', () => {
+  const s = new GameSessionService('z_reset', 'battle_royale');
+  s.stop();
+  const st = s.getState();
+  const startR = st.safeZone.radius;
+  const duration = getModeConfig('battle_royale').matchDurationSeconds;
+
+  s.advanceRoundClockForTest(duration + 1);
+  s.stepForTest();
+  assert.equal(st.matchOver, true, 'round over');
+
+  // Intermission elapses → the next round starts with a full-size zone and a fresh clock.
+  s.advanceRoundClockForTest(60);
+  s.stepForTest();
+  assert.equal(st.matchOver, false, 'a new round has started');
+  assert.equal(st.round, 2, 'round counter advanced');
+  assert.equal(st.safeZone.radius, startR, 'zone reopened to full size');
+  assert.equal(st.matchTimer, duration, 'clock restarted');
+});
+
+test('battle_royale: joining during the intermission starts a fresh round', () => {
+  const s = new GameSessionService('z_join', 'battle_royale');
+  s.stop();
+  const st = s.getState();
+  const duration = getModeConfig('battle_royale').matchDurationSeconds;
+  s.advanceRoundClockForTest(duration + 1);
+  s.stepForTest();
+  assert.equal(st.matchOver, true);
+
+  s.registerPlayer('late', 'Late');
+  assert.equal(st.matchOver, false, 'late joiner is not dropped into a finished match');
+  assert.equal(st.matchTimer, duration, 'late joiner gets a full round');
+});
+
+test('battle_royale: players always spawn inside the closed zone', () => {
+  const s = new GameSessionService('z_spawn', 'battle_royale');
+  s.stop();
+  const st = s.getState();
+  const duration = getModeConfig('battle_royale').matchDurationSeconds;
+  s.advanceRoundClockForTest(duration * 0.9); // zone fully closed
+  s.stepForTest();
+
+  // Force the sanctuary far away — a spawn must still land inside the storm-free circle.
+  st.sanctuaryZone.centerX = 200;
+  st.sanctuaryZone.centerY = 200;
+  for (let i = 0; i < 40; i++) {
+    const p = s.registerPlayer(`sp_${i}`, 'S');
+    const dx = p.head.x - st.safeZone.centerX, dy = p.head.y - st.safeZone.centerY;
+    assert.ok(Math.hypot(dx, dy) <= st.safeZone.radius, 'spawn is inside the safe zone');
+  }
+});
+
+test('classic (no storm): zone never shrinks and no round clock is published', () => {
+  const s = new GameSessionService('z_classic', 'classic');
+  s.stop();
+  const st = s.getState();
+  const r0 = st.safeZone.radius;
+  s.advanceRoundClockForTest(600);
+  for (let i = 0; i < 5; i++) s.stepForTest();
+  assert.equal(st.safeZone.radius, r0, 'Free Roam stays wide open');
+  assert.equal(st.matchTimer, undefined, 'untimed mode publishes no countdown');
+});
+
 // §3 shield/sanctuary protects from hazards
 test('shield protects from hazard damage', () => {
   const s = new GameSessionService('hz2', 'classic');

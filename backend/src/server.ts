@@ -584,6 +584,10 @@ setInterval(() => {
       leaderboard: state.leaderboard,
       teamScores: state.teamScores,
       currentEvent: state.currentEvent,
+      // §2 Round clock — the HUD countdown must come from the same clock that drives the zone.
+      matchTimer: state.matchTimer,
+      matchOver: state.matchOver,
+      round: state.round,
     });
   }
 }, 1000 / 30);
