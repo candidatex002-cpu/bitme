@@ -473,6 +473,110 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   color: #DC2626;
 }
 
+/* Pause Popup Daily Missions Section */
+.pause-missions-card {
+  background: var(--card-2);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 12px;
+  margin-bottom: 14px;
+  text-align: left;
+}
+.pause-missions-card .pm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.pause-missions-card .pm-title {
+  font-family: var(--font-title);
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: var(--ink);
+}
+.pause-missions-card .pm-sub-tag {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--green-deep);
+  background: var(--green-bg);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.pause-missions-card .pm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pause-missions-card .pm-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.pause-missions-card .pm-item.completed {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+.pause-missions-card .pm-ico {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+.pause-missions-card .pm-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.pause-missions-card .pm-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.pause-missions-card .pm-name {
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: var(--ink);
+}
+.pause-missions-card .pm-reward {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--gold-deep);
+}
+.pause-missions-card .pm-bar-track {
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+}
+.pause-missions-card .pm-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #34d399);
+  border-radius: 6px;
+  transition: width 0.3s ease;
+}
+.pause-missions-card .pm-count-text {
+  font-size: 0.64rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+.pause-missions-card .pm-check {
+  font-weight: 900;
+  color: #16a34a;
+  background: #dcfce7;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  flex-shrink: 0;
+}
+
 /* ---- Top-Right: Leaderboard ---- */
 .hud-leaderboard {
   position: absolute;

@@ -1792,12 +1792,49 @@ class AnacondaPark {
     const sw = (on: boolean, key: string) => `<button class="switch ${on ? 'on' : ''}" data-pset="${key}"></button>`;
     const cpos = this.settings.controlPos || 'right';
     const hp = Math.max(0, Math.round(this.lastHp || 100));
-    return `<div class="overlay"><div class="modal" style="text-align:center;max-width:400px;"><div class="section-title" style="justify-content:center;">⏸️ Paused</div>
+    const dailyMissions = (this.missions || []).filter(m => m.category === 'daily');
+    const dailyList = dailyMissions.length ? dailyMissions : [
+      { id: 'dm_1', icon: '🍒', title: 'Eat 20 Cherries', category: 'daily', currentCount: 14, targetCount: 20, rewardStars: 50, isCompleted: false },
+      { id: 'dm_2', icon: '⚔️', title: 'Eliminate 3 Rivals', category: 'daily', currentCount: 1, targetCount: 3, rewardStars: 100, isCompleted: false },
+      { id: 'dm_3', icon: '⭐', title: 'Collect 10 Star Fragments', category: 'daily', currentCount: 8, targetCount: 10, rewardStars: 75, isCompleted: false },
+    ];
+
+    return `<div class="overlay"><div class="modal" style="text-align:center;max-width:420px;"><div class="section-title" style="justify-content:center;">⏸️ Paused</div>
       <div class="pause-hearts-card">
         <div class="hearts-title">❤️ Snake Health</div>
         <div class="hearts-row">${this.renderHeartsHTML(hp, 100)}</div>
         <div class="hearts-hp-text">${hp} / 100 HP</div>
       </div>
+
+      <!-- Daily Tasks Section in Pause Popup -->
+      <div class="pause-missions-card">
+        <div class="pm-header">
+          <span class="pm-title">🎯 Daily Missions</span>
+          <span class="pm-sub-tag">In-Match Progress</span>
+        </div>
+        <div class="pm-list">
+          ${dailyList.slice(0, 3).map(m => {
+            const pct = Math.min(100, Math.round(((m.currentCount || 0) / (m.targetCount || 1)) * 100));
+            const isDone = m.isCompleted || (m.currentCount >= m.targetCount);
+            return `
+              <div class="pm-item ${isDone ? 'completed' : ''}">
+                <div class="pm-ico">${m.icon || '🎯'}</div>
+                <div class="pm-body">
+                  <div class="pm-name-row">
+                    <span class="pm-name">${m.title || m.name}</span>
+                    <span class="pm-reward">⭐ +${m.rewardStars || 50}</span>
+                  </div>
+                  <div class="pm-bar-track">
+                    <div class="pm-bar-fill" style="width:${pct}%"></div>
+                  </div>
+                  <div class="pm-count-text">${m.currentCount || 0} / ${m.targetCount || 10}</div>
+                </div>
+                ${isDone ? '<span class="pm-check">✓</span>' : ''}
+              </div>`;
+          }).join('')}
+        </div>
+      </div>
+
       <div class="pause-settings">
         <div class="toggle" style="flex-direction:column;align-items:flex-start;gap:6px;">
           <span class="t-label">🕹️ Controller Position</span>
