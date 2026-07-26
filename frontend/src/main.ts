@@ -2710,23 +2710,22 @@ class AnacondaPark {
     return `
       <div class="hud ctrl-${cpos}">
         <!-- Top HUD Header Grid: Pause | Score | Hearts | Leaderboard -->
-        <div class="hud-top-bar">
-          <div class="hud-top-left">
-            <button id="nav-pause" class="hud-pause">⏸</button>
-            <div class="hud-score-pill">
-              <span class="score-lbl">Score:</span>
-              <span class="score-val" id="hv-score">0</span>
-              <span class="stage-val" id="hud-stage">Lv 1</span>
-            </div>
+        <div class="tb-top-bar">
+          <button id="nav-pause" class="hud-pause tb-a-pause">⏸</button>
+
+          <div class="hud-score-pill tb-a-player">
+            <span class="score-lbl">Score:</span>
+            <span class="score-val" id="hv-score">0</span>
+            <span class="stage-val" id="hud-stage">Lv 1</span>
           </div>
 
-          <div class="hud-top-center">
+          <div class="tb-a-hearts">
             <div class="hearts-row" id="hud-hearts-row">
               ${this.renderHeartsHTML(100, 100)}
             </div>
           </div>
 
-          <div class="hud-top-right">
+          <div class="tb-a-lb">
             <div class="hud-leaderboard hud-panel">
               <div class="lb-title">🏆 Top 10</div>
               <div id="hud-lb-rows"></div>
@@ -2734,7 +2733,7 @@ class AnacondaPark {
           </div>
         </div>
 
-        <!-- Mode-Specific Compact Battle Bar (Kills, Timer, Rank, Alive) -->
+        <!-- Mode-Specific Compact Battle Bar -->
         <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
         <div class="team-scores" id="team-scores" style="display:none;"></div>
         <div class="power-status" id="power-status" style="display:none;"></div>
@@ -2745,7 +2744,7 @@ class AnacondaPark {
           <div id="mission-tracker-rows"></div>
         </div>` : ''}
 
-        <!-- Bottom Controls Cluster: Joystick (Center) & Action Buttons (Right) -->
+        <!-- Bottom Controls Cluster -->
         <div class="hud-bottom-controls">
           <div class="touch-joystick joy-${jsize} joy-op-${jop}" id="touch-joystick">
             <div class="touch-knob" id="touch-knob"></div>
