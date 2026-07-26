@@ -1,6 +1,6 @@
 {
-  "appId": "com.anacondapark.game",
-  "appName": "Anaconda Park",
+  "appId": "com.snakeclash.slitherarena",
+  "appName": "Snake Clash: Slither Arena",
   "webDir": "dist",
   "bundledWebRuntime": false,
   "server": {

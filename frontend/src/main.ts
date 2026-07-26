@@ -1538,7 +1538,7 @@ class AnacondaPark {
           <div class="app-top-inner">
             <div class="app-brand">
               ${icons.logo(38)}
-              <div class="logo-txt">Anaconda Park<small>RECLAIM THE LOST CROWN</small></div>
+              <div class="logo-txt">Snake Clash<small>SLITHER ARENA</small></div>
             </div>
             <div class="app-top-actions">
               <button class="icon-btn ${this.settings.music ? '' : 'off'}" id="music-toggle" title="${this.settings.music ? 'Music on' : 'Music off'}">
