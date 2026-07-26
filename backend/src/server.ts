@@ -9,6 +9,7 @@ import { AdminService } from './services/AdminService';
 import { RewardsService } from './services/RewardsService';
 import { CouponService } from './services/CouponService';
 import { SocialService } from './services/SocialService';
+import { StatsService } from './services/StatsService';
 import { presence } from './services/Presence';
 import { sessionManager } from './services/GameSessionManager';
 import { getModeConfig } from './services/GameSessionService';
@@ -115,7 +116,7 @@ app.post('/api/auth/onboard', authLimiter, (req, res) => {
   res.json({ ...result, profile: withRank(result.profile) });
 });
 
-const withRank = (profile: any) => profile ? { ...profile, rank: ProgressionService.getRank(profile.level, profile.prestige), xpToNext: ProgressionService.xpToNext(profile.level), nextEvolution: ProgressionService.nextEvolution(profile.level, profile.evolutionXp, profile.prestige) } : profile;
+const withRank = (profile: any) => profile ? { ...profile, rank: ProgressionService.getRank(profile.level, profile.prestige), xpToNext: ProgressionService.xpToNext(profile.level), nextEvolution: ProgressionService.nextEvolution(profile.level, profile.evolutionXp, profile.prestige), derivedStats: profile.stats ? StatsService.derive(profile.stats) : undefined } : profile;
 
 app.get('/api/player/profile', (req, res) => {
   const a = auth(req, res); if (!a) return;
@@ -235,12 +236,66 @@ app.post('/api/missions/claim', (req, res) => {
   res.json(result);
 });
 
+// §V7 Auto-claim every completed-but-unclaimed mission (idempotent via the isClaimed gate,
+// so rewards can never be granted twice). Called after a match so completions pay out.
+app.post('/api/missions/claim-all', writeLimiter, (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  let stars = 0, xp = 0, evoXp = 0; const claimed: string[] = [];
+  for (const m of db.getMissions(a.userId)) {
+    if (m.isCompleted && !m.isClaimed) {
+      const r = db.claimMissionReward(a.userId, m.id);
+      if (r.success) { stars += r.stars; xp += r.xp; evoXp += r.evoXp; claimed.push(m.id); }
+    }
+  }
+  const profile = db.getProfile(a.userId);
+  res.json({ success: true, claimed, stars, xp, evoXp, missions: db.getMissions(a.userId), profile: withRank(profile) });
+});
+
+// §V7 §9 Grant the all-daily-missions-complete bonus. Server validates completion AND that
+// it hasn't been claimed today, so the Rare Egg + stars can be granted at most once per day.
+app.post('/api/missions/daily-bonus', writeLimiter, (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const profile = db.getProfile(a.userId);
+  if (!profile) return res.status(404).json({ error: 'Profile not found' });
+  const daily = db.getMissions(a.userId).filter(m => m.category === 'daily');
+  const allDone = daily.length > 0 && daily.every(m => m.isCompleted);
+  const today = new Date().toISOString().slice(0, 10);
+  if (!allDone) return res.json({ success: false, allDone: false, message: 'Finish all daily missions first' });
+  if (profile.lastDailyBonus === today) return res.json({ success: false, alreadyClaimed: true, message: 'Daily bonus already claimed today' });
+  const b = gameConfig.economy.dailyBonus;
+  db.grantRewards(a.userId, { stars: b.stars, xp: b.xp, evoXp: b.evoXp });
+  db.grantItem(a.userId, b.item, 1);
+  const updated = db.updateProfile(a.userId, { lastDailyBonus: today });
+  res.json({ success: true, rewards: { stars: b.stars, xp: b.xp, evoXp: b.evoXp, item: b.itemName, itemIcon: b.itemIcon }, profile: withRank(updated) });
+});
+
 app.get('/api/achievements', (req, res) => {
   const a = auth(req, res); if (!a) return;
   res.json({ achievements: db.getAchievements(a.userId) });
 });
 
-app.get('/api/leaderboard', (_req, res) => res.json({ leaderboard: db.getLeaderboard() }));
+// §V7 Leaderboards. No `category` → legacy global score board (back-compat). With a
+// category → the redesigned typed board. `scope=friends` (auth) or `scope=local` filters.
+const LEADERBOARD_CATEGORIES = ['level', 'score', 'kills', 'wins', 'survival', 'stars', 'explorer'];
+app.get('/api/leaderboard', (req, res) => {
+  const category = String(req.query.category || '');
+  if (!category) return res.json({ leaderboard: db.getLeaderboard() }); // legacy shape
+
+  if (!LEADERBOARD_CATEGORIES.includes(category)) return res.status(400).json({ error: 'Unknown category' });
+  const scope = String(req.query.scope || 'global');
+  if (scope === 'friends') {
+    const a = auth(req, res); if (!a) return;
+    const ids = [a.userId, ...db.getSocial(a.userId).friends];
+    return res.json({ category, scope, entries: db.getCategoryLeaderboard(category, 100, { userIds: ids }) });
+  }
+  if (scope === 'local') {
+    const region = String(req.query.region || 'Global');
+    return res.json({ category, scope, region, entries: db.getCategoryLeaderboard(category, 100, { region }) });
+  }
+  res.json({ category, scope: 'global', entries: db.getCategoryLeaderboard(category, 100) });
+});
+
+app.get('/api/leaderboard/categories', (_req, res) => res.json({ categories: LEADERBOARD_CATEGORIES }));
 
 app.post('/api/ads/claim', writeLimiter, (req, res) => {
   const a = auth(req, res); if (!a) return;
@@ -254,69 +309,35 @@ app.post('/api/ads/claim', writeLimiter, (req, res) => {
   res.json({ success: true, message: `Claimed Double Reward! +${bonusStars} Stars & +${bonusTickets} Tickets.`, bonusStars, bonusTickets, profile: withRank(updated) });
 });
 
-// Clamp a client-reported number into a sane, finite range (anti-cheat: the client
-// is never trusted, so a forged match summary can't mint unbounded currency).
-const clampNum = (v: any, min: number, max: number): number => {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return min;
-  return Math.min(max, Math.max(min, n));
-};
 
 app.post('/api/match/summary', writeLimiter, (req, res) => {
   const a = auth(req, res); if (!a) return;
-  const b = req.body || {};
-  const cl = gameConfig.economy.clamps;
-  const score = clampNum(b.score, 0, cl.maxScore);          // hard cap per match
-  const kills = clampNum(b.kills, 0, cl.maxKills);
-  const placement = Math.round(clampNum(b.placement, 1, 100));
-  const survivalSeconds = clampNum(b.survivalSeconds, 0, cl.maxSurvivalSeconds);
-  const distanceKm = clampNum(b.distanceKm, 0, cl.maxDistanceKm);
-  const areasVisited = Math.round(clampNum(b.areasVisited, 0, 50));
-  const cherriesEaten = Math.round(clampNum(b.cherriesEaten, 0, 10000));
-  const profile = db.getProfile(a.userId);
-  if (!profile) return res.status(404).json({ error: 'Profile not found' });
-
-  const won = placement === 1;
-  const m = gameConfig.economy.match;
-  const earnedStars = Math.floor(score / m.starsPerScore) + kills * m.starsPerKill + (won ? m.starsWinBonus : 0);
-  const earnedXP = Math.floor(score / m.xpPerScore) + kills * m.xpPerKill + (won ? m.xpWinBonus : 0);
-  const earnedEvoXP = Math.floor(score / m.evoXpPerScore) + kills * m.evoXpPerKill + (won ? m.evoXpWinBonus : 0);
-
-  // Persistent stats
-  db.updateProfile(a.userId, {
-    stats: {
-      matchesPlayed: profile.stats.matchesPlayed + 1,
-      matchesWon: profile.stats.matchesWon + (won ? 1 : 0),
-      totalKills: profile.stats.totalKills + kills,
-      totalFoodEaten: profile.stats.totalFoodEaten + Math.floor(score / 2),
-      highestScore: Math.max(profile.stats.highestScore, Math.round(score)),
-      survivalTimeSeconds: profile.stats.survivalTimeSeconds + survivalSeconds,
-      cherriesCollected: (profile.stats.cherriesCollected || 0) + cherriesEaten,
-    },
+  // §V7/§11 Server is the source of truth: bound the client report by what the simulation
+  // actually observed for this player (null for offline / local-engine play).
+  const serverPeak = sessionManager.consumePlayerPeak(a.userId);
+  const result = StatsService.recordMatch(a.userId, req.body || {}, serverPeak);
+  if (!result) return res.status(404).json({ error: 'Profile not found' });
+  const { authoritative, ...rest } = result;
+  res.json({
+    success: true,
+    earnedStars: rest.earnedStars, earnedXP: rest.earnedXP, earnedEvoXP: rest.earnedEvoXP,
+    levelsGained: rest.levelsGained, scoreEvolution: rest.scoreEvolution,
+    score: authoritative.score, kills: authoritative.kills, placement: rest.match.rank,
+    grantedCoupons: rest.grantedCoupons, match: rest.match,
+    profile: withRank(rest.profile),
   });
+});
 
-  // Mission + achievement telemetry
-  db.incrementCollectible(a.userId, 'match', 1);
-  db.incrementCollectible(a.userId, 'survive', survivalSeconds);
-  db.incrementCollectible(a.userId, 'distance', distanceKm);
-  if (won) db.incrementCollectible(a.userId, 'win', 1);
-  db.recordPeakMetric(a.userId, 'score', Math.round(score));
-  if (areasVisited > 0) db.recordPeakMetric(a.userId, 'explore', areasVisited);
-  db.updateLeaderboard(a.userId, a.username, Math.round(score), won);
-
-  // Server-authoritative XP / Evolution XP with account level-ups
-  const { profile: updated, levelsGained } = db.grantRewards(a.userId, { stars: earnedStars, xp: earnedXP, evoXp: earnedEvoXP });
-
-  // §7 Auto-grant any coupons the player just became eligible for (appears in inventory).
-  const grantedCoupons = CouponService.autoGrantEligible(a.userId, updated?.preferredRegion || 'Global');
-  const finalProfile = grantedCoupons.length ? db.getProfile(a.userId) : updated;
-
-  const scoreEvolution = ProgressionService.scoreToEvolution(Math.round(score));
-  res.json({ success: true, earnedStars, earnedXP, earnedEvoXP, levelsGained, placement, kills, score: Math.round(score), scoreEvolution, grantedCoupons, profile: withRank(finalProfile) });
+// §V7 Persisted match history for the Match History page.
+app.get('/api/player/history', (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 25));
+  res.json({ history: db.getMatchHistory(a.userId, limit) });
 });
 
 app.post('/api/match/abandon', (req, res) => {
   const a = auth(req, res); if (!a) return;
+  sessionManager.consumePlayerPeak(a.userId); // discard server-observed peak on clean abandon
   sessionManager.findPlayerSession(a.userId)?.removePlayer(a.userId);
   res.json({ success: true, message: 'Match abandoned cleanly' });
 });
@@ -382,6 +403,13 @@ app.post('/api/coupons/claim', writeLimiter, (req, res) => {
   const result = CouponService.claim(a.userId, req.body.couponId, req.body?.region || 'Global');
   if (!result.success) return res.status(400).json(result);
   res.json({ ...result, profile: withRank(result.profile) });
+});
+
+// §8 Lobby presence heartbeat — keeps a player "online" for friends while browsing menus.
+app.post('/api/presence/ping', (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  presence.heartbeat(a.userId);
+  res.json({ ok: true });
 });
 
 // --------------------------------------------------------------- §8 Social (server-driven)

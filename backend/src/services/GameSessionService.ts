@@ -100,6 +100,10 @@ export class GameSessionService {
   private sanctuaryTimer = gameConfig.world.sanctuaryRelocateSeconds;
 
   private eventTimer = gameConfig.world.eventDurationSeconds;
+  // §V7/P1 Server-authoritative per-life peak stats (source of truth for match summaries).
+  // Reset when a player (re)registers; updated every tick; read at match completion so the
+  // client can never report a score/kill count the server didn't actually observe.
+  private peakStats: Map<string, { score: number; kills: number; killStreak: number; joinedAt: number }> = new Map();
   private currentEventIndex = 0;
   private availableEvents: WorldEvent[] = [
     { id: 'evt_rain', type: 'rain_storm', title: '🌧️ Monsoon Rain Storm', description: 'Vision restricted! Frog & Star spawns tripled!', active: true, timerSeconds: 180, icon: '🌧️' },
@@ -259,11 +263,25 @@ export class GameSessionService {
     };
 
     this.state.snakes[userId] = snake;
+    if (!isBot) this.peakStats.set(userId, { score: 0, kills: 0, killStreak: 0, joinedAt: Date.now() }); // §V7/P1 fresh life
     return snake;
   }
 
   public respawnPlayer(userId: string, displayName: string, skin: string, evolution: string = 'Baby', region?: string): SnakeState {
     return this.registerPlayer(userId, displayName, skin, false, evolution, region);
+  }
+
+  // §V7/P1 Server-observed peak stats for this player's current life (source of truth).
+  public getPeakStats(userId: string): { score: number; kills: number; killStreak: number; survivalSeconds: number } | null {
+    const p = this.peakStats.get(userId);
+    if (!p) return null;
+    return { score: p.score, kills: p.kills, killStreak: p.killStreak, survivalSeconds: Math.round((Date.now() - p.joinedAt) / 1000) };
+  }
+  // Read + clear (called once when a match summary is finalized, so memory stays bounded).
+  public consumePeakStats(userId: string) {
+    const v = this.getPeakStats(userId);
+    this.peakStats.delete(userId);
+    return v;
   }
 
   public handlePlayerInput(userId: string, angle: number, boosting: boolean, _seq: number): void {
@@ -331,6 +349,17 @@ export class GameSessionService {
     this.maintainCollectibles();
     if (this.state.tick % 900 === 0) this.maintainObstacles(); // §2 re-scale ~every 30s
     this.updateLeaderboard();
+    this.trackPeakStats(); // §V7/P1 record server-observed peaks
+  }
+
+  // §V7/P1 Keep each tracked player's peak score/kills up to date from the authoritative snake.
+  private trackPeakStats() {
+    for (const [userId, peak] of this.peakStats) {
+      const s = this.state.snakes[userId];
+      if (!s) continue;
+      if (s.score > peak.score) peak.score = s.score;
+      if (s.kills > peak.kills) { peak.killStreak = Math.max(peak.killStreak, s.kills); peak.kills = s.kills; }
+    }
   }
 
   private updateSnake(snake: SnakeState, dt: number) {

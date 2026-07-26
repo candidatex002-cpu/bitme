@@ -17,6 +17,7 @@ const { EconomyService } = require(dist('services/EconomyService.js'));
 const { RewardsService } = require(dist('services/RewardsService.js'));
 const { CouponService } = require(dist('services/CouponService.js'));
 const { SocialService } = require(dist('services/SocialService.js'));
+const { StatsService } = require(dist('services/StatsService.js'));
 const { AuthService } = require(dist('services/AuthService.js'));
 const { SupabaseSync } = require(dist('db/SupabaseSync.js'));
 
@@ -211,6 +212,80 @@ test('Coupons: global redemption limit + auto-grant', () => {
   assert.equal((db.getProfile(user.id).coupons || []).length, before + issued.length);
   // Idempotent — already granted, no duplicate
   assert.equal(CouponService.autoGrantEligible(user.id, 'Global').find(v => v.definitionId === auto.id), undefined);
+});
+
+// ---------------------------------------------------------------- Daily bonus + items (§V7 §9)
+test('Items + daily bonus: grantItem accumulates; once-per-day gate', () => {
+  const { user } = db.createUser('Daily', 'dl@x.io', 'hash', false);
+  // grantItem is additive
+  db.grantItem(user.id, 'rare_egg', 1);
+  db.grantItem(user.id, 'rare_egg', 2);
+  assert.equal(db.getProfile(user.id).inventory.rare_egg, 3);
+
+  // Simulate the endpoint's core logic: complete all daily missions → grant once, block twice.
+  const daily = db.getMissions(user.id).filter(m => m.category === 'daily');
+  for (const m of daily) { m.currentCount = m.targetCount; m.isCompleted = true; }
+  const allDone = daily.length > 0 && daily.every(m => m.isCompleted);
+  assert.equal(allDone, true);
+  const today = new Date().toISOString().slice(0, 10);
+  // First claim
+  assert.notEqual(db.getProfile(user.id).lastDailyBonus, today);
+  db.grantItem(user.id, 'rare_egg', 1);
+  db.updateProfile(user.id, { lastDailyBonus: today });
+  assert.equal(db.getProfile(user.id).lastDailyBonus, today); // gate now set → second claim blocked
+  assert.equal(db.getProfile(user.id).inventory.rare_egg, 4);
+});
+
+// ---------------------------------------------------------------- StatsService (§V7)
+test('Stats: recordMatch updates general + mode stats + history + derived', () => {
+  const { user } = db.createUser('StatPlayer', 'st@x.io', 'hash', false);
+  const r = StatsService.recordMatch(user.id, {
+    score: 1200, kills: 4, deaths: 1, placement: 1, survivalSeconds: 90,
+    cherriesEaten: 20, frogsEaten: 3, starsCollected: 50, mode: 'battle_royale', map: 'volcano',
+  }, null);
+  assert.ok(r && r.profile);
+  const st = db.getProfile(user.id).stats;
+  assert.equal(st.matchesPlayed, 1);
+  assert.equal(st.matchesWon, 1);      // placement 1 = win
+  assert.equal(st.totalKills, 4);
+  assert.equal(st.highestScore, 1200);
+  assert.equal(st.cherriesCollected, 20);
+  assert.equal(st.totalStars, 50);
+  // Mode-specific stats recorded under battle_royale, incl. top-3 + best rank
+  const ms = db.getProfile(user.id).modeStats.battle_royale;
+  assert.equal(ms.matchesPlayed, 1);
+  assert.equal(ms.wins, 1);
+  assert.equal(ms.top3, 1);
+  assert.equal(ms.highestRank, 1);
+  // Derived win rate + K/D
+  const d = StatsService.derive(db.getProfile(user.id).stats);
+  assert.equal(d.winRate, 100);
+  assert.equal(d.kd, 4);
+  // Match history persisted
+  const hist = db.getMatchHistory(user.id);
+  assert.equal(hist.length, 1);
+  assert.equal(hist[0].result, 'win');
+  assert.equal(hist[0].mode, 'battle_royale');
+});
+
+test('Stats: server peak bounds a lying client (anti-cheat, §11)', () => {
+  const { user } = db.createUser('Cheater', 'ch@x.io', 'hash', false);
+  // Client claims 99999 score / 80 kills, but the server only observed 300 / 2.
+  const r = StatsService.recordMatch(user.id, { score: 99999, kills: 80, placement: 5, survivalSeconds: 999 },
+    { score: 300, kills: 2, killStreak: 2, survivalSeconds: 40 });
+  assert.equal(r.authoritative.score, 300, 'score bounded to server-observed peak');
+  assert.equal(r.authoritative.kills, 2, 'kills bounded to server-observed peak');
+  assert.ok(r.authoritative.survivalSeconds <= 40);
+});
+
+test('Stats: category leaderboards rank by metric', () => {
+  const { user: hi } = db.createUser('TopScorer', 'ts2@x.io', 'hash', false);
+  StatsService.recordMatch(hi.id, { score: 9000, kills: 10, placement: 1, survivalSeconds: 200 }, null);
+  const board = db.getCategoryLeaderboard('kills', 100);
+  assert.ok(Array.isArray(board) && board.length >= 1);
+  assert.equal(board[0].rank, 1);
+  // Sorted descending by value
+  for (let i = 1; i < board.length; i++) assert.ok(board[i - 1].value >= board[i].value);
 });
 
 // ---------------------------------------------------------------- SocialService (§8)

@@ -31,6 +31,8 @@ export interface GameConfig {
     clamps: { maxScore: number; maxKills: number; maxSurvivalSeconds: number; maxDistanceKm: number };
     ad: { stars: number; tickets: number; cooldownMs: number };
     respawn: Record<string, { stars: number; tickets: number; label: string }>;
+    // §V7 §9 Bonus for completing ALL daily missions (once per day). `item` lands in inventory.
+    dailyBonus: { stars: number; xp: number; evoXp: number; item: string; itemName: string; itemIcon: string };
   };
   world: {
     size: number;
@@ -96,6 +98,7 @@ const DEFAULTS: GameConfig = {
       ad: { stars: 0, tickets: 0, label: 'Watch Ad' },
       wait: { stars: 0, tickets: 0, label: 'Free Wait' },
     },
+    dailyBonus: { stars: 1000, xp: 500, evoXp: 100, item: 'rare_egg', itemName: 'Rare Egg', itemIcon: '🥚' },
   },
   world: {
     size: 6000,

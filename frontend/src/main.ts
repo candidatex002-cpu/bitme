@@ -8,7 +8,7 @@ import { icons } from './game/ui/icons.js';
 const API = serverBase();
 
 type Screen = 'app' | 'matchmaking' | 'play' | 'pause' | 'respawn' | 'gameover' | 'ad-reward';
-type Page = 'home' | 'play' | 'missions' | 'inventory' | 'profile' | 'events' | 'social' | 'settings' | 'rewards' | 'story' | 'leaderboard';
+type Page = 'home' | 'play' | 'missions' | 'inventory' | 'profile' | 'events' | 'social' | 'settings' | 'rewards' | 'story' | 'leaderboard' | 'stats' | 'history' | 'admin';
 
 interface SkinDef { id: string; name: string; grad: string; premium?: boolean; family?: string; }
 // 15 skin families — each belongs to a themed group
@@ -134,7 +134,22 @@ const LANDMARKS = [
   { name: 'College', x: 2365, y: 2245 }, { name: 'Bridge', x: 1565, y: 2445 },
 ];
 
-interface Settings { sfx: boolean; music: boolean; largeText: boolean; reduceMotion: boolean; highContrast: boolean; controlSide?: 'right' | 'left'; controlPos: 'left' | 'center' | 'right'; }
+interface Settings {
+  sfx: boolean;
+  music: boolean;
+  largeText: boolean;
+  reduceMotion: boolean;
+  highContrast: boolean;
+  controlSide?: 'right' | 'left';
+  controlPos: 'left' | 'center' | 'right';
+  joySize?: 'small' | 'medium' | 'large';
+  joyOpacity?: number;
+  joyDeadZone?: number;
+  joySensitivity?: number;
+  cameraPreset?: 'near' | 'medium' | 'far' | 'ultra_wide';
+  missionTracker?: boolean;
+  trackerPos?: 'left' | 'right';
+}
 
 class AnacondaPark {
   private root: HTMLElement;
@@ -185,7 +200,7 @@ class AnacondaPark {
   private isEditingProfile = false;
   private editingAvatar = '🐍';
 
-  private settings: Settings = { sfx: true, music: true, largeText: false, reduceMotion: false, highContrast: false, controlPos: 'right' };
+  private settings: Settings = { sfx: true, music: true, largeText: false, reduceMotion: false, highContrast: false, controlPos: 'right', missionTracker: true, trackerPos: 'left' };
 
   // input
   private angle = 0; private boosting = false; private keys: Record<string, boolean> = {};
@@ -200,6 +215,11 @@ class AnacondaPark {
   // match state
   private matchStart = 0; private lastAlive = true; private lastSnake: SnakeData | null = null;
   private lastState: GameStateTick | null = null; private visitedAreas = new Set<string>(); private summary: any = null;
+  // §V7 per-match counters (drive the live mission tracker + the summary payload)
+  private matchStats = { cherry: 0, apple: 0, frog: 0, star: 0, mushroom: 0, shield: 0, speed: 0, powerup: 0, kills: 0, deaths: 0 };
+  private lastKills = 0;
+  private liveMissionDone = new Set<string>(); // missions already celebrated this match
+  private activeMapTheme = 'forest'; // §8 theme id applied to the current match
   private adTimer = 5; private adInterval: any = null; private respawnWait = 0; private respawnInterval: any = null;
   private lastHp = 100; private hpVisibleUntil = 0; // §3 health bar show-on-damage
 
@@ -521,6 +541,8 @@ class AnacondaPark {
       this.selectedSkin = this.profile?.equippedSkin || 'Forest';
       await this.fetchAux();
       this.persistSession();
+      this.startPresenceHeartbeat(); // §8 keep online status live across the app
+      this.loadAdminCoupons();       // §7 detect admin (silent 403 for regular players)
       this.render();
     } catch {
       if (this.profile) { this.persistSession(); this.render(); return; }
@@ -573,7 +595,7 @@ class AnacondaPark {
 
   // ------------------------------------------------------------- navigation
   private setScreen(s: Screen) { this.screen = s; this.render(); }
-  private go(p: Page) { this.page = p; this.screen = 'app'; audio.playClick(); this.render(); if (p === 'rewards') this.loadRewards(); if (p === 'inventory') this.loadAvailableCoupons(); if (p === 'social') this.loadSocial(); if (p === 'play' && this.matchType === 'global') this.measureGlobalPing(); ads.showBanner(); /* §14 lobby-only banner */ }
+  private go(p: Page) { this.page = p; this.screen = 'app'; audio.playClick(); this.render(); if (p === 'rewards') this.loadRewards(); if (p === 'inventory') this.loadAvailableCoupons(); if (p === 'social') this.loadSocial(); if (p === 'history') this.loadMatchHistory(); if (p === 'leaderboard') this.loadLeaderboardCategory(); if (p === 'admin') this.loadAdminCoupons(); if (p === 'play' && this.matchType === 'global') this.measureGlobalPing(); ads.showBanner(); /* §14 lobby-only banner */ }
 
   private async equipSkin(id: string) {
     audio.playClick(); this.selectedSkin = id; if (this.profile) this.profile.equippedSkin = id;
@@ -632,12 +654,16 @@ class AnacondaPark {
 
   private startMatch() {
     this.matchStart = Date.now(); this.lastAlive = true; this.visitedAreas.clear(); this.summary = null;
+    // §V7 reset per-match tracking
+    this.matchStats = { cherry: 0, apple: 0, frog: 0, star: 0, mushroom: 0, shield: 0, speed: 0, powerup: 0, kills: 0, deaths: 0 };
+    this.lastKills = 0; this.liveMissionDone.clear();
     this.setScreen('play'); // render() creates/attaches the renderer to the live canvas
     ads.hideBanner(); // §14 never show ads during active gameplay
     audio.startMusic();
     this.client.onStateUpdate = (s) => this.onTick(s);
     this.client.onRespawnResult = (r) => this.onRespawn(r);
     this.client.onMatchInvite = (inv) => this.showToast(`🎮 ${inv.from} invited you to a match!`); // §8
+    this.client.onCollect = (type) => this.onCollect(type); // §V7 real-time mission tracking
     const region = this.matchType === 'local' ? (this.localCity || 'Local') : 'Global'; // §7
     // §2 Each mode carries its own rules/flags into the engine (solo, story, timed).
     this.client.setModeFlags({ ui: this.selectedUIMode, solo: !!this.modeDef.solo, story: !!this.modeDef.story });
@@ -668,7 +694,122 @@ class AnacondaPark {
     if ((state as any).matchOver && (this.screen === 'play' || this.screen === 'respawn')) { this.endMatch(); return; }
     if (me && !me.isAlive && this.lastAlive && this.screen === 'play') { this.lastAlive = false; audio.playDeath(); this.openRespawn(); return; }
     if (me && me.isAlive) this.lastAlive = true;
+    // §V7 real-time kill tracking (works in both server + local engine via snake.kills)
+    if (me) {
+      const k = me.kills || 0;
+      if (k > this.lastKills) { this.matchStats.kills += (k - this.lastKills); this.lastKills = k; this.updateMissionTracker(); }
+    }
     if (this.screen === 'play') this.updateHUD(state, me);
+  }
+
+  // §V7 A collectible was picked up (local engine) — update counters + live mission tracker.
+  private onCollect(type: string) {
+    if (type in this.matchStats) (this.matchStats as any)[type]++;
+    if (type === 'shield' || type === 'speed' || type === 'mushroom') this.matchStats.powerup++;
+    this.updateMissionTracker();
+  }
+
+  // §V7 Missions whose progress can be tracked live during a match (collectible metrics).
+  private static TRACKABLE_METRICS = new Set(['cherry', 'apple', 'frog', 'star', 'kill']);
+  private liveMissionCount(m: any): number {
+    const metricToStat: Record<string, keyof typeof this.matchStats> = { cherry: 'cherry', apple: 'apple', frog: 'frog', star: 'star', kill: 'kills' };
+    const add = this.matchStats[metricToStat[m.metric]] || 0;
+    return Math.min(m.targetCount, (m.currentCount || 0) + add);
+  }
+  // The compact daily missions shown in the in-game tracker.
+  private trackerMissions(): any[] {
+    return (this.missions || []).filter(m => m.category === 'daily' && AnacondaPark.TRACKABLE_METRICS.has(m.metric)).slice(0, 4);
+  }
+  // Re-render the in-game tracker rows + fire the completion celebration once per mission.
+  private updateMissionTracker() {
+    const box = document.getElementById('mission-tracker-rows');
+    const list = this.trackerMissions();
+    if (box) {
+      box.innerHTML = list.map(m => {
+        const cur = this.liveMissionCount(m);
+        const done = cur >= m.targetCount;
+        return `<div class="mt-row ${done ? 'done' : ''}"><span class="mt-check">${done ? '☑' : '☐'}</span><span class="mt-txt">${m.icon} ${m.title.replace(/^[^ ]+ /, '')}</span><span class="mt-count">${cur}/${m.targetCount}</span></div>`;
+      }).join('');
+    }
+    // Completion detection — celebrate each mission once, then check the daily-complete flow.
+    for (const m of list) {
+      if (this.liveMissionCount(m) >= m.targetCount && !this.liveMissionDone.has(m.id)) {
+        this.liveMissionDone.add(m.id);
+        this.celebrateMission(m);
+      }
+    }
+  }
+
+  // §V7 §8 Mission completion celebration — popup + confetti + sound + reward summary.
+  private celebrateMission(m: any) {
+    audio.playFanfare?.();
+    const el = document.createElement('div');
+    el.className = 'mission-pop';
+    el.innerHTML = `
+      <div class="mp-card">
+        <div class="mp-confetti">${Array.from({ length: 14 }, (_, i) => `<i style="--i:${i}"></i>`).join('')}</div>
+        <div class="mp-title">🎉 Daily Mission Complete!</div>
+        <div class="mp-name">${m.icon} ${m.title.replace(/^[^ ]+ /, '')}</div>
+        <div class="mp-rewards">
+          <span>⭐ +${m.rewardStars}</span><span>XP +${m.rewardXP}</span><span>Evo +${m.rewardEvoXP}</span>
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+    setTimeout(() => el.classList.add('show'), 20);
+    setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 350); }, 2600);
+    // If that was the last trackable daily mission, show the bigger daily-complete screen.
+    const all = this.trackerMissions();
+    if (all.length && all.every(x => this.liveMissionDone.has(x.id))) setTimeout(() => this.celebrateDailyComplete(), 900);
+  }
+
+  // §V7 §9 All daily missions done — larger completion screen + real server-granted bonus.
+  private async celebrateDailyComplete() {
+    if (document.getElementById('daily-complete')) return;
+    // Claim the server-authoritative daily bonus (granted at most once per day).
+    let rewardsHtml = '<div>⭐ Bonus Stars</div><div>🥚 Rare Egg</div><div>XP Boost</div>';
+    let headline = 'You completed today\'s Daily Missions.';
+    try {
+      const res = await fetch(API + '/api/missions/daily-bonus', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } });
+      const d = await res.json();
+      if (d.success && d.rewards) {
+        if (d.profile) { this.profile = d.profile; this.persistSession(); }
+        rewardsHtml = `<div>⭐ +${d.rewards.stars}</div><div>${d.rewards.itemIcon || '🥚'} ${d.rewards.item}</div><div>XP +${d.rewards.xp}</div><div>Evo +${d.rewards.evoXp}</div>`;
+      } else if (d.alreadyClaimed) {
+        headline = 'Daily bonus already claimed today — see you tomorrow!';
+        rewardsHtml = '<div>✓ Claimed today</div>';
+      } else if (d.allDone === false) {
+        // Not every daily mission is done yet (e.g. non-trackable ones) — skip the big screen;
+        // the per-mission celebrations already played.
+        return;
+      }
+    } catch { /* offline — show the generic celebration */ }
+    audio.playFanfare?.();
+    const el = document.createElement('div');
+    el.id = 'daily-complete';
+    el.className = 'daily-complete-overlay';
+    el.innerHTML = `
+      <div class="dc-card">
+        <div class="dc-trophy">🏆</div>
+        <div class="dc-title">Congratulations!</div>
+        <div class="dc-sub">${headline}</div>
+        ${rewardsHtml ? `<div class="dc-rewards">${rewardsHtml}</div>` : ''}
+        <div class="dc-next">Next Daily Missions in <b id="dc-countdown">--:--:--</b></div>
+        <button class="btn btn-primary" id="dc-close">Awesome!</button>
+      </div>`;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+    const tick = () => { const c = document.getElementById('dc-countdown'); if (c) c.textContent = this.timeToMidnight(); };
+    tick(); const iv = setInterval(tick, 1000);
+    document.getElementById('dc-close')?.addEventListener('click', () => { clearInterval(iv); el.classList.remove('show'); setTimeout(() => el.remove(), 300); });
+  }
+
+  // Countdown to local midnight (daily reset) as HH:MM:SS.
+  private timeToMidnight(): string {
+    const now = new Date();
+    const midnight = new Date(now); midnight.setHours(24, 0, 0, 0);
+    let s = Math.max(0, Math.floor((midnight.getTime() - now.getTime()) / 1000));
+    const h = Math.floor(s / 3600); s -= h * 3600; const m = Math.floor(s / 60); s -= m * 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
   private onRespawn(r: { success: boolean; message?: string; profile?: any }) {
@@ -699,13 +840,26 @@ class AnacondaPark {
     const placement = alive + 1;
     const distanceKm = snake ? +((snake as any).distanceTravelled?.toFixed?.(2) || 0) : 0;
     const score = snake?.score || 0; const kills = snake?.kills || 0;
+    const ms = this.matchStats;
+    const starsCollected = ms.star * 50; // ⭐ stars are worth 50 each
     try {
-      const res = await fetch(API + '/api/match/summary', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify({ score, kills, placement, survivalSeconds: survival, distanceKm, areasVisited: this.visitedAreas.size }) });
+      const res = await fetch(API + '/api/match/summary', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify({
+        score, kills, placement, survivalSeconds: survival, distanceKm, areasVisited: this.visitedAreas.size,
+        // §V7 richer, mode-tagged payload so per-mode stats + missions populate correctly
+        mode: this.selectedUIMode, map: this.activeMapTheme, deaths: 1, killStreak: kills,
+        cherriesEaten: ms.cherry, applesEaten: ms.apple, frogsEaten: ms.frog, powerupsEaten: ms.powerup, starsCollected,
+      }) });
       const data = await res.json();
       if (data && data.profile) {
         this.summary = { score: Math.round(score), kills, placement, survival, earnedStars: data.earnedStars || 0, earnedXP: data.earnedXP || 0, earnedEvoXP: data.earnedEvoXP || 0, levelsGained: data.levelsGained || 0 };
         this.profile = data.profile;
         if (data.levelsGained > 0) this.showLevelUp(data.profile.level);
+        // §V7 §8 auto-claim any missions this match completed (server-authoritative payout)
+        try {
+          const cr = await fetch(API + '/api/missions/claim-all', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } });
+          const cd = await cr.json();
+          if (cd?.claimed?.length) { if (cd.profile) this.profile = cd.profile; this.summary.missionBonus = { stars: cd.stars, xp: cd.xp, evoXp: cd.evoXp, count: cd.claimed.length }; }
+        } catch { /* */ }
       } else {
         // No authoritative server (deployed local-engine build) — apply + persist locally.
         this.summary = this.applyLocalMatchRewards(score, kills, placement, survival);
@@ -940,17 +1094,159 @@ class AnacondaPark {
       zoom.addEventListener('click', cyc);
     }
     const mini = document.getElementById('touch-mini');
-    if (mini) mini.addEventListener('click', (e) => { e.stopPropagation(); document.querySelector('.hud')?.classList.toggle('mini-hidden'); });
+    if (mini) mini.addEventListener('click', (e) => { e.stopPropagation(); this.showTacticalMap(); });
   }
 
-  private renderHeartsHTML(hp: number, maxHp: number = 100): string {
+  private showTacticalMap() {
+    const state = (this.client as any).state || (this.renderer as any)?.lastState;
+    const me = state?.snakes?.find((s: any) => s.id === this.client.localUserId);
+    const existing = document.getElementById('tactical-overlay');
+    if (existing) { existing.remove(); return; }
+
+    const overlay = document.createElement('div');
+    overlay.id = 'tactical-overlay';
+    overlay.className = 'tactical-map-overlay';
+    overlay.innerHTML = `
+      <div class="tactical-map-card">
+        <div class="tactical-map-header">
+          <div class="tactical-map-title">🗺️ Fullscreen Tactical Map</div>
+          <button class="tactical-map-close" id="tactical-close">✖</button>
+        </div>
+        <canvas class="tactical-map-canvas" id="tactical-canvas"></canvas>
+        <div class="tactical-map-controls">
+          <button class="tactical-map-btn" id="tactical-zoom-in">🔍 +</button>
+          <button class="tactical-map-btn" id="tactical-zoom-out">🔍 -</button>
+          <button class="tactical-map-btn" id="tactical-center">📍 Center Me</button>
+        </div>
+      </div>`;
+
+    document.body.appendChild(overlay);
+
+    const canvas = document.getElementById('tactical-canvas') as HTMLCanvasElement;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width || 600;
+    canvas.height = rect.height || 600;
+
+    let mapZoom = 1.0;
+    let panX = me ? me.head.x : 1500;
+    let panY = me ? me.head.y : 1500;
+
+    const drawMap = () => {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const W = 3000;
+      const scale = (canvas.width / W) * mapZoom;
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(scale, scale);
+      ctx.translate(-panX, -panY);
+
+      // World Boundary Grid
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 6;
+      ctx.strokeRect(0, 0, W, W);
+
+      // Grid Lines
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1;
+      for (let x = 0; x <= W; x += 300) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, W); ctx.stroke();
+      }
+      for (let y = 0; y <= W; y += 300) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+      }
+
+      // Safe Zone Storm Circle
+      if (state?.safeZone) {
+        ctx.beginPath();
+        ctx.arc(state.safeZone.centerX, state.safeZone.centerY, state.safeZone.radius, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(52, 211, 153, 0.8)';
+        ctx.lineWidth = 5;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(52, 211, 153, 0.08)';
+        ctx.fill();
+      }
+
+      // Safe Sanctuary Zone
+      if (state?.sanctuaryZone) {
+        ctx.beginPath();
+        ctx.arc(state.sanctuaryZone.centerX, state.sanctuaryZone.centerY, state.sanctuaryZone.radius, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.22)';
+        ctx.fill();
+        ctx.strokeStyle = '#10b981';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+
+      // Wormholes
+      if (state?.portals) {
+        for (const p of state.portals) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius || 40, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(139, 92, 246, 0.45)';
+          ctx.fill();
+          ctx.font = '28px sans-serif';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('🌀', p.x, p.y);
+        }
+      }
+
+      // Snakes / Players
+      if (state?.snakes) {
+        for (const s of state.snakes) {
+          if (!s.isAlive) continue;
+          const isMe = s.id === this.client.localUserId;
+          ctx.beginPath();
+          ctx.arc(s.head.x, s.head.y, isMe ? 24 : 14, 0, Math.PI * 2);
+          ctx.fillStyle = isMe ? '#22c55e' : '#ef4444';
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+
+          // Player Name & Crown Tag
+          ctx.font = `bold ${isMe ? 18 : 12}px Outfit, sans-serif`;
+          ctx.fillStyle = isMe ? '#4ade80' : '#f87171';
+          ctx.textAlign = 'center';
+          ctx.fillText(isMe ? `👑 ${s.displayName}` : s.displayName, s.head.x, s.head.y - 26);
+        }
+      }
+
+      ctx.restore();
+    };
+
+    drawMap();
+
+    document.getElementById('tactical-close')?.addEventListener('click', () => overlay.remove());
+    document.getElementById('tactical-zoom-in')?.addEventListener('click', () => { mapZoom = Math.min(3.5, mapZoom * 1.3); drawMap(); });
+    document.getElementById('tactical-zoom-out')?.addEventListener('click', () => { mapZoom = Math.max(0.5, mapZoom * 0.75); drawMap(); });
+    document.getElementById('tactical-center')?.addEventListener('click', () => { if (me) { panX = me.head.x; panY = me.head.y; } mapZoom = 1.0; drawMap(); });
+  }
+
+  private renderHeartsHTML(hp: number, maxHp: number = 100, lastHp?: number): string {
     const totalHearts = 5;
     const hpPerHeart = maxHp / totalHearts; // 20 HP per heart
     let html = '';
+    const isDamage = lastHp !== undefined && hp < lastHp;
+    const isHeal = lastHp !== undefined && hp > lastHp;
     for (let i = 0; i < totalHearts; i++) {
       const fillPct = Math.max(0, Math.min(100, ((hp - i * hpPerHeart) / hpPerHeart) * 100));
+      const heartMin = i * hpPerHeart;
+      const heartMax = (i + 1) * hpPerHeart;
+      let anim = '';
+      if (isDamage && lastHp >= heartMin && hp < heartMax) anim = 'damaged';
+      else if (isHeal && hp >= heartMin && (lastHp ?? 0) < heartMax) anim = 'healed';
+
       html += `
-        <div class="heart-unit" title="${Math.max(0, Math.round(hp))}/${maxHp} HP">
+        <div class="heart-unit ${anim}">
           <svg class="heart-bg" viewBox="0 0 24 24">
             <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="#E2E8F0" stroke="#94A3B8" stroke-width="1.5"/>
           </svg>
@@ -972,7 +1268,6 @@ class AnacondaPark {
     const hp = Math.max(0, Math.round(me.hp ?? 100));
     const maxHp = Math.max(1, Math.round(me.maxHp ?? 100));
     setW('hs-health', (hp / maxHp) * 100);
-    setT('hv-health', `${hp} / ${maxHp} HP`);
     const hpFill = document.getElementById('hs-health');
     if (hpFill) {
       hpFill.style.background = hp < maxHp * 0.3
@@ -982,8 +1277,7 @@ class AnacondaPark {
           : 'linear-gradient(90deg, #10b981, #34d399)';
     }
     const heartsRow = document.getElementById('hud-hearts-row');
-    if (heartsRow) heartsRow.innerHTML = this.renderHeartsHTML(hp, maxHp);
-    setT('hud-hearts-hp-text', `${hp} / ${maxHp} HP`);
+    if (heartsRow) heartsRow.innerHTML = this.renderHeartsHTML(hp, maxHp, this.lastHp);
     this.lastHp = hp;
     setT('hv-score', String(Math.round(me.score)));
     setT('hud-stage', `${me.evolution || me.stage} · Lv ${me.level}`);
@@ -1053,6 +1347,7 @@ class AnacondaPark {
       const canvas = document.getElementById('game-canvas') as HTMLCanvasElement | null;
       if (canvas) { if (this.renderer) this.renderer.attach(canvas); else this.renderer = new Renderer(canvas); }
       this.applyMapTheme(); // §8 data-driven map theme + seasonal tint
+      this.updateMissionTracker(); // §V7 populate the in-game mission tracker
       this.bindTouch();
     }
   }
@@ -1103,7 +1398,10 @@ class AnacondaPark {
                     : this.page === 'rewards' ? this.pageRewards()
                       : this.page === 'story' ? this.pageStory()
                         : this.page === 'leaderboard' ? this.pageLeaderboard()
-                          : this.pageSettings()}
+                          : this.page === 'stats' ? this.pageStats()
+                            : this.page === 'history' ? this.pageHistory()
+                              : this.page === 'admin' ? this.pageAdmin()
+                                : this.pageSettings()}
         </div>
         <div class="bottom-nav">
           <div class="bottom-nav-inner">
@@ -1164,15 +1462,41 @@ class AnacondaPark {
   }
 
   // ---------- LEADERBOARD ----------
+  // §V7 leaderboard categories + scope (global / friends / local)
+  private lbCategory = 'score';
+  private lbScope: 'global' | 'friends' | 'local' = 'global';
+  private lbEntries: any[] = [];
+  private static LB_CATS: Array<[string, string]> = [
+    ['level', '🎚️ Level'], ['score', '🏆 Score'], ['kills', '⚔️ Kills'], ['wins', '👑 Wins'],
+    ['survival', '⏱️ Survival'], ['stars', '⭐ Stars'], ['explorer', '🗺️ Explorer'],
+  ];
+  private async loadLeaderboardCategory() {
+    try {
+      const params = new URLSearchParams({ category: this.lbCategory, scope: this.lbScope });
+      if (this.lbScope === 'local') params.set('region', this.localCountry || this.profile?.country || 'Global');
+      const headers: any = this.lbScope === 'friends' && this.token ? { Authorization: `Bearer ${this.token}` } : {};
+      const res = await fetch(`${API}/api/leaderboard?${params.toString()}`, { headers });
+      const d = await res.json();
+      this.lbEntries = d.entries || [];
+      if (this.page === 'leaderboard') this.render();
+    } catch { this.lbEntries = []; }
+  }
   private pageLeaderboard() {
-    const lb = this.leaderboard || [];
-    return `<div class="page"><div class="section-title">${icons.leaderboard(22)} Global Leaderboard</div>
+    const rows = this.lbEntries;
+    const unit = { survival: 's', stars: '', kills: '', wins: '', score: '', level: '', explorer: '' }[this.lbCategory] || '';
+    return `<div class="page"><div class="section-title">${icons.leaderboard(22)} Leaderboards</div>
+      <div class="seg" style="margin-bottom:10px;">
+        <button class="${this.lbScope === 'global' ? 'active' : ''}" data-lbscope="global">🌍 Global</button>
+        <button class="${this.lbScope === 'friends' ? 'active' : ''}" data-lbscope="friends">👥 Friends</button>
+        <button class="${this.lbScope === 'local' ? 'active' : ''}" data-lbscope="local">📍 Local</button>
+      </div>
+      <div class="lb-cats">${AnacondaPark.LB_CATS.map(([id, l]) => `<button class="lb-cat ${this.lbCategory === id ? 'active' : ''}" data-lbcat="${id}">${l}</button>`).join('')}</div>
       <div class="card"><div class="lb-page">
-        ${lb.length ? lb.map((e: any, i: number) => `<div class="lb-page-row ${e.userId === this.profile?.userId ? 'me' : ''}">
+        ${rows.length ? rows.map((e: any, i: number) => `<div class="lb-page-row ${e.userId === this.profile?.userId ? 'me' : ''}">
           <span class="lbp-rank ${i < 3 ? 'top' : ''}">${['🥇', '🥈', '🥉'][i] || (i + 1)}</span>
-          <span class="lbp-name">${e.displayName || e.name}</span>
-          <span class="lbp-score">${e.score}${e.wins ? ` · 🏆${e.wins}` : ''}</span>
-        </div>`).join('') : '<div class="muted" style="text-align:center;padding:16px;">Leaderboard loading…</div>'}
+          <span class="lbp-name">${e.avatar || ''} ${e.displayName} <span class="muted" style="font-weight:600;font-size:0.7rem;">Lv${e.level}</span></span>
+          <span class="lbp-score">${e.value}${unit}</span>
+        </div>`).join('') : '<div class="muted" style="text-align:center;padding:16px;">No entries yet for this board.</div>'}
       </div></div></div>`;
   }
 
@@ -1371,7 +1695,19 @@ class AnacondaPark {
           </div>`;
         }).join('')}</div>`;
     } else if (this.invTab === 'powerups') {
-      content = `<div class="powerups-grid">${POWERUPS.map(p => `
+      // §V7 Owned items (eggs / event items) earned via missions & the daily bonus — real, from the profile.
+      const inv: Record<string, number> = this.profile?.inventory || {};
+      const ITEM_META: Record<string, { icon: string; name: string }> = {
+        rare_egg: { icon: '🥚', name: 'Rare Egg' }, golden_chest: { icon: '🎁', name: 'Golden Chest' }, mystery_egg: { icon: '🥚', name: 'Mystery Egg' },
+      };
+      const owned = Object.entries(inv).filter(([, n]) => n > 0);
+      const ownedHtml = owned.length ? `
+        <div class="section-subtitle" style="font-weight:800;font-size:0.85rem;margin:2px 0 10px;">🎒 Your Items</div>
+        <div class="powerups-grid" style="margin-bottom:16px;">${owned.map(([id, n]) => {
+          const meta = ITEM_META[id] || { icon: '📦', name: id.replace(/_/g, ' ') };
+          return `<div class="item-card"><div class="i-ico">${meta.icon}</div><div style="flex:1;"><div class="i-name">${meta.name}</div><div class="i-sub">Collected reward</div></div><div class="i-val-badge">×${n}</div></div>`;
+        }).join('')}</div>` : '';
+      content = ownedHtml + `<div class="section-subtitle" style="font-weight:800;font-size:0.85rem;margin:2px 0 10px;">⚡ Power-Ups</div><div class="powerups-grid">${POWERUPS.map(p => `
         <div class="item-card">
           <div class="i-ico">${p.icon}</div>
           <div style="flex:1;">
@@ -1483,6 +1819,7 @@ class AnacondaPark {
             <div class="stat-cell"><div class="sv">${p.stats.cherriesCollected || 0}</div><div class="sl">Cherries</div></div>
             <div class="stat-cell"><div class="sv">${Math.round(p.stats.survivalTimeSeconds / 60)}m</div><div class="sl">Survived</div></div>
           </div>
+          <button class="btn btn-ghost btn-block" data-go="stats" style="margin-top:10px;">📊 View Full Statistics →</button>
         </div>
 
         <div class="card">
@@ -1494,12 +1831,80 @@ class AnacondaPark {
         </div>
 
         <div class="card">
-          <div class="section-title">📜 Match History</div>
+          <div class="section-title">📜 Recent Matches</div>
           <div class="list">
-            ${(() => { const h = this.loadHistory(); return h.length ? h.slice(0, 8).map((m: any) => `<div class="hist-row"><span class="hist-mode">${m.mode}</span><span class="hist-detail">#${m.placement} · ${m.score} pts · ⚔️${m.kills}</span><span class="hist-time">${this.timeAgo(m.at)}</span></div>`).join('') : '<div class="muted" style="text-align:center;padding:12px;">No matches yet — play to build your history.</div>'; })()}
+            ${(() => { const h = this.loadHistory(); return h.length ? h.slice(0, 5).map((m: any) => `<div class="hist-row"><span class="hist-mode">${m.mode}</span><span class="hist-detail">#${m.placement} · ${m.score} pts · ⚔️${m.kills}</span><span class="hist-time">${this.timeAgo(m.at)}</span></div>`).join('') : '<div class="muted" style="text-align:center;padding:12px;">No matches yet — play to build your history.</div>'; })()}
           </div>
+          <button class="btn btn-ghost btn-block" data-go="history" style="margin-top:10px;">📜 Full Match History →</button>
         </div>
       </div>`;
+  }
+
+  // ---------- §V7 Full Statistics page ----------
+  private pageStats() {
+    const p = this.profile; if (!p) return '<div class="page"><div class="card muted">Loading…</div></div>';
+    const s = p.stats || {};
+    const d = p.derivedStats || { winRate: 0, kd: 0 };
+    const modeStats = p.modeStats || {};
+    const favMode = (() => {
+      let best = ''; let n = -1;
+      for (const [k, v] of Object.entries<any>(modeStats)) if ((v?.matchesPlayed || 0) > n) { n = v.matchesPlayed; best = k; }
+      return best ? this.statModeLabel(best) : '—';
+    })();
+    const hrs = (s.survivalTimeSeconds / 3600).toFixed(1);
+    const cell = (v: any, l: string) => `<div class="stat-cell"><div class="sv">${v}</div><div class="sl">${l}</div></div>`;
+    const modeCard = (key: string, m: any) => {
+      if (!m) return '';
+      const rows: Array<[string, any]> = [['Played', m.matchesPlayed], ['Wins', m.wins], ['Best Score', m.highestScore], ['Kills', m.kills], ['Deaths', m.deaths], ['Best Survival', `${Math.round((m.longestSurvivalSeconds || 0) / 60)}m`], ['Stars', m.stars]];
+      if (key === 'battle_royale') { rows.push(['Top 3', m.top3 || 0]); rows.push(['Best Rank', m.highestRank ? `#${m.highestRank}` : '—']); }
+      if (key === 'team') { rows.push(['Assists', m.assists || 0]); rows.push(['MVP', m.mvp || 0]); }
+      if (key === 'explorer') { rows.push(['Chapters', m.chaptersCompleted || 0]); rows.push(['Bosses', m.bossesDefeated || 0]); }
+      if (key === 'classic') { rows.push(['Longest Snake', m.longestSnake || 0]); rows.push(['Best Time', `${Math.round((m.bestTimeSeconds || 0))}s`]); }
+      return `<div class="card"><div class="section-title">${this.statModeLabel(key)}</div><div class="stat-grid">${rows.map(([l, v]) => cell(v, l)).join('')}</div></div>`;
+    };
+    return `<div class="page">
+      <div class="section-title" style="display:flex;align-items:center;gap:8px;"><button class="btn btn-ghost" data-go="profile" style="padding:4px 10px;">←</button> 📊 Player Statistics</div>
+      <div class="card"><div class="section-title">General</div><div class="stat-grid">
+        ${cell(p.level, 'Level')}${cell(p.equippedEvolution, 'Evolution')}${cell(s.matchesPlayed, 'Matches')}${cell(s.matchesWon, 'Wins')}
+        ${cell(s.matchesLost, 'Losses')}${cell(d.winRate + '%', 'Win Rate')}${cell(hrs + 'h', 'Hours')}${cell(favMode, 'Favourite')}
+        ${cell(s.highestScore, 'Best Score')}${cell(Math.round(s.totalDistanceKm || 0) + 'km', 'Distance')}${cell(s.totalStars, 'Stars')}${cell(s.couponsEarned, 'Coupons')}
+      </div></div>
+      <div class="card"><div class="section-title">⚔️ Combat</div><div class="stat-grid">
+        ${cell(s.totalKills, 'Total Kills')}${cell(s.totalDeaths, 'Deaths')}${cell(d.kd, 'K/D')}${cell(s.longestKillStreak, 'Best Streak')}
+        ${cell(s.mostKillsInMatch, 'Most / Match')}${cell(Math.round((s.longestSurvivalSeconds || 0) / 60) + 'm', 'Longest Life')}${cell(s.mostDamageDealt, 'Max Dmg')}${cell(s.mostDamageReceived, 'Max Taken')}
+      </div></div>
+      <div class="card"><div class="section-title">🍒 Collectibles</div><div class="stat-grid">
+        ${cell(s.cherriesCollected, 'Cherries')}${cell(s.applesCollected, 'Apples')}${cell(s.frogsCollected, 'Frogs')}${cell(s.powerupsCollected, 'Power-ups')}
+      </div></div>
+      ${['free_roam', 'explorer', 'battle_royale', 'team', 'classic'].map(k => modeCard(k, (modeStats as any)[k])).join('')}
+    </div>`;
+  }
+
+  private statModeLabel(k: string): string {
+    return { free_roam: '🌿 Free Roam', explorer: '🗺️ Explorer', battle_royale: '🔥 Battle Royale', team: '⚔️ Team Battle', classic: '🐍 Classic Snake' }[k] || k;
+  }
+
+  // ---------- §V7 Match History page ----------
+  private matchHistory: any[] = [];
+  private async loadMatchHistory() {
+    if (!this.token) return;
+    try {
+      const res = await fetch(API + '/api/player/history?limit=25', { headers: { Authorization: `Bearer ${this.token}` } });
+      if (res.ok) { const d = await res.json(); this.matchHistory = d.history || []; if (this.page === 'history') this.render(); }
+    } catch { /* keep local fallback */ }
+  }
+  private pageHistory() {
+    const server = this.matchHistory;
+    const rows = server.length ? server : this.loadHistory().map((m: any) => ({ at: new Date(m.at).toISOString(), mode: m.mode, score: m.score, kills: m.kills, deaths: 1, stars: 0, rewards: '', result: m.placement === 1 ? 'win' : 'loss', durationSeconds: m.survival, rank: m.placement }));
+    return `<div class="page">
+      <div class="section-title" style="display:flex;align-items:center;gap:8px;"><button class="btn btn-ghost" data-go="profile" style="padding:4px 10px;">←</button> 📜 Match History</div>
+      ${rows.length ? `<div class="list">${rows.map((m: any) => `
+        <div class="match-row ${m.result}">
+          <div class="mr-top"><span class="mr-mode">${this.statModeLabel(m.mode) || m.mode}</span><span class="mr-result ${m.result}">${m.result === 'win' ? '🏆 Win' : 'Loss'}</span></div>
+          <div class="mr-stats"><span>⭐ ${m.score}</span><span>⚔️ ${m.kills}</span><span>💀 ${m.deaths}</span><span>⏱️ ${Math.round((m.durationSeconds || 0))}s</span>${m.rank ? `<span>#${m.rank}</span>` : ''}</div>
+          <div class="mr-foot"><span class="muted">${m.map || ''} ${m.rewards || ''}</span><span class="muted">${this.timeAgo(new Date(m.at).getTime())}</span></div>
+        </div>`).join('')}</div>` : '<div class="card muted" style="text-align:center;padding:24px;">No matches recorded yet. Play a match to start your history!</div>'}
+    </div>`;
   }
 
   private timeAgo(t: number): string {
@@ -1700,8 +2105,19 @@ class AnacondaPark {
       themeId = 'forest'; // classic stays clean
     }
     const theme = themes.find((t: any) => t.id === themeId) || themes[0];
+    this.activeMapTheme = theme.id;
     const season = (maps.seasons || []).find((s: any) => s.id === maps.activeSeason);
     this.renderer.applyTheme({ sky: theme.sky, grid: theme.grid, accent: theme.accent, tint: season?.tint || '' });
+  }
+
+  // §8 Presence heartbeat — ping every 45s (and immediately) so friends see us online
+  // even while browsing menus, not only during a match.
+  private presenceTimer: any = null;
+  private startPresenceHeartbeat() {
+    if (this.presenceTimer || !this.token || this.token === 'guest_local_token') return;
+    const ping = () => { fetch(API + '/api/presence/ping', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } }).catch(() => {}); };
+    ping();
+    this.presenceTimer = setInterval(ping, 45000);
   }
 
   // §8 Load the server-driven social graph (friends / requests / blocked + online status).
@@ -1735,6 +2151,63 @@ class AnacondaPark {
       const d = await res.json();
       this.showToast(`${d.success ? '🎮' : '⚠️'} ${d.message}`);
     } catch { this.showToast('⚠️ Could not send invite'); }
+  }
+
+  // §7 Coupon Admin — only visible to admin users (detected by a 200 from the admin endpoint).
+  private isAdmin = false;
+  private adminCoupons: any[] = [];
+  private async loadAdminCoupons() {
+    if (!this.token) return;
+    try {
+      const res = await fetch(API + '/api/admin/coupons', { headers: { Authorization: `Bearer ${this.token}` } });
+      if (res.status === 200) { this.isAdmin = true; this.adminCoupons = (await res.json()).coupons || []; if (this.page === 'admin' || this.page === 'settings') this.render(); }
+      else this.isAdmin = false;
+    } catch { /* */ }
+  }
+  private async adminCouponAction(path: string, method: string, body?: any) {
+    try {
+      const res = await fetch(API + path, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: body ? JSON.stringify(body) : undefined });
+      const d = await res.json();
+      this.showToast(res.ok ? '✅ Saved' : `⚠️ ${d.error || 'Failed'}`);
+      await this.loadAdminCoupons();
+      this.render();
+    } catch { this.showToast('⚠️ Network error'); }
+  }
+  private pageAdmin() {
+    if (!this.isAdmin) return '<div class="page"><div class="card muted" style="text-align:center;padding:24px;">🔒 Admin access required.</div></div>';
+    const c = this.adminCoupons;
+    return `<div class="page">
+      <div class="section-title" style="display:flex;align-items:center;gap:8px;"><button class="btn btn-ghost" data-go="settings" style="padding:4px 10px;">←</button> 🛡️ Coupon Admin</div>
+      <div class="card">
+        <div class="section-title">➕ Create Coupon</div>
+        <div class="admin-form">
+          <input id="ac-title" placeholder="Title (e.g. 10% off Cafe)" class="friend-search-input" />
+          <input id="ac-store" placeholder="Provider / store label" class="friend-search-input" />
+          <input id="ac-desc" placeholder="Reward text" class="friend-search-input" />
+          <div style="display:flex;gap:8px;">
+            <input id="ac-cost" type="number" placeholder="Cost ⭐" class="friend-search-input" style="flex:1;" />
+            <input id="ac-level" type="number" placeholder="Min level" class="friend-search-input" style="flex:1;" />
+            <input id="ac-limit" type="number" placeholder="Total limit (-1=∞)" class="friend-search-input" style="flex:1;" />
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:0.82rem;"><input type="checkbox" id="ac-auto" /> Auto-grant when eligible</label>
+          <button class="btn btn-primary" id="ac-create">Create Coupon</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-title">🎟️ Coupons (${c.length})</div>
+        <div class="list">${c.length ? c.map(x => `
+          <div class="admin-coupon ${x.enabled ? '' : 'disabled'}">
+            <div class="ac-main"><span class="ac-ico">${x.icon}</span>
+              <div><div class="ac-name">${x.title} ${x.autoGrant ? '<span class="pill gold" style="font-size:0.6rem;">AUTO</span>' : ''}</div>
+                <div class="muted" style="font-size:0.72rem;">${x.storeName} · ⭐${x.costStars} · L${x.minLevel} · used ${x.redemptionCount}${x.redemptionLimit >= 0 ? '/' + x.redemptionLimit : ''}</div></div>
+            </div>
+            <div class="ac-actions">
+              <button class="btn btn-ghost ac-toggle" data-id="${x.id}" data-on="${x.enabled}" style="padding:4px 9px;font-size:0.72rem;">${x.enabled ? 'Disable' : 'Enable'}</button>
+              <button class="btn btn-ghost ac-del" data-id="${x.id}" style="padding:4px 9px;font-size:0.72rem;color:#b91c1c;">Delete</button>
+            </div>
+          </div>`).join('') : '<div class="muted" style="text-align:center;padding:16px;">No coupons yet — create one above.</div>'}</div>
+      </div>
+    </div>`;
   }
 
   // §7 Load coupons the player is eligible to claim (server-driven).
@@ -1869,8 +2342,19 @@ class AnacondaPark {
             <button class="${(this.settings.controlPos || 'right') === 'right' ? 'active' : ''}" data-cpos="right">Right</button>
           </div>
         </div>
+        <div class="toggle"><span class="t-label">📋 In-game Mission Tracker</span>${sw(this.settings.missionTracker !== false, 'missionTracker')}</div>
+        ${this.settings.missionTracker === false ? '' : `<div class="toggle" style="flex-direction:column;align-items:flex-start;gap:6px;">
+          <span class="t-label">📋 Tracker Position</span>
+          <div class="seg" style="width:100%;">
+            <button class="${(this.settings.trackerPos || 'left') === 'left' ? 'active' : ''}" data-tpos="left">Top-Left</button>
+            <button class="${(this.settings.trackerPos || 'left') === 'right' ? 'active' : ''}" data-tpos="right">Top-Right</button>
+          </div>
+        </div>`}
         <div class="muted" style="font-size:0.76rem;padding-top:8px;">PC: Mouse or WASD to steer · Shift / Joystick push to boost.</div>
       </div>
+      ${this.isAdmin ? `<div class="card"><div class="section-title" style="font-size:0.9rem;">🛡️ Admin</div>
+        <button class="btn btn-ghost btn-block" data-go="admin">🎟️ Coupon Management →</button>
+      </div>` : ''}
       <div class="card"><div class="section-title" style="font-size:0.9rem;">♿ Accessibility</div>
         <div class="toggle"><span class="t-label">Large Text</span>${sw(this.settings.largeText, 'largeText')}</div>
         <div class="toggle"><span class="t-label">High Contrast</span>${sw(this.settings.highContrast, 'highContrast')}</div>
@@ -1902,7 +2386,9 @@ class AnacondaPark {
   }
 
   private renderHUD() {
-    const cpos = this.settings.controlPos || 'right';
+    const cpos = this.settings.controlPos || 'center';
+    const jsize = this.settings.joySize || 'medium';
+    const jop = this.settings.joyOpacity || 70;
     return `<div class="hud ctrl-${cpos}">
       <div class="hud-tl hud-panel">
         <button id="nav-pause" class="hud-pause">⏸</button>
@@ -1911,23 +2397,28 @@ class AnacondaPark {
         </div>
       </div>
 
-      <!-- Separate Top-Middle Floating Hearts Section -->
+      <!-- Compact Daily Missions Widget -->
+      ${this.settings.missionTracker === false ? '' : `<div class="mission-tracker ${this.settings.trackerPos === 'right' ? 'mt-right' : ''}" id="mission-tracker">
+        <div class="mt-head">🎯 Daily Missions</div>
+        <div id="mission-tracker-rows"></div>
+      </div>`}
+
+      <!-- Separate Top-Middle Floating Hearts Section (No Card Background, No HP Text) -->
       <div class="hud-top-middle-hearts" id="hud-hearts-container">
         <div class="hearts-row" id="hud-hearts-row">
           ${this.renderHeartsHTML(100, 100)}
         </div>
-        <div class="hearts-hp-text" id="hud-hearts-hp-text">100 / 100 HP</div>
       </div>
 
       <div class="power-status" id="power-status" style="display:none;"></div>
       <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
       <div class="team-scores" id="team-scores" style="display:none;"></div>
-      <div class="hud-leaderboard hud-panel"><h4>🏆 Top 5</h4><div id="hud-lb-rows"></div></div>
-      <div class="touch-joystick" id="touch-joystick"><div class="touch-knob" id="touch-knob"></div></div>
+      <div class="hud-leaderboard hud-panel"><h4>🏆 Top 10</h4><div id="hud-lb-rows"></div></div>
+      <div class="touch-joystick joy-${jsize} joy-op-${jop}" id="touch-joystick"><div class="touch-knob" id="touch-knob"></div></div>
       <div class="touch-actions">
         <div class="touch-row">
-          <div class="touch-btn zoom" id="touch-zoom" title="Zoom">🔍<span class="tz-label" id="touch-zoom-label">Far</span></div>
-          <div class="touch-btn mini" id="touch-mini" title="Toggle HUD / minimap">🗺️</div>
+          <div class="touch-btn zoom" id="touch-zoom" title="Camera Zoom Preset">🔍<span class="tz-label" id="touch-zoom-label">Far</span></div>
+          <div class="touch-btn mini" id="touch-mini" title="Fullscreen Tactical Map">🗺️</div>
         </div>
       </div>
     </div>`;
@@ -1935,13 +2426,17 @@ class AnacondaPark {
 
   private renderPause() {
     const sw = (on: boolean, key: string) => `<button class="switch ${on ? 'on' : ''}" data-pset="${key}"></button>`;
-    const cpos = this.settings.controlPos || 'right';
+    const cpos = this.settings.controlPos || 'center';
+    const jsize = this.settings.joySize || 'medium';
+    const jop = this.settings.joyOpacity || 70;
+    const camPreset = this.settings.cameraPreset || 'far';
     const hp = Math.max(0, Math.round(this.lastHp || 100));
     const dailyMissions = (this.missions || []).filter(m => m.category === 'daily');
     const dailyList = dailyMissions.length ? dailyMissions : [
-      { id: 'dm_1', icon: '🍒', title: 'Eat 20 Cherries', category: 'daily', currentCount: 14, targetCount: 20, rewardStars: 50, isCompleted: false },
-      { id: 'dm_2', icon: '⚔️', title: 'Eliminate 3 Rivals', category: 'daily', currentCount: 1, targetCount: 3, rewardStars: 100, isCompleted: false },
-      { id: 'dm_3', icon: '⭐', title: 'Collect 10 Star Fragments', category: 'daily', currentCount: 8, targetCount: 10, rewardStars: 75, isCompleted: false },
+      { id: 'dm_1', icon: '🍒', targetCount: 30, currentCount: 18, isCompleted: false },
+      { id: 'dm_2', icon: '🍎', targetCount: 10, currentCount: 10, isCompleted: true },
+      { id: 'dm_3', icon: '⭐', targetCount: 100, currentCount: 40, isCompleted: false },
+      { id: 'dm_4', icon: '🛡️', targetCount: 5, currentCount: 2, isCompleted: false },
     ];
 
     return `<div class="overlay">
@@ -1952,33 +2447,22 @@ class AnacondaPark {
         <div class="pause-hearts-card">
           <div class="hearts-title">❤️ Snake Health</div>
           <div class="hearts-row">${this.renderHeartsHTML(hp, 100)}</div>
-          <div class="hearts-hp-text">${hp} / 100 HP</div>
         </div>
 
-        <!-- Daily Tasks Section -->
+        <!-- Compact Daily Tasks Section -->
         <div class="pause-missions-card">
           <div class="pm-header">
             <span class="pm-title">🎯 Daily Missions</span>
             <span class="pm-sub-tag">In-Match Progress</span>
           </div>
-          <div class="pm-list">
-            ${dailyList.slice(0, 3).map(m => {
-              const pct = Math.min(100, Math.round(((m.currentCount || 0) / (m.targetCount || 1)) * 100));
+          <div class="pm-list" style="display:flex;flex-direction:column;gap:6px;">
+            ${dailyList.slice(0, 4).map(m => {
               const isDone = m.isCompleted || (m.currentCount >= m.targetCount);
               return `
-                <div class="pm-item ${isDone ? 'completed' : ''}">
-                  <div class="pm-ico">${m.icon || '🎯'}</div>
-                  <div class="pm-body">
-                    <div class="pm-name-row">
-                      <span class="pm-name">${m.title || m.name}</span>
-                      <span class="pm-reward">⭐ +${m.rewardStars || 50}</span>
-                    </div>
-                    <div class="pm-bar-track">
-                      <div class="pm-bar-fill" style="width:${pct}%"></div>
-                    </div>
-                    <div class="pm-count-text">${m.currentCount || 0} / ${m.targetCount || 10}</div>
-                  </div>
-                  ${isDone ? '<span class="pm-check">✓</span>' : ''}
+                <div class="hud-mission-row ${isDone ? 'done' : ''}">
+                  <span class="hud-mission-chk ${isDone ? 'checked' : ''}">${isDone ? '☑' : '☐'}</span>
+                  <span class="hud-mission-ico">${m.icon || '🍒'}</span>
+                  <span class="hud-mission-prog">${m.currentCount || 0} / ${m.targetCount || 10}</span>
                 </div>`;
             }).join('')}
           </div>
@@ -1986,7 +2470,8 @@ class AnacondaPark {
 
         <!-- Settings Card -->
         <div class="pause-settings-card">
-          <div class="toggle" style="flex-direction:column;align-items:flex-start;gap:6px;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:8px;">
+          <!-- Controller Position -->
+          <div class="toggle" style="flex-direction:column;align-items:flex-start;gap:6px;border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:8px;">
             <span class="t-label">🕹️ Controller Position</span>
             <div class="seg" style="width:100%;">
               <button class="${cpos === 'left' ? 'active' : ''}" data-cpos="left">Left</button>
@@ -1994,6 +2479,28 @@ class AnacondaPark {
               <button class="${cpos === 'right' ? 'active' : ''}" data-cpos="right">Right</button>
             </div>
           </div>
+
+          <!-- Joystick Size -->
+          <div class="toggle" style="flex-direction:column;align-items:flex-start;gap:6px;border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:8px;">
+            <span class="t-label">📐 Joystick Size</span>
+            <div class="seg" style="width:100%;">
+              <button class="${jsize === 'small' ? 'active' : ''}" data-jsize="small">Small</button>
+              <button class="${jsize === 'medium' ? 'active' : ''}" data-jsize="medium">Medium</button>
+              <button class="${jsize === 'large' ? 'active' : ''}" data-jsize="large">Large</button>
+            </div>
+          </div>
+
+          <!-- Camera Preset -->
+          <div class="toggle" style="flex-direction:column;align-items:flex-start;gap:6px;border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:8px;">
+            <span class="t-label">🎥 Camera View</span>
+            <div class="seg" style="width:100%;">
+              <button class="${camPreset === 'near' ? 'active' : ''}" data-campres="near">Near</button>
+              <button class="${camPreset === 'medium' ? 'active' : ''}" data-campres="medium">Medium</button>
+              <button class="${camPreset === 'far' ? 'active' : ''}" data-campres="far">Far (Default)</button>
+              <button class="${camPreset === 'ultra_wide' ? 'active' : ''}" data-campres="ultra_wide">Ultra Wide</button>
+            </div>
+          </div>
+
           <div class="toggle"><span class="t-label">🔊 Sound Effects</span>${sw(this.settings.sfx, 'sfx')}</div>
           <div class="toggle"><span class="t-label">🎵 Music</span>${sw(this.settings.music, 'music')}</div>
         </div>
@@ -2055,6 +2562,22 @@ class AnacondaPark {
     document.querySelectorAll('.coupon-claim-btn').forEach(b => b.addEventListener('click', () => this.claimCoupon((b as HTMLElement).dataset.coupon!)));
     document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { audio.playClick(); const m = (b as HTMLElement).dataset.mode as UIMode; if (UI_MODES[m]) { this.selectedUIMode = m; this.render(); } }));
     document.querySelectorAll('[data-mt]').forEach(b => b.addEventListener('click', () => { this.matchType = (b as HTMLElement).dataset.mt as any; audio.playClick(); this.render(); if (this.matchType === 'global') this.measureGlobalPing(); }));
+    document.querySelectorAll('[data-lbcat]').forEach(b => b.addEventListener('click', () => { this.lbCategory = (b as HTMLElement).dataset.lbcat!; audio.playClick(); this.render(); this.loadLeaderboardCategory(); }));
+    document.querySelectorAll('[data-lbscope]').forEach(b => b.addEventListener('click', () => { this.lbScope = (b as HTMLElement).dataset.lbscope as any; audio.playClick(); this.render(); this.loadLeaderboardCategory(); }));
+    // §7 Coupon admin handlers
+    on('ac-create', () => {
+      const v = (id: string) => (document.getElementById(id) as HTMLInputElement)?.value;
+      const title = v('ac-title'), storeName = v('ac-store');
+      if (!title || !storeName) { this.showToast('⚠️ Title + provider required'); return; }
+      this.adminCouponAction('/api/admin/coupons', 'POST', {
+        title, storeName, discountText: v('ac-desc') || '',
+        costStars: Number(v('ac-cost')) || 0, minLevel: Number(v('ac-level')) || 1,
+        redemptionLimit: v('ac-limit') === '' ? -1 : Number(v('ac-limit')),
+        autoGrant: (document.getElementById('ac-auto') as HTMLInputElement)?.checked || false,
+      });
+    });
+    document.querySelectorAll('.ac-toggle').forEach(b => b.addEventListener('click', (e) => { const el = e.currentTarget as HTMLElement; const on = el.dataset.on === 'true'; this.adminCouponAction(`/api/admin/coupons/${el.dataset.id}/${on ? 'disable' : 'enable'}`, 'POST'); }));
+    document.querySelectorAll('.ac-del').forEach(b => b.addEventListener('click', (e) => this.adminCouponAction(`/api/admin/coupons/${(e.currentTarget as HTMLElement).dataset.id}`, 'DELETE')));
     document.querySelectorAll('[data-region]').forEach(b => b.addEventListener('click', () => { this.selectedRegion = (b as HTMLElement).dataset.region!; audio.playClick(); this.render(); }));
     // §7 Local Explorer cascading location selectors
     document.getElementById('loc-country')?.addEventListener('change', (e) => { this.localCountry = (e.target as HTMLSelectElement).value; this.localState = Object.keys(LOCATIONS[this.localCountry])[0]; this.localCity = LOCATIONS[this.localCountry][this.localState][0]; audio.playClick(); this.render(); });
@@ -2072,6 +2595,9 @@ class AnacondaPark {
     document.getElementById('replay-tutorial')?.addEventListener('click', () => { audio.playClick(); this.showTutorial(); });
     document.querySelectorAll('[data-set]').forEach(b => b.addEventListener('click', () => this.toggleSetting((b as HTMLElement).dataset.set as keyof Settings)));
     document.querySelectorAll('[data-cpos]').forEach(b => b.addEventListener('click', () => { audio.playClick(); this.settings.controlPos = (b as HTMLElement).dataset.cpos as any; this.saveSettings(); this.render(); }));
+    document.querySelectorAll('[data-jsize]').forEach(b => b.addEventListener('click', () => { audio.playClick(); this.settings.joySize = (b as HTMLElement).dataset.jsize as any; this.saveSettings(); this.render(); }));
+    document.querySelectorAll('[data-campres]').forEach(b => b.addEventListener('click', () => { audio.playClick(); this.settings.cameraPreset = (b as HTMLElement).dataset.campres as any; this.saveSettings(); if (this.renderer && this.settings.cameraPreset) this.renderer.setCameraPreset(this.settings.cameraPreset); this.render(); }));
+    document.querySelectorAll('[data-tpos]').forEach(b => b.addEventListener('click', () => { audio.playClick(); this.settings.trackerPos = (b as HTMLElement).dataset.tpos as any; this.saveSettings(); this.render(); }));
 
     on('music-toggle', () => this.toggleMusic());
     on('notif-btn', () => this.showToast('🔔 No new notifications'));

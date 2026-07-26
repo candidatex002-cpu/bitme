@@ -49,6 +49,7 @@ export interface PlayerProfile {
   equippedAccessory?: string;    // cosmetic accessory id
   unlockedAccessories: string[]; // list of owned accessory ids
   stats: PlayerStats;
+  modeStats?: ModeStatsMap;      // §V7 per-mode independent statistics
   coupons?: CouponReward[];
   // §5/§6 Onboarding + editable profile fields (persisted across devices)
   avatar?: string;               // emoji/avatar chosen at onboarding or profile edit
@@ -58,17 +59,90 @@ export interface PlayerProfile {
   preferredRegion?: string;
   lastNameChange?: number;       // epoch ms of the last display-name change (cooldown gate)
   lastAdClaim?: number;          // epoch ms of the last /api/ads/claim (anti-farm cooldown)
+  inventory?: Record<string, number>; // §V7 owned consumable/collectible items (eggs, event items) → count
+  lastDailyBonus?: string;       // §V7 YYYY-MM-DD of the last daily-all-complete bonus (once/day gate)
 }
 
+// §V7 Centralized permanent statistics. Win rate and K/D are DERIVED on read (never stored),
+// so they can't drift out of sync. Everything here is server-authoritative and additive.
 export interface PlayerStats {
+  // General
   matchesPlayed: number;
   matchesWon: number;
-  totalKills: number;
+  matchesLost: number;
   totalFoodEaten: number;
   highestScore: number;
-  survivalTimeSeconds: number;
-  cherriesCollected?: number;
+  survivalTimeSeconds: number;      // cumulative play time (seconds)
+  longestSurvivalSeconds: number;   // best single-life survival
+  totalDistanceKm: number;
+  totalStars: number;               // lifetime stars collected in-match
+  cherriesCollected: number;
+  applesCollected: number;
+  frogsCollected: number;
+  powerupsCollected: number;
+  couponsEarned: number;
+  // Combat
+  totalKills: number;
+  totalDeaths: number;
+  longestKillStreak: number;
+  mostKillsInMatch: number;
+  totalDamageDealt: number;
+  totalDamageReceived: number;
+  mostDamageDealt: number;
+  mostDamageReceived: number;
   bossKills?: number;
+}
+
+// §V7 Per-mode independent statistics. Keyed by stat-mode: 'free_roam' | 'explorer' |
+// 'battle_royale' | 'team' | 'classic'. Optional fields carry mode-specific extras.
+export interface ModeStat {
+  matchesPlayed: number;
+  wins: number;
+  losses: number;
+  highestScore: number;
+  kills: number;
+  deaths: number;
+  longestSurvivalSeconds: number;
+  stars: number;
+  missionsCompleted?: number;
+  // Battle Royale
+  top3?: number;
+  highestRank?: number;   // best (lowest) placement achieved
+  // Team Battle
+  assists?: number;
+  mvp?: number;
+  highestTeamScore?: number;
+  // Explorer / Story
+  chaptersCompleted?: number;
+  bossesDefeated?: number;
+  questsCompleted?: number;
+  explorationPct?: number;
+  treasuresOpened?: number;
+  secretsFound?: number;
+  // Classic Snake
+  longestSnake?: number;
+  bestTimeSeconds?: number;
+}
+
+export type StatMode = 'free_roam' | 'explorer' | 'battle_royale' | 'team' | 'classic';
+export type ModeStatsMap = Partial<Record<StatMode, ModeStat>>;
+
+// §V7 Persisted per-match record for the Match History page.
+export interface MatchRecord {
+  id: string;
+  at: string;              // ISO timestamp
+  mode: StatMode;
+  durationSeconds: number;
+  score: number;
+  kills: number;
+  deaths: number;
+  stars: number;
+  xp: number;
+  evoXp: number;
+  rank?: number;
+  rewards?: string;        // short human-readable reward summary
+  map?: string;
+  result: 'win' | 'loss';
 }
 
 export interface Vector2D {

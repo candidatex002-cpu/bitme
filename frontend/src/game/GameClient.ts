@@ -141,6 +141,7 @@ export class GameClient {
   public onRespawnResult?: (result: { success: boolean; message?: string; profile?: any; method?: string }) => void;
   public onAbilityResult?: (used: boolean) => void;
   public onMatchInvite?: (r: { from: string; fromId: string; mode?: string }) => void; // §8 friend invite
+  public onCollect?: (type: string, value: number) => void; // §V7 local-engine food/star pickup by the player
   // §7 Matchmaking-chosen server URL for Global Adventure ('' = default origin from serverBase()).
   public preferredServer = '';
 
@@ -560,6 +561,7 @@ export class GameClient {
           if (f.type === 'shield') s.shieldTimer = Math.max(s.shieldTimer, dur);
           else if (f.type === 'speed') s.speedBoostTimer = Math.max(s.speedBoostTimer, dur);
           else if (f.type === 'mushroom') s.superTimer = Math.max(s.superTimer ?? 0, dur);
+          if (s.id === this.localUserId) this.onCollect?.(f.type, f.value); // §V7 real-time mission/stat tracking
           state.food.splice(i, 1);
           state.food.push(this.genFood(`f_${Date.now()}_${i}`));
         }

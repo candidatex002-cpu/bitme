@@ -90,6 +90,11 @@ export class Renderer {
     tongueTimer: number;
   }> = new Map();
 
+  public setCameraPreset(preset: 'near' | 'medium' | 'far' | 'ultra_wide') {
+    const scale = preset === 'near' ? 1.1 : preset === 'medium' ? 0.9 : preset === 'ultra_wide' ? 0.5 : 0.7;
+    this.userZoom = scale;
+  }
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d', { alpha: false })!;

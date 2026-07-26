@@ -29,6 +29,15 @@ export class GameSessionManager {
   public getActiveModeCount(): number {
     return this.sessions.size;
   }
+
+  // §V7/P1 Read + clear a player's server-observed peak stats from whichever session holds them.
+  public consumePlayerPeak(userId: string): { score: number; kills: number; killStreak: number; survivalSeconds: number } | null {
+    for (const session of this.sessions.values()) {
+      const peak = session.consumePeakStats(userId);
+      if (peak) return peak;
+    }
+    return null;
+  }
 }
 
 export const sessionManager = new GameSessionManager();

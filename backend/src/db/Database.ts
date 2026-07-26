@@ -1,4 +1,4 @@
-import { UserAccount, PlayerProfile, MissionObjective, Achievement, AntiCheatViolation, ProgressMetric, Evolution, CouponDefinition, CouponRedemption, SocialGraph } from '../types';
+import { UserAccount, PlayerProfile, PlayerStats, MissionObjective, Achievement, AntiCheatViolation, ProgressMetric, Evolution, CouponDefinition, CouponRedemption, SocialGraph, MatchRecord } from '../types';
 import { ProgressionService } from '../services/ProgressionService';
 import { SupabaseSync } from './SupabaseSync';
 import bcrypt from 'bcryptjs';
@@ -17,6 +17,8 @@ export class Database {
   private couponRedemptions: CouponRedemption[] = [];
   // §8 Social graph — per-user friends / pending requests / blocks (persisted).
   private social: Map<string, SocialGraph> = new Map();
+  // §V7 Per-user match history (most-recent-first, capped).
+  private matchHistory: Map<string, MatchRecord[]> = new Map();
 
   // §10 File-based persistence — profiles/progress/leaderboard survive restarts.
   // Swap load()/flush() for a Postgres/Redis client to go fully cloud/multi-node.
@@ -66,6 +68,7 @@ export class Database {
       couponDefs: Array.from(this.couponDefs.values()),
       couponRedemptions: this.couponRedemptions,
       social: Array.from(this.social.entries()),
+      matchHistory: Array.from(this.matchHistory.entries()),
     };
     try {
       fs.mkdirSync(path.dirname(this.dataFile), { recursive: true });
@@ -86,6 +89,7 @@ export class Database {
     if (data.couponDefs) for (const d of data.couponDefs) this.couponDefs.set(d.id, d);
     if (data.couponRedemptions) this.couponRedemptions = data.couponRedemptions;
     if (data.social) for (const [k, v] of data.social) this.social.set(k, v);
+    if (data.matchHistory) for (const [k, v] of data.matchHistory) this.matchHistory.set(k, v);
   }
 
   private load() {
@@ -126,6 +130,17 @@ export class Database {
     ];
   }
 
+  // §V7 Full zeroed statistics — one place so every new profile has the complete shape.
+  public static defaultStats(): PlayerStats {
+    return {
+      matchesPlayed: 0, matchesWon: 0, matchesLost: 0, totalFoodEaten: 0, highestScore: 0,
+      survivalTimeSeconds: 0, longestSurvivalSeconds: 0, totalDistanceKm: 0, totalStars: 0,
+      cherriesCollected: 0, applesCollected: 0, frogsCollected: 0, powerupsCollected: 0, couponsEarned: 0,
+      totalKills: 0, totalDeaths: 0, longestKillStreak: 0, mostKillsInMatch: 0,
+      totalDamageDealt: 0, totalDamageReceived: 0, mostDamageDealt: 0, mostDamageReceived: 0, bossKills: 0,
+    };
+  }
+
   private seedDefaultData() {
     const demoUser: UserAccount = {
       id: 'usr_ranger_alpha',
@@ -143,7 +158,7 @@ export class Database {
       level: 176, xp: 3450, evolutionXp: 2100, prestige: 0, rating: 1420, stars: 1250, tickets: 15,
       equippedSkin: 'Forest', equippedEvolution: 'Young', unlockedEvolutions: ['Baby', 'Young'], equippedTrail: 'Jungle Glow',
       equippedAccessory: undefined, unlockedAccessories: [],
-      stats: { matchesPlayed: 42, matchesWon: 11, totalKills: 156, totalFoodEaten: 4200, highestScore: 18500, survivalTimeSeconds: 14200, cherriesCollected: 320 },
+      stats: { ...Database.defaultStats(), matchesPlayed: 42, matchesWon: 11, matchesLost: 31, totalKills: 156, totalFoodEaten: 4200, highestScore: 18500, survivalTimeSeconds: 14200, cherriesCollected: 320, totalStars: 5200 },
     };
 
     this.users.set(demoUser.id, demoUser);
@@ -180,7 +195,8 @@ export class Database {
       level: 1, xp: 0, evolutionXp: 0, prestige: 0, rating: 1000, stars: 500, tickets: 5,
       equippedSkin: 'Forest', equippedEvolution: 'Baby', unlockedEvolutions: ['Baby'], equippedTrail: 'Classic Dust',
       equippedAccessory: undefined, unlockedAccessories: [],
-      stats: { matchesPlayed: 0, matchesWon: 0, totalKills: 0, totalFoodEaten: 0, highestScore: 0, survivalTimeSeconds: 0, cherriesCollected: 0 },
+      stats: Database.defaultStats(),
+      modeStats: {},
     };
 
     this.users.set(id, user);
@@ -191,6 +207,15 @@ export class Database {
     this.markDirty();
 
     return { user, profile };
+  }
+
+  // §V7 Grant a consumable/collectible item into the player's inventory (additive).
+  public grantItem(userId: string, itemId: string, qty = 1): PlayerProfile | undefined {
+    const profile = this.profiles.get(userId);
+    if (!profile) return undefined;
+    const inv = { ...(profile.inventory || {}) };
+    inv[itemId] = (inv[itemId] || 0) + qty;
+    return this.updateProfile(userId, { inventory: inv });
   }
 
   public getUserByUsername(username: string): UserAccount | undefined { return this.users.get(username.toLowerCase()); }
@@ -324,6 +349,33 @@ export class Database {
       .map((entry, index) => ({ rank: index + 1, ...entry }));
   }
 
+  // §V7 Category leaderboards derived from persisted profiles. `userIds` (optional) scopes
+  // the board — used for the Friends leaderboard. `region` scopes the Local board.
+  public getCategoryLeaderboard(
+    category: string,
+    limit = 50,
+    filter?: { userIds?: string[]; region?: string }
+  ): Array<{ rank: number; userId: string; displayName: string; avatar: string; level: number; value: number }> {
+    const metricOf: Record<string, (p: PlayerProfile) => number> = {
+      level: p => p.level * 1_000_000 + p.prestige * 1000 + p.xp / 1000,
+      score: p => p.stats.highestScore,
+      kills: p => p.stats.totalKills,
+      wins: p => p.stats.matchesWon,
+      survival: p => p.stats.longestSurvivalSeconds,
+      stars: p => p.stats.totalStars,
+      explorer: p => (p.modeStats?.explorer?.chaptersCompleted || 0) * 1000 + (p.modeStats?.explorer?.highestScore || 0) / 1000,
+    };
+    const metric = metricOf[category] || metricOf.score;
+    let entries = Array.from(this.profiles.values());
+    if (filter?.userIds) { const set = new Set(filter.userIds); entries = entries.filter(p => set.has(p.userId)); }
+    if (filter?.region) entries = entries.filter(p => (p.preferredRegion || p.country) === filter.region);
+    return entries
+      .map(p => ({ userId: p.userId, displayName: p.displayName, avatar: (p as any).avatar || '🐍', level: p.level, value: Math.round(metric(p)) }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, limit)
+      .map((e, i) => ({ rank: i + 1, ...e }));
+  }
+
   // ------------------------------------------------------------- §7 coupons
   public listCouponDefs(): CouponDefinition[] { return Array.from(this.couponDefs.values()); }
   public getCouponDef(id: string): CouponDefinition | undefined { return this.couponDefs.get(id); }
@@ -340,6 +392,18 @@ export class Database {
   }
   public countUserCouponRedemptions(definitionId: string, userId: string): number {
     return this.couponRedemptions.filter(r => r.definitionId === definitionId && r.userId === userId).length;
+  }
+
+  // ------------------------------------------------------------- §V7 match history
+  public addMatchRecord(userId: string, record: MatchRecord) {
+    const list = this.matchHistory.get(userId) || [];
+    list.unshift(record);
+    if (list.length > 50) list.length = 50; // keep the most recent 50
+    this.matchHistory.set(userId, list);
+    this.markDirty();
+  }
+  public getMatchHistory(userId: string, limit = 25): MatchRecord[] {
+    return (this.matchHistory.get(userId) || []).slice(0, limit);
   }
 
   // ------------------------------------------------------------- §8 social graph
