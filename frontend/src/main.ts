@@ -1386,83 +1386,13 @@ class AnacondaPark {
       }
     }
 
-    const matchTimer = (state as any).matchTimer as number | undefined;
-
-    // Dedicated Battle Royale Real-Time Updates
-    if (this.selectedUIMode === 'battle_royale') {
-      const aliveCount = state.snakes.filter(s => s.isAlive).length;
-      const mm = Math.floor((matchTimer || 0) / 60), ss = Math.floor((matchTimer || 0) % 60);
-      const timerStr = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
-      setT('br-timer', timerStr);
-      setT('br-alive', `${aliveCount} Alive`);
-      setT('br-kills', `${kills} Kills`);
-    }
-
-    // Team Battle Dedicated Real-Time Updates
+    // Dedicated Mode Updates
     if (this.selectedUIMode === 'team') {
-      const myTeam = (me as any).team as 'red' | 'blue' | undefined;
-      const redAlive = state.snakes.filter(s => s.team === 'red' && s.isAlive).length;
-      const blueAlive = state.snakes.filter(s => s.team === 'blue' && s.isAlive).length;
-      const rs = state.teamScores?.red ?? 0;
-      const bs = state.teamScores?.blue ?? 0;
-      const mm = Math.floor((matchTimer || 0) / 60), ss = Math.floor((matchTimer || 0) % 60);
-      const timerStr = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
-      const assists = (me as any).assists ?? Math.floor(kills * 0.5);
-
-      setT('tb-player-name', me.displayName || 'Explorer');
-      setT('tb-player-score', String(Math.round(me.score)));
-      setT('tb-player-stage', `${me.evolution || me.stage} · Lv.${me.level}`);
-      setT('tb-player-kills', String(kills));
-      setT('tb-player-assists', String(assists));
-      setT('tb-blue-score', String(bs));
-      setT('tb-red-score', String(rs));
-      setT('tb-match-timer', timerStr);
-      setT('tb-alive-counts', `${blueAlive} vs ${redAlive} Alive`);
-
-      const myScore = myTeam === 'blue' ? bs : rs;
-      const otherScore = myTeam === 'blue' ? rs : bs;
-      const isLeading = myScore >= otherScore;
-      setT('tb-team-rank', isLeading ? '🏆 #1 Leading' : '⚔️ #2 Chasing');
-
-      const blueSide = document.getElementById('tb-blue-side');
-      const redSide = document.getElementById('tb-red-side');
-      if (blueSide) blueSide.classList.toggle('leading', bs >= rs);
-      if (redSide) redSide.classList.toggle('leading', rs > bs);
-
-      const playerCard = document.querySelector('.tb-player-card');
-      if (playerCard && myTeam) {
-        playerCard.classList.toggle('team-blue', myTeam === 'blue');
-        playerCard.classList.toggle('team-red', myTeam === 'red');
-      }
-    }
-
-    // Team Battle HUD Header (Legacy bar hidden in dedicated mode)
-    const ts = document.getElementById('team-scores');
-    if (ts) {
-      if (this.selectedUIMode !== 'team' && state.teamScores) {
-        const myTeam = (me as any).team as 'red' | 'blue' | undefined;
-        const redAlive = state.snakes.filter(s => s.team === 'red' && s.isAlive).length;
-        const blueAlive = state.snakes.filter(s => s.team === 'blue' && s.isAlive).length;
-        const rs = state.teamScores.red, bs = state.teamScores.blue;
-        const total = Math.max(1, rs + bs);
-        const myTeamSnakes = state.snakes.filter(s => s.team === myTeam && s.isAlive);
-        const topTeamScore = Math.max(...myTeamSnakes.map(s => s.score), 0);
-        const isMVP = me.score >= topTeamScore && me.score > 0;
-
-        const mates = state.snakes.filter(s => s.team === myTeam && s.id !== me.id).slice(0, 5);
-        const matesHtml = mates.length
-          ? `<div class="team-mates">${mates.map(m => `<span class="tm ${m.isAlive ? '' : 'down'}"><i class="tm-dot"></i>${m.displayName}</span>`).join('')}</div>`
-          : '';
-        ts.style.display = 'flex';
-        ts.innerHTML = `
-          <div class="team-hud-bar">
-            <div class="ts red ${myTeam === 'red' ? 'mine' : ''}">🔴 <b>${rs}</b><span class="ts-alive">${redAlive} alive</span></div>
-            <div class="ts blue ${myTeam === 'blue' ? 'mine' : ''}">🔵 <b>${bs}</b><span class="ts-alive">${blueAlive} alive</span></div>
-            ${isMVP ? '<div class="ts mvp-badge">⭐ MVP</div>' : ''}
-          </div>
-          <div class="team-bar"><div class="team-bar-red" style="width:${Math.round(rs / total * 100)}%"></div><div class="team-bar-blue" style="width:${Math.round(bs / total * 100)}%"></div></div>
-          ${matesHtml}`;
-      } else ts.style.display = 'none';
+      this.updateTeamBattleHUD(me, state, kills);
+    } else if (this.selectedUIMode === 'battle_royale') {
+      this.updateBattleRoyaleHUD(me, state, kills);
+    } else {
+      this.updateFreeRoamHUD(me, state, kills);
     }
 
     // Top 10 Leaderboard
@@ -1476,6 +1406,66 @@ class AnacondaPark {
           <span>${r.score}</span>
         </div>`;
       }).join('');
+    }
+  }
+
+  private setT(id: string, v: string) {
+    const el = document.getElementById(id);
+    if (el) el.innerText = v;
+  }
+
+  private updateFreeRoamHUD(me: any, _state: any, _kills: number) {
+    this.setT('hv-score', String(Math.round(me.score)));
+    this.setT('hud-stage', `${me.evolution || me.stage} · Lv ${me.level}`);
+  }
+
+  private updateBattleRoyaleHUD(me: any, state: any, kills: number) {
+    this.setT('hv-score', String(Math.round(me.score)));
+    this.setT('hud-stage', `${me.evolution || me.stage} · Lv ${me.level}`);
+    const matchTimer = (state as any).matchTimer as number | undefined;
+    const aliveCount = state.snakes.filter((s: any) => s.isAlive).length;
+    const mm = Math.floor((matchTimer || 0) / 60), ss = Math.floor((matchTimer || 0) % 60);
+    const timerStr = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+    this.setT('br-timer', timerStr);
+    this.setT('br-alive', `${aliveCount} Alive`);
+    this.setT('br-kills', `${kills} Kills`);
+  }
+
+  private updateTeamBattleHUD(me: any, state: any, kills: number) {
+    const matchTimer = (state as any).matchTimer as number | undefined;
+    const myTeam = (me as any).team as 'red' | 'blue' | undefined;
+    const redAlive = state.snakes.filter((s: any) => s.team === 'red' && s.isAlive).length;
+    const blueAlive = state.snakes.filter((s: any) => s.team === 'blue' && s.isAlive).length;
+    const rs = state.teamScores?.red ?? 0;
+    const bs = state.teamScores?.blue ?? 0;
+    const mm = Math.floor((matchTimer || 0) / 60), ss = Math.floor((matchTimer || 0) % 60);
+    const timerStr = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+    const assists = (me as any).assists ?? Math.floor(kills * 0.5);
+
+    this.setT('tb-player-name', me.displayName || 'Explorer');
+    this.setT('tb-player-score', String(Math.round(me.score)));
+    this.setT('tb-player-stage', `${me.evolution || me.stage} · Lv.${me.level}`);
+    this.setT('tb-player-kills', String(kills));
+    this.setT('tb-player-assists', String(assists));
+    this.setT('tb-blue-score', String(bs));
+    this.setT('tb-red-score', String(rs));
+    this.setT('tb-match-timer', timerStr);
+    this.setT('tb-alive-counts', `${blueAlive} vs ${redAlive} Alive`);
+
+    const myScore = myTeam === 'blue' ? bs : rs;
+    const otherScore = myTeam === 'blue' ? rs : bs;
+    const isLeading = myScore >= otherScore;
+    this.setT('tb-team-rank', isLeading ? '🏆 #1 Leading' : '⚔️ #2 Chasing');
+
+    const blueSide = document.getElementById('tb-blue-side');
+    const redSide = document.getElementById('tb-red-side');
+    if (blueSide) blueSide.classList.toggle('leading', bs >= rs);
+    if (redSide) redSide.classList.toggle('leading', rs > bs);
+
+    const playerCard = document.querySelector('.tb-player-card');
+    if (playerCard && myTeam) {
+      playerCard.classList.toggle('team-blue', myTeam === 'blue');
+      playerCard.classList.toggle('team-red', myTeam === 'red');
     }
   }
 
@@ -2696,53 +2686,59 @@ class AnacondaPark {
       </div>`;
   }
 
-  private renderHUD() {
-    if (this.selectedUIMode === 'team') {
-      return this.renderTeamBattleHUD();
-    }
-    if (this.selectedUIMode === 'battle_royale') {
-      return this.renderBattleRoyaleHUD();
-    }
+  private renderFreeRoamHUD() {
     const cpos = this.settings.controlPos || 'center';
     const jsize = this.settings.joySize || 'medium';
     const jop = this.settings.joyOpacity || 70;
-    const showMissions = this.settings.missionTracker !== false && (this.selectedUIMode === 'free_roam' || this.selectedUIMode === 'explorer');
+    const isClassic = (this.selectedUIMode as string) === 'nokia';
+    const showMissions = !isClassic && this.settings.missionTracker !== false;
+    const showLeaderboard = !isClassic;
+
     return `
-      <div class="hud ctrl-${cpos}">
-        <!-- Top HUD Header Grid: Pause | Score | Hearts | Leaderboard -->
-        <div class="tb-top-bar">
+      <div class="hud ctrl-${cpos} ${isClassic ? 'mode-classic' : 'mode-free-roam'}">
+        <!-- 3-Column Top HUD Header Grid: Left (Pause, Mission) | Center (Hearts, Player) | Right (Leaderboard) -->
+        <div class="tb-top-bar mode-fr-grid">
+
+          <!-- Left Column Area 1: Pause -->
           <button id="nav-pause" class="hud-pause tb-a-pause">⏸</button>
 
-          <div class="hud-score-pill tb-a-player">
-            <span class="score-lbl">Score:</span>
-            <span class="score-val" id="hv-score">0</span>
-            <span class="stage-val" id="hud-stage">Lv 1</span>
-          </div>
-
+          <!-- Center Column Area 1: Hearts (always centered horizontally, never moves) -->
           <div class="tb-a-hearts">
             <div class="hearts-row" id="hud-hearts-row">
               ${this.renderHeartsHTML(100, 100)}
             </div>
           </div>
 
+          <!-- Center Column Area 2: Compact Player Card (Name, Score, Stage) -->
+          <div class="fr-player-card hud-panel tb-a-player">
+            <div class="fr-pc-name" id="hv-name">Explorer_7740</div>
+            <div class="fr-pc-scoreline">
+              <span class="fr-pc-lbl">Score:</span>
+              <b class="fr-pc-score-val" id="hv-score">0</b>
+              <span class="tb-dot-sep">•</span>
+              <span class="fr-pc-stage" id="hud-stage">Baby • Lv 1</span>
+            </div>
+          </div>
+
+          <!-- Left Column Area 2: Compact Daily Mission Card (Explorer & Free For All only) -->
+          ${showMissions ? `
+          <div class="mission-tracker-card hud-panel tb-a-mission" id="mission-tracker">
+            <div id="mission-tracker-rows"></div>
+          </div>` : ''}
+
+          <!-- Right Column: Top 10 Leaderboard (Hidden in Classic mode) -->
+          ${showLeaderboard ? `
           <div class="tb-a-lb">
             <div class="hud-leaderboard hud-panel">
               <div class="lb-title">🏆 Top 10</div>
               <div id="hud-lb-rows"></div>
             </div>
-          </div>
+          </div>` : ''}
+
         </div>
 
-        <!-- Mode-Specific Compact Battle Bar -->
         <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
-        <div class="team-scores" id="team-scores" style="display:none;"></div>
         <div class="power-status" id="power-status" style="display:none;"></div>
-
-        <!-- Daily Mission Tracker (Shown only in Free For All & Explorer modes) -->
-        ${showMissions ? `
-        <div class="mission-tracker ${this.settings.trackerPos === 'right' ? 'mt-right' : ''}" id="mission-tracker">
-          <div id="mission-tracker-rows"></div>
-        </div>` : ''}
 
         <!-- Bottom Controls Cluster -->
         <div class="hud-bottom-controls">
@@ -2758,6 +2754,16 @@ class AnacondaPark {
           </div>
         </div>
       </div>`;
+  }
+
+  private renderHUD() {
+    if (this.selectedUIMode === 'team') {
+      return this.renderTeamBattleHUD();
+    }
+    if (this.selectedUIMode === 'battle_royale') {
+      return this.renderBattleRoyaleHUD();
+    }
+    return this.renderFreeRoamHUD();
   }
 
   private renderPause() {

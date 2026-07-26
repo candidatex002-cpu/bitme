@@ -403,6 +403,7 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .tb-a-score   { grid-area: score;  justify-self: center; align-self: center; }
 .tb-a-status  { grid-area: status; justify-self: center; align-self: center; }
 .tb-a-lb      { grid-area: lb; }
+.tb-a-mission { grid-area: mission; justify-self: start; align-self: start; }
 
 /* ---- Battle Royale Dedicated Grid Layout (Desktop & Mobile) ---- */
 .mode-battle-royale .tb-top-bar {
@@ -415,6 +416,92 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .mode-battle-royale .hud-score-pill {
   align-self: center;
 }
+
+/* ---- Free Roam / Explorer / Classic Dedicated Grid Layout ---- */
+.mode-fr-grid {
+  grid-template-columns: minmax(110px, 145px) 1fr minmax(110px, 145px);
+  grid-template-rows: auto auto;
+  grid-template-areas:
+    "pause   hearts  lb"
+    "mission player  lb";
+  column-gap: 10px;
+  row-gap: 6px;
+}
+
+/* Classic Mode Grid Layout (No Daily Mission, No Leaderboard) */
+.mode-classic .mode-fr-grid {
+  grid-template-columns: minmax(60px, 100px) 1fr minmax(60px, 100px);
+  grid-template-areas:
+    "pause   hearts  ."
+    ".       player  .";
+}
+
+/* ---- Compact Free Roam Player Card (Center Column) ---- */
+.fr-player-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 14px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  width: 250px;
+  max-width: 280px;
+  min-height: 54px;
+  margin: 0 auto;
+  text-align: center;
+  justify-self: center;
+}
+.fr-pc-name {
+  font-family: var(--font-title);
+  font-weight: 900;
+  font-size: 0.86rem;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+.fr-pc-scoreline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.fr-pc-lbl { color: var(--muted); font-weight: 600; }
+.fr-pc-score-val { font-family: var(--font-title); font-weight: 900; color: var(--green-deep); font-size: 0.9rem; }
+.fr-pc-stage { font-size: 0.65rem; font-weight: 800; color: var(--green-deep); background: var(--green-bg); padding: 1px 6px; border-radius: 8px; }
+
+/* ---- Compact Daily Mission Card (Left Column) ---- */
+.mission-tracker-card {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  padding: 5px 8px;
+  box-shadow: var(--shadow);
+  width: auto;
+  max-width: 135px;
+  box-sizing: border-box;
+}
+.hud-mission-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #334155;
+  padding: 1.5px 0;
+}
+.hud-mission-row.done { color: #059669; }
+.hud-mission-chk { font-size: 0.72rem; }
+.hud-mission-ico { font-size: 0.8rem; }
+.hud-mission-prog { font-weight: 900; font-variant-numeric: tabular-nums; margin-left: auto; }
 
 /* ---- Player Card (Desktop/Tablet: vertical stack card) ---- */
 .tb-player-card {
@@ -630,6 +717,27 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
       "pause   hearts   lb"
       "player  player   player"
       "status  status   status";
+  }
+  .mode-fr-grid {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      "pause   hearts   lb"
+      "player  player   player"
+      "mission mission  mission";
+    column-gap: 5px;
+    row-gap: 4px;
+  }
+  .mode-classic .mode-fr-grid {
+    grid-template-areas:
+      "pause   hearts   ."
+      "player  player   player";
+  }
+  .tb-a-mission { justify-self: center; max-width: 92%; }
+  .fr-player-card {
+    width: auto;
+    max-width: 92%;
+    min-width: 210px;
+    padding: 5px 12px;
   }
 
   /* Row 1 — Hearts: fill center slot */
