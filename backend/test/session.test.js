@@ -106,3 +106,50 @@ test('pause: setPlayerInactive freezes + protects the player', () => {
   s.setPlayerInactive('p1', false);
   assert.equal(p.isPaused, false);
 });
+
+// §2 each mode loads a distinct config
+test('modes load distinct rules', () => {
+  const fr = getModeConfig('classic'), br = getModeConfig('battle_royale'), tm = getModeConfig('team');
+  assert.equal(br.shrinkingZone, true);
+  assert.equal(fr.shrinkingZone, false);
+  assert.equal(tm.teamsEnabled, true);
+  assert.equal(fr.teamsEnabled, false);
+  assert.ok(br.botCount >= 20 && fr.botCount >= 20, '§8 populated map');
+});
+
+// §8 larger world
+test('world size is the large §8 map (6000)', () => {
+  const s = new GameSessionService('w8', 'classic');
+  s.stop();
+  assert.equal(s.getState().worldSize, 6000);
+});
+
+// §3 environmental hazard burns hp and eliminates
+test('environmental hazard (lava) burns hp then eliminates', () => {
+  const s = new GameSessionService('hz', 'classic');
+  s.stop();
+  const st = s.getState();
+  Object.keys(st.snakes).forEach(id => delete st.snakes[id]);
+  const p = s.registerPlayer('p1', 'P'); p.angle = 0;
+  p.head.x = 1000; p.head.y = 1000; p.body = Array.from({ length: 9 }, (_, i) => ({ x: 1000 - i * 14, y: 1000 }));
+  st.obstacles = [{ id: 'lava1', type: 'lava', x: 1000, y: 1000, radius: 42, icon: '🔥', blocking: false, damage: 26 }];
+  const hp0 = p.hp;
+  s.stepForTest();
+  assert.ok(p.hp < hp0, 'lava reduces hp');
+  for (let i = 0; i < 500 && p.isAlive; i++) { p.head.x = 1000; p.head.y = 1000; s.stepForTest(); }
+  assert.equal(p.isAlive, false, 'sustained lava contact eliminates');
+});
+
+// §3 shield/sanctuary protects from hazards
+test('shield protects from hazard damage', () => {
+  const s = new GameSessionService('hz2', 'classic');
+  s.stop();
+  const st = s.getState();
+  Object.keys(st.snakes).forEach(id => delete st.snakes[id]);
+  const p = s.registerPlayer('p1', 'P'); p.angle = 0; p.shieldTimer = 5;
+  p.head.x = 1000; p.head.y = 1000;
+  st.obstacles = [{ id: 'lava1', type: 'lava', x: 1000, y: 1000, radius: 42, icon: '🔥', blocking: false, damage: 26 }];
+  const hp0 = p.hp;
+  s.stepForTest();
+  assert.equal(p.hp, hp0, 'shielded snake takes no hazard damage');
+});
