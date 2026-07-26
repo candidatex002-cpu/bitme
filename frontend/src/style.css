@@ -404,6 +404,18 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .tb-a-status  { grid-area: status; justify-self: center; align-self: center; }
 .tb-a-lb      { grid-area: lb; }
 
+/* ---- Battle Royale Dedicated Grid Layout (Desktop & Mobile) ---- */
+.mode-battle-royale .tb-top-bar {
+  grid-template-columns: auto auto 1fr auto;
+  grid-template-rows: auto auto;
+  grid-template-areas:
+    "pause  player  hearts  lb"
+    ".      .       status  .";
+}
+.mode-battle-royale .hud-score-pill {
+  align-self: center;
+}
+
 /* ---- Player Card (Desktop/Tablet: vertical stack card) ---- */
 .tb-player-card {
   display: flex;
@@ -612,6 +624,12 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
       "status  status   status";
     column-gap: 5px;
     row-gap: 3px;   /* ← key: tight gap between rows */
+  }
+  .mode-battle-royale .tb-top-bar {
+    grid-template-areas:
+      "pause   hearts   lb"
+      "player  player   player"
+      "status  status   status";
   }
 
   /* Row 1 — Hearts: fill center slot */
@@ -869,18 +887,19 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   background: linear-gradient(160deg, #FFF5F5, #FEF2F2);
   border: 1.5px solid #FECACA;
   border-radius: var(--r-md);
-  padding: 12px;
-  margin-bottom: 14px;
+  padding: 6px 12px;
+  margin-bottom: 8px;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
   box-shadow: 0 2px 8px rgba(239, 68, 68, 0.08);
 }
 .pause-hearts-card .hearts-title {
   font-family: var(--font-title);
   font-weight: 800;
-  font-size: 0.88rem;
+  font-size: 0.82rem;
   color: #DC2626;
 }
 
@@ -889,116 +908,48 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   background: var(--card-2);
   border: 1.5px solid var(--line);
   border-radius: var(--r-md);
-  padding: 12px;
-  margin-bottom: 14px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
   text-align: left;
 }
 .pause-missions-card .pm-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 .pause-missions-card .pm-title {
   font-family: var(--font-title);
   font-weight: 800;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   color: var(--ink);
 }
 .pause-missions-card .pm-sub-tag {
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   font-weight: 700;
   color: var(--green-deep);
   background: var(--green-bg);
-  padding: 2px 8px;
-  border-radius: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
 }
-.pause-missions-card .pm-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.pause-missions-card .pm-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: #ffffff;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 8px 10px;
-}
-.pause-missions-card .pm-item.completed {
-  border-color: #86efac;
-  background: #f0fdf4;
-}
-.pause-missions-card .pm-ico {
-  font-size: 1.2rem;
-  flex-shrink: 0;
-}
-.pause-missions-card .pm-body {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.pause-missions-card .pm-name-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.pause-missions-card .pm-name {
-  font-weight: 700;
-  font-size: 0.78rem;
-  color: var(--ink);
-}
-.pause-missions-card .pm-reward {
-  font-size: 0.68rem;
-  font-weight: 800;
-  color: var(--gold-deep);
-}
-.pause-missions-card .pm-bar-track {
-  height: 6px;
-  background: #e2e8f0;
-  border-radius: 6px;
-  overflow: hidden;
-  position: relative;
-}
-.pause-missions-card .pm-bar-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #10b981, #34d399);
-  border-radius: 6px;
-  transition: width 0.3s ease;
-}
-.pause-missions-card .pm-count-text {
-  font-size: 0.64rem;
-  font-weight: 700;
-  color: var(--muted);
-}
-.pause-missions-card .pm-check {
-  font-weight: 900;
-  color: #16a34a;
-  background: #dcfce7;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.72rem;
-  flex-shrink: 0;
+.pause-missions-card .pm-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
 }
 
-/* Pause Modal Layout Alignment */
+/* Pause Modal Layout Alignment — Single Screen Fit */
 .pause-modal {
-  max-width: 440px;
-  max-height: 90vh;
+  max-width: 420px;
+  width: min(92vw, 420px);
+  max-height: 94vh;
   overflow-y: auto;
-  padding: 20px 22px;
+  padding: 14px 16px;
   border-radius: var(--r-lg);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
 }
 .pause-modal::-webkit-scrollbar {
-  width: 5px;
+  width: 4px;
 }
 .pause-modal::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.15);
@@ -1009,24 +960,67 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 12px;
-  font-size: 1.25rem;
+  margin-bottom: 8px;
+  font-size: 1.15rem;
 }
 
 .pause-settings-card {
   background: var(--card-2);
   border: 1.5px solid var(--line);
   border-radius: var(--r-md);
-  padding: 12px 14px;
-  margin-bottom: 14px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
   text-align: left;
 }
 
-.pause-actions {
-  display: flex;
+.toggle-compact {
   flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  border-bottom: 1px dashed var(--line);
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+}
+.toggle-compact .t-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+.seg-sm button {
+  padding: 3px 6px;
+  font-size: 0.72rem;
+}
+
+.pause-audio-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 2px;
+}
+.toggle-audio {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+}
+
+.pause-actions-row {
+  display: flex;
   gap: 8px;
+  align-items: center;
   margin-top: 4px;
+}
+.pause-actions-row #btn-resume {
+  flex: 2;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+}
+.pause-actions-row #btn-leave {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 0.85rem;
 }
 
 /* ---- Top-Right: Leaderboard ---- */

@@ -2564,8 +2564,8 @@ class AnacondaPark {
             </div>
           </div>
 
-          <!-- Grid area: score (BR uses status here in desktop too) -->
-          <div class="tb-status-pill hud-panel tb-a-score" id="br-status-pill">
+          <!-- Grid area: status -->
+          <div class="tb-status-pill hud-panel tb-a-status" id="br-status-pill">
             <span>⏱️ <b id="br-timer">00:00</b></span>
             <span class="tb-dot-sep">·</span>
             <span>👥 <b id="br-alive">0 Alive</b></span>
@@ -2778,41 +2778,44 @@ class AnacondaPark {
       { id: 'dm_4', icon: '🛡️', targetCount: 5, currentCount: 2, isCompleted: false },
     ];
 
+    const showMissions = this.selectedUIMode === 'free_roam' || this.selectedUIMode === 'explorer';
+
     return `<div class="overlay">
       <div class="modal pause-modal">
         <div class="section-title pause-title">⏸️ Paused</div>
 
-        <!-- Snake Health Card -->
+        <!-- Snake Health Card (compact single row) -->
         <div class="pause-hearts-card">
-          <div class="hearts-title">❤️ Snake Health</div>
+          <div class="hearts-title">❤️ Health</div>
           <div class="hearts-row">${this.renderHeartsHTML(hp, 100)}</div>
         </div>
 
-        <!-- Compact Daily Tasks Section -->
+        <!-- Compact Daily Tasks Section (Only in Free Roam / Explorer) -->
+        ${showMissions ? `
         <div class="pause-missions-card">
           <div class="pm-header">
             <span class="pm-title">🎯 Daily Missions</span>
-            <span class="pm-sub-tag">In-Match Progress</span>
+            <span class="pm-sub-tag">In-Match</span>
           </div>
-          <div class="pm-list" style="display:flex;flex-direction:column;gap:6px;">
+          <div class="pm-grid">
             ${dailyList.slice(0, 4).map(m => {
               const isDone = m.isCompleted || (m.currentCount >= m.targetCount);
               return `
                 <div class="hud-mission-row ${isDone ? 'done' : ''}">
                   <span class="hud-mission-chk ${isDone ? 'checked' : ''}">${isDone ? '☑' : '☐'}</span>
                   <span class="hud-mission-ico">${m.icon || '🍒'}</span>
-                  <span class="hud-mission-prog">${m.currentCount || 0} / ${m.targetCount || 10}</span>
+                  <span class="hud-mission-prog">${m.currentCount || 0}/${m.targetCount || 10}</span>
                 </div>`;
             }).join('')}
           </div>
-        </div>
+        </div>` : ''}
 
-        <!-- Settings Card -->
+        <!-- Compact Settings Card -->
         <div class="pause-settings-card">
           <!-- Controller Position -->
-          <div class="toggle" style="flex-direction:column;align-items:flex-start;gap:6px;border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:8px;">
-            <span class="t-label">🕹️ Controller Position</span>
-            <div class="seg" style="width:100%;">
+          <div class="toggle toggle-compact">
+            <span class="t-label">🕹️ Position</span>
+            <div class="seg seg-sm">
               <button class="${cpos === 'left' ? 'active' : ''}" data-cpos="left">Left</button>
               <button class="${cpos === 'center' ? 'active' : ''}" data-cpos="center">Center</button>
               <button class="${cpos === 'right' ? 'active' : ''}" data-cpos="right">Right</button>
@@ -2820,9 +2823,9 @@ class AnacondaPark {
           </div>
 
           <!-- Joystick Size -->
-          <div class="toggle" style="flex-direction:column;align-items:flex-start;gap:6px;border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:8px;">
-            <span class="t-label">📐 Joystick Size</span>
-            <div class="seg" style="width:100%;">
+          <div class="toggle toggle-compact">
+            <span class="t-label">📐 Joystick</span>
+            <div class="seg seg-sm">
               <button class="${jsize === 'small' ? 'active' : ''}" data-jsize="small">Small</button>
               <button class="${jsize === 'medium' ? 'active' : ''}" data-jsize="medium">Medium</button>
               <button class="${jsize === 'large' ? 'active' : ''}" data-jsize="large">Large</button>
@@ -2830,24 +2833,27 @@ class AnacondaPark {
           </div>
 
           <!-- Camera Preset -->
-          <div class="toggle" style="flex-direction:column;align-items:flex-start;gap:6px;border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:8px;">
-            <span class="t-label">🎥 Camera View</span>
-            <div class="seg" style="width:100%;">
+          <div class="toggle toggle-compact">
+            <span class="t-label">🎥 Camera</span>
+            <div class="seg seg-sm">
               <button class="${camPreset === 'near' ? 'active' : ''}" data-campres="near">Near</button>
               <button class="${camPreset === 'medium' ? 'active' : ''}" data-campres="medium">Medium</button>
-              <button class="${camPreset === 'far' ? 'active' : ''}" data-campres="far">Far (Default)</button>
-              <button class="${camPreset === 'ultra_wide' ? 'active' : ''}" data-campres="ultra_wide">Ultra Wide</button>
+              <button class="${camPreset === 'far' ? 'active' : ''}" data-campres="far">Far</button>
+              <button class="${camPreset === 'ultra_wide' ? 'active' : ''}" data-campres="ultra_wide">Ultra</button>
             </div>
           </div>
 
-          <div class="toggle"><span class="t-label">🔊 Sound Effects</span>${sw(this.settings.sfx, 'sfx')}</div>
-          <div class="toggle"><span class="t-label">🎵 Music</span>${sw(this.settings.music, 'music')}</div>
+          <!-- Sound & Music in one line -->
+          <div class="pause-audio-row">
+            <div class="toggle toggle-audio"><span class="t-label">🔊 SFX</span>${sw(this.settings.sfx, 'sfx')}</div>
+            <div class="toggle toggle-audio"><span class="t-label">🎵 Music</span>${sw(this.settings.music, 'music')}</div>
+          </div>
         </div>
 
-        <!-- Actions -->
-        <div class="pause-actions">
-          <button id="btn-resume" class="btn btn-primary btn-block btn-lg">▶️ Resume</button>
-          <button id="btn-leave" class="btn btn-danger btn-block">🚪 Leave Match</button>
+        <!-- Actions (Side-by-Side Buttons) -->
+        <div class="pause-actions-row">
+          <button id="btn-resume" class="btn btn-primary btn-block">▶️ Resume</button>
+          <button id="btn-leave" class="btn btn-danger btn-block">🚪 Leave</button>
         </div>
       </div>
     </div>`;
