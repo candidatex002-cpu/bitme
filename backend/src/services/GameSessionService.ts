@@ -431,7 +431,13 @@ export class GameSessionService {
       }
     }
 
-    // §2/§3 Obstacle collision — blocking props push the head out; hazards deal damage.
+    // §2/§3 Obstacle collision — blocking props push head out cleanly; explicit hazards deal configurable damage.
+    const HAZARD_DAMAGE_MAP: Record<string, number> = {
+      small_cactus: 10, cactus: 10, large_cactus: 20,
+      poison_plant: 15, poison: 15, stone_trap: 15,
+      spike_trap: 25, spikes: 25, lava: 50,
+    };
+
     if (this.state.obstacles) {
       for (const ob of this.state.obstacles) {
         const dx = snake.head.x - ob.x;
@@ -439,21 +445,23 @@ export class GameSessionService {
         const minDist = ob.radius + snake.radius;
         const distSq = dx * dx + dy * dy;
         if (distSq >= minDist * minDist) continue;
+
+        // Physical blocking props (trees, ponds, rocks, hills, caves) push the snake out smoothly WITHOUT dealing damage
         if (ob.blocking && distSq > 0.01) {
           const dist = Math.sqrt(distSq);
           const push = (minDist - dist);
           snake.head.x += (dx / dist) * push;
           snake.head.y += (dy / dist) * push;
-          // Bumping an obstacle immediately subtracts 20 HP (drains 1 heart container!)
-          const now = this.state.tick;
-          if (!snake.lastHitTick || now - snake.lastHitTick > 10) { // 0.33s hit cooldown
-            snake.lastHitTick = now;
-            this.damageSnake(snake, 20, `Hit ${ob.type || 'obstacle'}`);
-          }
-          if (!snake.isAlive) return;
         }
-        if (ob.damage) { // environmental hazard
-          this.damageSnake(snake, ob.damage * dt, `Hurt by ${ob.type}`);
+
+        // Only explicit hazards (cacti, poison, traps, lava) deal damage, guarded by an i-frame hit cooldown (18 ticks = ~600ms)
+        const hazardDamage = HAZARD_DAMAGE_MAP[ob.type] || ob.damage;
+        if (hazardDamage) {
+          const now = this.state.tick;
+          if (!snake.lastHitTick || now - snake.lastHitTick > 18) {
+            snake.lastHitTick = now;
+            this.damageSnake(snake, hazardDamage, `Hurt by ${ob.type}`);
+          }
           if (!snake.isAlive) return;
         }
       }

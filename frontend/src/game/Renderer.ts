@@ -90,6 +90,27 @@ export class Renderer {
     tongueTimer: number;
   }> = new Map();
 
+  private shakeTimer = 0;
+  private shakeIntensity = 0;
+  private damageTexts: Array<{ x: number; y: number; text: string; color: string; life: number; maxLife: number }> = [];
+
+  public triggerCameraShake(intensity = 6, duration = 0.25) {
+    this.shakeIntensity = intensity;
+    this.shakeTimer = duration;
+  }
+
+  public spawnDamageText(x: number, y: number, text: string | number, isCritical = false) {
+    const txt = typeof text === 'number' ? `-${text}` : text;
+    this.damageTexts.push({
+      x: x + (Math.random() - 0.5) * 20,
+      y: y - 20,
+      text: String(txt),
+      color: isCritical ? '#EF4444' : '#F59E0B',
+      life: 0.8,
+      maxLife: 0.8,
+    });
+  }
+
   public setCameraPreset(preset: 'near' | 'medium' | 'far' | 'ultra_wide') {
     const scale = preset === 'near' ? 0.85 : preset === 'medium' ? 0.65 : preset === 'ultra_wide' ? 0.32 : 0.45;
     this.userZoom = scale;
@@ -207,8 +228,15 @@ export class Renderer {
       this.zoom += (targetZoom - this.zoom) * 0.08;
     }
 
+    let shakeX = 0, shakeY = 0;
+    if (this.shakeTimer > 0) {
+      this.shakeTimer -= 0.016;
+      shakeX = (Math.random() - 0.5) * this.shakeIntensity;
+      shakeY = (Math.random() - 0.5) * this.shakeIntensity;
+    }
+
     this.ctx.save();
-    this.ctx.translate(vw / 2, vh / 2);
+    this.ctx.translate(vw / 2 + shakeX, vh / 2 + shakeY);
     this.ctx.scale(this.zoom, this.zoom);
     this.ctx.translate(-this.cameraPos.x, -this.cameraPos.y);
 
@@ -230,6 +258,30 @@ export class Renderer {
         this.updateSnakeLerp(snake);
         this.renderKawaiiVectorSnake(snake, snake.id === targetUserId);
       }
+    }
+
+    // Floating combat / damage text
+    for (let i = this.damageTexts.length - 1; i >= 0; i--) {
+      const d = this.damageTexts[i];
+      d.life -= 0.016;
+      d.y -= 1.2;
+      if (d.life <= 0) {
+        this.damageTexts.splice(i, 1);
+        continue;
+      }
+      const alpha = Math.max(0, d.life / d.maxLife);
+      const fx = this.wrapNear(d.x, this.cameraPos.x);
+      const fy = this.wrapNear(d.y, this.cameraPos.y);
+      this.ctx.save();
+      this.ctx.globalAlpha = alpha;
+      this.ctx.font = '900 22px Outfit, sans-serif';
+      this.ctx.fillStyle = d.color;
+      this.ctx.strokeStyle = '#000000';
+      this.ctx.lineWidth = 3;
+      this.ctx.textAlign = 'center';
+      this.ctx.strokeText(d.text, fx, fy);
+      this.ctx.fillText(d.text, fx, fy);
+      this.ctx.restore();
     }
 
     if (state.currentEvent?.type === 'rain_storm') this.renderRain(WORLD);

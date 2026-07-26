@@ -1255,9 +1255,27 @@ class AnacondaPark {
     document.getElementById('tactical-center')?.addEventListener('click', () => { if (me) { panX = me.head.x; panY = me.head.y; } mapZoom = 1.0; drawMap(); });
   }
 
+  private triggerDamageFeedback(dmg: number, headX: number, headY: number) {
+    audio.playHit?.();
+    this.renderer?.triggerCameraShake(Math.min(10, Math.max(4, dmg * 0.3)), 0.25);
+    this.renderer?.spawnDamageText(headX, headY, dmg, dmg >= 20);
+
+    let flash = document.getElementById('damage-flash');
+    if (!flash) {
+      flash = document.createElement('div');
+      flash.id = 'damage-flash';
+      flash.className = 'damage-flash';
+      document.body.appendChild(flash);
+    }
+    flash.classList.remove('active');
+    void flash.offsetWidth; // force reflow
+    flash.classList.add('active');
+    setTimeout(() => flash?.classList.remove('active'), 350);
+  }
+
   private renderHeartsHTML(hp: number, maxHp: number = 100, lastHp?: number): string {
-    const totalHearts = 5;
-    const hpPerHeart = maxHp / totalHearts; // 20 HP per heart
+    const totalHearts = 4;
+    const hpPerHeart = maxHp / totalHearts; // 25 HP per heart container (100 HP max)
     let html = '';
     const isDamage = lastHp !== undefined && hp < lastHp;
     const isHeal = lastHp !== undefined && hp > lastHp;
@@ -1299,6 +1317,11 @@ class AnacondaPark {
         : hp < maxHp * 0.6
           ? 'linear-gradient(90deg, #f59e0b, #fbbf24)'
           : 'linear-gradient(90deg, #10b981, #34d399)';
+    }
+
+    if (this.lastHp !== undefined && hp < this.lastHp) {
+      const dmg = Math.round(this.lastHp - hp);
+      if (dmg > 0) this.triggerDamageFeedback(dmg, me.head.x, me.head.y);
     }
     const heartsRow = document.getElementById('hud-hearts-row');
     if (heartsRow) heartsRow.innerHTML = this.renderHeartsHTML(hp, maxHp, this.lastHp);
