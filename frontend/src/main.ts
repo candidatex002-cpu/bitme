@@ -239,6 +239,11 @@ class AnacondaPark {
   constructor() {
     this.root = document.getElementById('app')!;
     this.loadSettings();
+    this.client.onPickupEvent = (e) => {
+      if (e.updatedMissions) this.missions = e.updatedMissions;
+      if (e.profile) this.profile = e.profile;
+      this.updateMissionTracker();
+    };
     this.render();
     // §5 First-time users go through onboarding (which creates their named account);
     // returning users (or anyone with an existing cached session) restore directly.

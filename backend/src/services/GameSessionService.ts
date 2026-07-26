@@ -541,6 +541,12 @@ export class GameSessionService {
     return Math.min(10, 5 + Math.floor(Math.max(0, level) / 8));
   }
 
+  private onPickupCallback?: (userId: string, foodId: string, foodType: string, updatedMissions: any[]) => void;
+
+  public setOnPickupCallback(cb: (userId: string, foodId: string, foodType: string, updatedMissions: any[]) => void) {
+    this.onPickupCallback = cb;
+  }
+
   private applyFood(snake: SnakeState, food: FoodItem) {
     const wasHurt = snake.hp < snake.maxHp;
     if (food.hpRestore) snake.hp = Math.min(snake.maxHp, snake.hp + food.hpRestore);
@@ -567,6 +573,11 @@ export class GameSessionService {
       else if (food.type === 'coupon_box') db.incrementCollectible(u, 'treasure');
       if (food.buff === 'shield') db.incrementCollectible(u, 'shield');
       if (food.hpRestore && wasHurt) db.incrementCollectible(u, 'heal');
+
+      const updatedMissions = db.getMissions(u);
+      if (this.onPickupCallback) {
+        this.onPickupCallback(u, food.id, food.type, updatedMissions);
+      }
     }
   }
 

@@ -142,6 +142,7 @@ export class GameClient {
   public onAbilityResult?: (used: boolean) => void;
   public onMatchInvite?: (r: { from: string; fromId: string; mode?: string }) => void; // §8 friend invite
   public onCollect?: (type: string, value: number) => void; // §V7 local-engine food/star pickup by the player
+  public onPickupEvent?: (r: { foodId: string; foodType: string; updatedMissions: any[]; profile: any }) => void; // §P1 server-authoritative pickup event
   // §7 Matchmaking-chosen server URL for Global Adventure ('' = default origin from serverBase()).
   public preferredServer = '';
 
@@ -218,6 +219,7 @@ export class GameClient {
       this.socket.on('respawn_result', (r: any) => this.onRespawnResult?.(r));
       this.socket.on('ability_result', (r: { used: boolean }) => this.onAbilityResult?.(r.used));
       this.socket.on('match_invite', (r: { from: string; fromId: string; mode?: string }) => this.onMatchInvite?.(r)); // §8
+      this.socket.on('pickup_event', (r: any) => this.onPickupEvent?.(r));
       this.socket.on('disconnect', () => { this.isConnected = false; });
     } catch { /* ignored */ }
 

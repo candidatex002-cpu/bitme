@@ -51,7 +51,7 @@ export class AuthService {
     const { user, profile } = db.createUser(clean, `${clean.toLowerCase()}@guest.local`, '', true);
     db.updateProfile(user.id, { country, language } as any); // country/language stored loosely
     const token = jwt.sign({ userId: user.id, username: user.username, isGuest: true }, JWT_SECRET, { expiresIn: '30d' });
-    return { token, user: { id: user.id, username: user.username, email: user.email }, profile: db.getProfile(user.id) };
+    return { token, user: { id: user.id, username: user.username, email: user.email, isGuest: user.isGuest }, profile: db.getProfile(user.id) };
   }
 
   public static async login(username: string, password: string): Promise<{ token: string; user: any; profile: any } | { error: string }> {

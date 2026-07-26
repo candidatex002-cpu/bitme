@@ -491,6 +491,19 @@ io.on('connection', (socket) => {
     socket.join(mode);
 
     const session = sessionManager.getSession(mode);
+    session.setOnPickupCallback((userId, foodId, foodType, updatedMissions) => {
+      for (const [sid, conn] of connectedSockets) {
+        if (conn.userId === userId) {
+          io.to(sid).emit('pickup_event', {
+            type: 'pickup_event',
+            foodId,
+            foodType,
+            updatedMissions,
+            profile: db.getProfile(userId),
+          });
+        }
+      }
+    });
     const snake = session.registerPlayer(a.userId, a.username, skin, false, evolution, region);
     socket.emit('authenticated', { userId: a.userId, snake, mode, region, config: session.getConfig() });
   });
