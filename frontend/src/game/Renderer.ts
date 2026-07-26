@@ -67,10 +67,10 @@ export class Renderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private cameraPos = { x: WORLD / 2, y: WORLD / 2 };
-  private zoom = 0.7;
-  private userZoom = 0.7;            // §5 player-controlled zoom (default: Far view 0.7)
-  private readonly ZOOM_MIN = 0.55;  // most zoomed OUT (Far)
-  private readonly ZOOM_MAX = 1.5;   // most zoomed IN (Close)
+  private zoom = 0.45;
+  private userZoom = 0.45;            // §5 player-controlled zoom (default: Far view 0.45 = 2.2x wider map FOV)
+  private readonly ZOOM_MIN = 0.30;  // most zoomed OUT (Ultra Wide)
+  private readonly ZOOM_MAX = 1.0;   // most zoomed IN (Near)
   private animFrame = 0;
 
   // §6 Toroidal wrap helpers — draw entities at the copy nearest the camera (§8 world = WORLD).
@@ -91,7 +91,7 @@ export class Renderer {
   }> = new Map();
 
   public setCameraPreset(preset: 'near' | 'medium' | 'far' | 'ultra_wide') {
-    const scale = preset === 'near' ? 1.1 : preset === 'medium' ? 0.9 : preset === 'ultra_wide' ? 0.5 : 0.7;
+    const scale = preset === 'near' ? 0.85 : preset === 'medium' ? 0.65 : preset === 'ultra_wide' ? 0.32 : 0.45;
     this.userZoom = scale;
   }
 
@@ -793,17 +793,17 @@ export class Renderer {
     this.userZoom = Math.max(this.ZOOM_MIN / 1.15, Math.min(this.ZOOM_MAX / 0.9, this.userZoom * factor));
   }
 
-  /** Mobile zoom button — cycles far → normal → close. Returns a short label. */
+  /** Mobile zoom button — cycles Far → Medium → Near → Ultra. Returns a short label. */
   public cycleZoom(): string {
-    const steps: Array<[number, string]> = [[0.7, 'Far'], [1.0, 'Normal'], [1.35, 'Close']];
+    const steps: Array<[number, string]> = [[0.45, 'Far'], [0.65, 'Medium'], [0.85, 'Near'], [0.32, 'Ultra']];
     let idx = 0;
     let best = Infinity;
     for (let i = 0; i < steps.length; i++) {
-      const d = Math.abs(steps[i][0] - this.userZoom);
+      const d = Math.abs(this.userZoom - steps[i][0]);
       if (d < best) { best = d; idx = i; }
     }
-    const next = steps[(idx + 1) % steps.length];
-    this.userZoom = next[0];
-    return next[1];
+    const next = (idx + 1) % steps.length;
+    this.userZoom = steps[next][0];
+    return steps[next][1];
   }
 }

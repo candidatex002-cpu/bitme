@@ -14,6 +14,7 @@ export function renderWormholeAsset(
 
   ctx.save();
   ctx.translate(px, py);
+  ctx.scale(0.65, 0.65);
 
   // 1. Orbiting Floating Dark Magenta Crystal Shards
   ctx.fillStyle = '#6B21A8';

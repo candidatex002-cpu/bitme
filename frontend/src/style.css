@@ -337,10 +337,9 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .respawn-opt.green { background: linear-gradient(180deg,#45d873,#1f9d47); }
 .respawn-opt.gray { background: linear-gradient(180deg,#9fb0a6,#6b7d72); }
 
-/* ---------------------------------------------------------------- in-game HUD */
+/* ---------------------------------------------------------------- in-game HUD Overhaul */
 .hud {
   position: absolute; inset: 0; z-index: 12; pointer-events: none; overflow: hidden;
-  /* Use padding so controls never overlap device safe areas (notch, home bar) */
   padding-top: max(env(safe-area-inset-top), 0px);
   padding-right: max(env(safe-area-inset-right), 0px);
   padding-bottom: max(env(safe-area-inset-bottom), 0px);
@@ -353,61 +352,48 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: var(--shadow);
 }
 
-/* ---- Top-Left: Pause + Score + Level + HP ---- */
-.hud-tl {
+/* ---- Top HUD Header Grid: Pause | Score | Hearts | Leaderboard ---- */
+.hud-top-bar {
   position: absolute;
-  top: clamp(6px, 1.5vh, 14px); left: clamp(6px, 1.5vw, 14px);
-  display: flex; align-items: center;
-  gap: clamp(4px, 1vw, 8px);
-  padding: clamp(4px, 0.8vw, 8px) clamp(6px, 1.2vw, 12px) clamp(4px, 0.8vw, 8px) clamp(4px, 0.8vw, 6px);
-  max-width: min(50vw, 240px);
+  top: clamp(6px, 1.5vh, 14px);
+  left: clamp(8px, 2vw, 16px);
+  right: clamp(8px, 2vw, 16px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 25;
+}
+.hud-top-bar > * { pointer-events: auto; }
+
+.hud-top-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .hud-pause {
-  width: clamp(26px, 6.5vw, 40px); height: clamp(26px, 6.5vw, 40px);
-  flex-shrink: 0; border: none; border-radius: clamp(6px, 1.5vw, 12px);
-  background: var(--card-2); font-size: clamp(0.8rem, 2.2vw, 1.1rem);
-  cursor: pointer; box-shadow: inset 0 0 0 1px var(--line);
+  width: clamp(32px, 7vw, 42px); height: clamp(32px, 7vw, 42px);
+  flex-shrink: 0; border: none; border-radius: clamp(8px, 1.8vw, 12px);
+  background: rgba(255,255,255,0.94); font-size: clamp(0.9rem, 2.4vw, 1.15rem);
+  cursor: pointer; box-shadow: var(--shadow); border: 1px solid var(--line);
 }
 .hud-pause:active { transform: scale(0.94); }
-.hud-tl-main {
-  display: flex; flex-direction: column; gap: clamp(2px, 0.4vh, 4px);
-  min-width: clamp(60px, 16vw, 120px);
+.hud-score-pill {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,0.94); border: 1px solid var(--line);
+  border-radius: 20px; padding: 6px 14px; box-shadow: var(--shadow);
+  font-family: var(--font-title); font-weight: 900; font-size: clamp(0.8rem, 2.2vw, 1.05rem);
 }
-.hud-scoreline { display: flex; align-items: baseline; gap: clamp(3px, 0.8vw, 6px); }
-.hud-score {
-  font-family: var(--font-title); font-weight: 900;
-  font-size: clamp(0.85rem, 2.8vw, 1.4rem); color: var(--ink); line-height: 1;
-}
-.hud-scoreline .hud-stage {
-  font-family: var(--font-title); font-weight: 800;
-  font-size: clamp(0.5rem, 1.4vw, 0.7rem); color: var(--green-deep);
-}
-/* ---------------------------------------------------------------- Top Middle Floating Hearts HUD (Clean, No Card Background) */
-.hud-top-middle-hearts {
-  position: absolute;
-  top: clamp(8px, 1.8vh, 16px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 25;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  padding: 0;
-  background: transparent;
-  border: none;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+.hud-score-pill .score-lbl { color: var(--muted); font-size: 0.72rem; font-weight: 700; }
+.hud-score-pill .score-val { color: var(--ink); }
+.hud-score-pill .stage-val { color: var(--green-deep); font-size: 0.7rem; font-weight: 800; background: var(--green-bg); padding: 2px 8px; border-radius: 10px; }
+
+.hud-top-center {
+  display: flex; align-items: center; justify-content: center;
   pointer-events: none;
 }
-
 .hearts-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
 }
 
 .heart-unit {
@@ -639,26 +625,26 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 
 /* ---- Top-Right: Leaderboard ---- */
 .hud-leaderboard {
-  position: absolute;
-  top: clamp(6px, 1.5vh, 14px); right: clamp(6px, 1.5vw, 14px);
-  width: clamp(130px, 28vw, 280px);
-  padding: clamp(6px, 1.2vw, 12px) clamp(8px, 1.5vw, 14px);
-  font-size: clamp(0.62rem, 1.8vw, 0.82rem); z-index: 15;
+  position: static;
+  width: clamp(120px, 22vw, 220px);
+  padding: clamp(4px, 0.8vw, 8px) clamp(6px, 1vw, 12px);
+  font-size: clamp(0.6rem, 1.6vw, 0.78rem); z-index: 15;
 }
-.hud-leaderboard h4 {
-  color: var(--green-deep); margin-bottom: clamp(2px, 0.5vh, 5px);
-  font-size: clamp(0.65rem, 2vw, 0.88rem);
+.hud-leaderboard .lb-title {
+  color: var(--green-deep); margin-bottom: clamp(2px, 0.5vh, 4px);
+  font-size: clamp(0.65rem, 1.8vw, 0.82rem); font-family: var(--font-title); font-weight: 900;
 }
-.lb-row { display: flex; justify-content: space-between; padding: clamp(1px, 0.3vh, 3px) 0; gap: clamp(3px, 0.8vw, 6px); }
+.lb-row { display: flex; justify-content: space-between; padding: 1px 0; gap: 4px; }
 .lb-row.me { color: var(--gold-deep); font-weight: 800; }
 .lb-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
 
-/* ---- Center: Event / Team Scores ---- */
+/* ---- Mode Event Header (Battle Royale / Team Battle Status Bar) ---- */
 .hud-event {
-  position: absolute; top: clamp(70px, 12vh, 120px); left: 50%; transform: translateX(-50%);
-  padding: clamp(4px, 0.8vw, 8px) clamp(8px, 1.5vw, 16px);
-  font-family: var(--font-title); font-weight: 800; color: var(--gold-deep);
-  font-size: clamp(0.65rem, 1.8vw, 0.88rem); white-space: nowrap;
+  position: absolute; top: clamp(62px, 8.5vh, 85px); left: 50%; transform: translateX(-50%);
+  padding: 5px 16px; border-radius: 30px;
+  background: rgba(255,255,255,0.94); border: 1px solid var(--line); box-shadow: var(--shadow);
+  font-family: var(--font-title); font-weight: 800; color: var(--ink);
+  font-size: clamp(0.7rem, 1.8vw, 0.88rem); white-space: nowrap; z-index: 18;
 }
 .team-scores {
   position: absolute; top: clamp(6px, 1.5vh, 14px); left: 50%; transform: translateX(-50%);
@@ -709,21 +695,20 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .team-mates .tm.down { opacity: 0.5; }
 .team-mates .tm.down .tm-dot { background: #94a3b8; }
 
-/* ---------------------------------------------------------------- §V7 In-game mission tracker */
+/* ---------------------------------------------------------------- Ultra-Compact In-game Mission Tracker */
 .mission-tracker {
-  position: absolute; top: clamp(58px, 10vh, 92px); left: clamp(8px, 2vw, 16px);
-  background: rgba(255,255,255,0.82); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
-  border: 1px solid rgba(0,0,0,0.06); border-radius: 12px; padding: 7px 9px;
-  min-width: 150px; max-width: 44vw; box-shadow: var(--shadow); pointer-events: none; z-index: 5;
+  position: absolute; top: clamp(60px, 8.5vh, 85px); left: clamp(8px, 2vw, 16px);
+  background: rgba(255,255,255,0.85); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  border: 1px solid rgba(0,0,0,0.08); border-radius: 12px; padding: 5px 8px;
+  min-width: 90px; max-width: 120px; box-shadow: var(--shadow); pointer-events: none; z-index: 15;
 }
 .mission-tracker.mt-right { left: auto; right: clamp(8px, 2vw, 16px); }
 .hud.mini-hidden .mission-tracker { opacity: 0; }
-.mission-tracker .mt-head { font-family: var(--font-title); font-weight: 800; font-size: 0.72rem; margin-bottom: 4px; color: #334155; }
-.mt-row { display: flex; align-items: center; gap: 6px; font-size: 0.68rem; font-weight: 600; color: #475569; padding: 1px 0; }
+.mt-row { display: flex; align-items: center; gap: 5px; font-size: 0.68rem; font-weight: 700; color: #334155; padding: 1.5px 0; }
 .mt-row.done { color: #059669; }
-.mt-row .mt-check { font-size: 0.8rem; }
-.mt-row .mt-txt { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mt-row .mt-count { font-weight: 800; font-variant-numeric: tabular-nums; }
+.mt-row .mt-check { font-size: 0.76rem; }
+.mt-row .mt-ico { font-size: 0.82rem; }
+.mt-row .mt-count { font-weight: 900; font-variant-numeric: tabular-nums; margin-left: auto; }
 
 /* Mission completion celebration popup */
 .mission-pop { position: fixed; inset: 0; display: grid; place-items: start center; padding-top: 14vh; pointer-events: none; z-index: 60; }

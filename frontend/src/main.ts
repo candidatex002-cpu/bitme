@@ -746,7 +746,7 @@ class AnacondaPark {
       box.innerHTML = list.map(m => {
         const cur = this.liveMissionCount(m);
         const done = cur >= m.targetCount;
-        return `<div class="mt-row ${done ? 'done' : ''}"><span class="mt-check">${done ? '☑' : '☐'}</span><span class="mt-txt">${m.icon} ${m.title.replace(/^[^ ]+ /, '')}</span><span class="mt-count">${cur}/${m.targetCount}</span></div>`;
+        return `<div class="mt-row ${done ? 'done' : ''}"><span class="mt-check">${done ? '☑' : '☐'}</span> <span class="mt-ico">${m.icon}</span> <span class="mt-count">${cur}/${m.targetCount}</span></div>`;
       }).join('');
     }
     // Completion detection — celebrate each mission once, then check the daily-complete flow.
@@ -2440,39 +2440,58 @@ class AnacondaPark {
     const cpos = this.settings.controlPos || 'center';
     const jsize = this.settings.joySize || 'medium';
     const jop = this.settings.joyOpacity || 70;
-    return `<div class="hud ctrl-${cpos}">
-      <div class="hud-tl hud-panel">
-        <button id="nav-pause" class="hud-pause">⏸</button>
-        <div class="hud-tl-main">
-          <div class="hud-scoreline"><span class="hud-score" id="hv-score">0</span><span class="hud-stage" id="hud-stage">Baby · Lv 1</span></div>
-        </div>
-      </div>
+    return `
+      <div class="hud ctrl-${cpos}">
+        <!-- Top HUD Header Grid: Pause | Score | Hearts | Leaderboard -->
+        <div class="hud-top-bar">
+          <div class="hud-top-left">
+            <button id="nav-pause" class="hud-pause">⏸</button>
+            <div class="hud-score-pill">
+              <span class="score-lbl">Score:</span>
+              <span class="score-val" id="hv-score">0</span>
+              <span class="stage-val" id="hud-stage">Lv 1</span>
+            </div>
+          </div>
 
-      <!-- Compact Daily Missions Widget -->
-      ${this.settings.missionTracker === false ? '' : `<div class="mission-tracker ${this.settings.trackerPos === 'right' ? 'mt-right' : ''}" id="mission-tracker">
-        <div class="mt-head">🎯 Daily Missions</div>
-        <div id="mission-tracker-rows"></div>
-      </div>`}
+          <div class="hud-top-center">
+            <div class="hearts-row" id="hud-hearts-row">
+              ${this.renderHeartsHTML(100, 100)}
+            </div>
+          </div>
 
-      <!-- Separate Top-Middle Floating Hearts Section (No Card Background, No HP Text) -->
-      <div class="hud-top-middle-hearts" id="hud-hearts-container">
-        <div class="hearts-row" id="hud-hearts-row">
-          ${this.renderHeartsHTML(100, 100)}
+          <div class="hud-top-right">
+            <div class="hud-leaderboard hud-panel">
+              <div class="lb-title">🏆 Top 10</div>
+              <div id="hud-lb-rows"></div>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div class="power-status" id="power-status" style="display:none;"></div>
-      <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
-      <div class="team-scores" id="team-scores" style="display:none;"></div>
-      <div class="hud-leaderboard hud-panel"><h4>🏆 Top 10</h4><div id="hud-lb-rows"></div></div>
-      <div class="touch-joystick joy-${jsize} joy-op-${jop}" id="touch-joystick"><div class="touch-knob" id="touch-knob"></div></div>
-      <div class="touch-actions">
-        <div class="touch-row">
-          <div class="touch-btn zoom" id="touch-zoom" title="Camera Zoom Preset">🔍<span class="tz-label" id="touch-zoom-label">Far</span></div>
-          <div class="touch-btn mini" id="touch-mini" title="Fullscreen Tactical Map">🗺️</div>
+        <!-- Mode-Specific Compact Battle Bar (Kills, Timer, Rank, Alive) -->
+        <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
+        <div class="team-scores" id="team-scores" style="display:none;"></div>
+        <div class="power-status" id="power-status" style="display:none;"></div>
+
+        <!-- Ultra-Compact Daily Mission Tracker (Icon-Only Progress) -->
+        ${this.settings.missionTracker === false ? '' : `
+        <div class="mission-tracker ${this.settings.trackerPos === 'right' ? 'mt-right' : ''}" id="mission-tracker">
+          <div id="mission-tracker-rows"></div>
+        </div>`}
+
+        <!-- Bottom Controls Cluster: Joystick (Center) & Action Buttons (Right) -->
+        <div class="hud-bottom-controls">
+          <div class="touch-joystick joy-${jsize} joy-op-${jop}" id="touch-joystick">
+            <div class="touch-knob" id="touch-knob"></div>
+          </div>
+
+          <div class="touch-actions">
+            <div class="touch-row">
+              <div class="touch-btn mini" id="touch-mini" title="Fullscreen Tactical Map">🗺️</div>
+              <div class="touch-btn zoom" id="touch-zoom" title="Camera Zoom Preset">🔍<span class="tz-label" id="touch-zoom-label">Far</span></div>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>`;
+      </div>`;
   }
 
   private renderPause() {
