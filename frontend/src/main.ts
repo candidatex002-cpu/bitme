@@ -617,8 +617,13 @@ class AnacondaPark {
 
   private rank() { return this.profile?.rank || { label: 'Bronze III', color: '#b45309', tier: 'Bronze' }; }
 
-  // ------------------------------------------------------------- navigation
-  private setScreen(s: Screen) { this.screen = s; this.render(); }
+  private setScreen(s: Screen) {
+    this.screen = s;
+    this.render();
+    if (s === 'play' || s === 'pause' || s === 'respawn') {
+      this.startRenderLoop();
+    }
+  }
   private go(p: Page) { this.page = p; this.screen = 'app'; audio.playClick(); this.render(); if (p === 'rewards') this.loadRewards(); if (p === 'inventory') this.loadAvailableCoupons(); if (p === 'social') this.loadSocial(); if (p === 'history') this.loadMatchHistory(); if (p === 'leaderboard') this.loadLeaderboardCategory(); if (p === 'admin') this.loadAdminCoupons(); if (p === 'play' && this.matchType === 'global') this.measureGlobalPing(); ads.showBanner(); /* §14 lobby-only banner */ }
 
   private async equipSkin(id: string) {
@@ -1213,14 +1218,15 @@ class AnacondaPark {
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
       }
 
-      // Safe Zone Storm Circle
-      if (state?.safeZone) {
+      // Safe Zone Storm Circle (only in Battle Royale / Team Battle)
+      const isComp = this.selectedUIMode === 'battle_royale' || this.selectedUIMode === 'team';
+      if (isComp && state?.safeZone) {
         ctx.beginPath();
         ctx.arc(state.safeZone.centerX, state.safeZone.centerY, state.safeZone.radius, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(52, 211, 153, 0.8)';
-        ctx.lineWidth = 5;
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
+        ctx.lineWidth = 4;
         ctx.stroke();
-        ctx.fillStyle = 'rgba(52, 211, 153, 0.08)';
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.12)';
         ctx.fill();
       }
 
@@ -1299,8 +1305,8 @@ class AnacondaPark {
   }
 
   private renderHeartsHTML(hp: number, maxHp: number = 100, lastHp?: number): string {
-    const totalHearts = 4;
-    const hpPerHeart = maxHp / totalHearts; // 25 HP per heart container (100 HP max)
+    const totalHearts = 5;
+    const hpPerHeart = maxHp / totalHearts; // 20 HP per heart container (100 HP max)
     let html = '';
     const isDamage = lastHp !== undefined && hp < lastHp;
     const isHeal = lastHp !== undefined && hp > lastHp;
@@ -1322,6 +1328,10 @@ class AnacondaPark {
               <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="#EF4444"/>
             </svg>
           </div>
+          ${anim === 'damaged' ? `
+          <svg class="heart-crack-svg" viewBox="0 0 24 24">
+            <path d="M12 4l-2 5l4 3l-3 4l2 5" stroke="#7F1D1D" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+          </svg>` : ''}
         </div>`;
     }
     return html;
@@ -1344,13 +1354,15 @@ class AnacondaPark {
           : 'linear-gradient(90deg, #10b981, #34d399)';
     }
 
-    if (this.lastHp !== undefined && hp < this.lastHp) {
-      const dmg = Math.round(this.lastHp - hp);
-      if (dmg > 0) this.triggerDamageFeedback(dmg, me.head.x, me.head.y);
+    if (this.lastHp !== hp) {
+      if (this.lastHp !== undefined && hp < this.lastHp) {
+        const dmg = Math.round(this.lastHp - hp);
+        if (dmg > 0) this.triggerDamageFeedback(dmg, me.head.x, me.head.y);
+      }
+      const heartsRow = document.getElementById('hud-hearts-row');
+      if (heartsRow) heartsRow.innerHTML = this.renderHeartsHTML(hp, maxHp, this.lastHp);
+      this.lastHp = hp;
     }
-    const heartsRow = document.getElementById('hud-hearts-row');
-    if (heartsRow) heartsRow.innerHTML = this.renderHeartsHTML(hp, maxHp, this.lastHp);
-    this.lastHp = hp;
 
     // Floating Kill Toast Notification
     const kills = me.kills ?? 0;
@@ -1359,30 +1371,46 @@ class AnacondaPark {
     }
     this.lastKills = kills;
 
-    setT('hv-score', String(Math.round(me.score)));
-    setT('hud-stage', `${me.evolution || me.stage} · Lv ${me.level}`);
+    this.setT('hv-score', String(Math.round(me.score)));
+    this.setT('hud-stage', `${me.evolution || me.stage} · Lv ${me.level}`);
     const cd = me.abilityCooldown ?? 0;
     const badge = document.getElementById('ability-badge'); const cdEl = document.getElementById('ability-cd');
-    if (badge && cdEl) { badge.classList.toggle('ready', cd <= 0); cdEl.innerText = cd <= 0 ? 'READY' : `${Math.ceil(cd)}s`; }
+    if (badge && cdEl) { badge.classList.toggle('ready', cd <= 0); if (cdEl.innerText !== (cd <= 0 ? 'READY' : `${Math.ceil(cd)}s`)) cdEl.innerText = cd <= 0 ? 'READY' : `${Math.ceil(cd)}s`; }
 
-    // Active power status (🍄 super / 🛡️ shield / ⚡ speed)
+    // Active power status (🍄 super / 🛡️ shield / ⚡ speed / ✨ ability)
     const powers: string[] = [];
-    const superT = (me as any).superTimer ?? 0;
-    if (superT > 0) powers.push(`<span class="pwr super">🍄 ${Math.ceil(superT)}s</span>`);
-    if ((me.shieldTimer ?? 0) > 0) powers.push(`<span class="pwr shield">🛡️ ${Math.ceil(me.shieldTimer)}s</span>`);
-    if ((me.speedBoostTimer ?? 0) > 0) powers.push(`<span class="pwr speed">⚡ ${Math.ceil(me.speedBoostTimer)}s</span>`);
+    const superT = Math.max(0, (me as any).superTimer ?? 0);
+    const shieldT = Math.max(0, me.shieldTimer ?? 0);
+    const speedT = Math.max(0, me.speedBoostTimer ?? 0);
+    const abilityT = Math.max(0, me.abilityActiveTimer ?? 0);
+
+    if (superT > 0) powers.push(`<div class="pwr super"><span class="pwr-ico">🍄</span><span class="pwr-lbl">Super</span><b class="pwr-val">${Math.ceil(superT)}s</b></div>`);
+    if (shieldT > 0) powers.push(`<div class="pwr shield"><span class="pwr-ico">🛡️</span><span class="pwr-lbl">Shield</span><b class="pwr-val">${Math.ceil(shieldT)}s</b></div>`);
+    if (speedT > 0) powers.push(`<div class="pwr speed"><span class="pwr-ico">⚡</span><span class="pwr-lbl">Speed</span><b class="pwr-val">${Math.ceil(speedT)}s</b></div>`);
+    if (abilityT > 0) powers.push(`<div class="pwr ability"><span class="pwr-ico">✨</span><span class="pwr-lbl">Boost</span><b class="pwr-val">${Math.ceil(abilityT)}s</b></div>`);
+
+    const newHtml = powers.join('');
     const ps = document.getElementById('power-status');
-    if (ps) { if (powers.length) { ps.style.display = 'flex'; ps.innerHTML = powers.join(''); } else ps.style.display = 'none'; }
+    if (ps) {
+      if (powers.length) {
+        if (ps.style.display !== 'flex') ps.style.display = 'flex';
+        if (ps.innerHTML !== newHtml) ps.innerHTML = newHtml;
+      } else {
+        if (ps.style.display !== 'none') ps.style.display = 'none';
+        if (ps.innerHTML !== '') ps.innerHTML = '';
+      }
+    }
     document.getElementById('touch-ability')?.classList.toggle('cooling', cd > 0);
 
     // Event Header (only for temporary map events e.g. Cherry Rain)
     const evt = document.getElementById('hud-event');
     if (evt) {
       if (state.currentEvent) {
-        evt.style.display = 'block';
-        evt.innerText = `${state.currentEvent.icon} ${state.currentEvent.timerSeconds}s`;
+        if (evt.style.display !== 'block') evt.style.display = 'block';
+        const txt = `${state.currentEvent.icon} ${state.currentEvent.timerSeconds}s`;
+        if (evt.innerText !== txt) evt.innerText = txt;
       } else {
-        evt.style.display = 'none';
+        if (evt.style.display !== 'none') evt.style.display = 'none';
       }
     }
 
@@ -1398,7 +1426,7 @@ class AnacondaPark {
     // Top 10 Leaderboard
     const lb = document.getElementById('hud-lb-rows');
     if (lb) {
-      lb.innerHTML = state.leaderboard.slice(0, 10).map((r, i) => {
+      const newLbHtml = state.leaderboard.slice(0, 10).map((r, i) => {
         const crown = i === 0 ? '👑 ' : i === 1 ? '🥈 ' : i === 2 ? '🥉 ' : `<span class="lb-num">${i + 1}.</span> `;
         const hatIco = (r as any).hat ? `${HAT_ICONS[(r as any).hat] || ''} ` : '';
         return `<div class="lb-row ${r.id === this.client.localUserId ? 'me' : ''}">
@@ -1406,12 +1434,13 @@ class AnacondaPark {
           <span>${r.score}</span>
         </div>`;
       }).join('');
+      if (lb.innerHTML !== newLbHtml) lb.innerHTML = newLbHtml;
     }
   }
 
   private setT(id: string, v: string) {
     const el = document.getElementById(id);
-    if (el) el.innerText = v;
+    if (el && el.innerText !== v) el.innerText = v;
   }
 
   private updateFreeRoamHUD(me: any, _state: any, _kills: number) {
@@ -1735,17 +1764,17 @@ class AnacondaPark {
 
   private pagePlay() {
     return `
-      <div class="page">
-        <div class="card">
+      <div class="page page-play">
+        <div class="card card-mm">
           <div class="section-title">${icons.globe(20)} Matchmaking</div>
-          <div class="seg" style="margin-bottom:12px;">
+          <div class="seg mm-seg">
             <button class="${this.matchType === 'global' ? 'active' : ''}" data-mt="global">${icons.globe(16)} Global Adventure</button>
             <button class="${this.matchType === 'local' ? 'active' : ''}" data-mt="local">${icons.pin(16)} Local Explorer</button>
           </div>
           ${this.matchType === 'global' ? this.renderGlobalMatch() : this.renderLocalMatch()}
         </div>
 
-        <div class="card">
+        <div class="card card-mode-select">
           <div class="section-title">${icons.play(20)} Choose a Mode</div>
           <div class="mode-grid">
             ${UI_MODE_ORDER.map(m => {
@@ -2531,47 +2560,38 @@ class AnacondaPark {
     const jop = this.settings.joyOpacity || 70;
     return `
       <div class="hud ctrl-${cpos} mode-battle-royale">
-
-        <!-- CSS Grid: each element is an independent card in its own named grid area -->
-        <div class="tb-top-bar">
-
-          <!-- Grid area: pause -->
+        <div class="tb-top-bar mode-br-grid">
+          <!-- Left Panel: Pause Button -->
           <button id="nav-pause" class="hud-pause tb-a-pause">⏸</button>
 
-          <!-- Grid area: player (Battle Royale uses score pill instead of player card) -->
-          <div class="hud-score-pill tb-a-player" id="br-score-pill">
-            <span class="score-lbl">Score:</span>
-            <span class="score-val" id="hv-score">0</span>
-            <span class="stage-val" id="hud-stage">Lv 1</span>
-          </div>
-
-          <!-- Grid area: hearts (centered) -->
-          <div class="tb-a-hearts">
-            <div class="hearts-row" id="hud-hearts-row">
-              ${this.renderHeartsHTML(100, 100)}
+          <!-- Center Panel: Hearts (Top) -> Match Status Pill -> Active Powers -->
+          <div class="hud-center-stack">
+            <div class="tb-a-hearts">
+              <div class="hearts-row" id="hud-hearts-row">
+                ${this.renderHeartsHTML(100, 100)}
+              </div>
             </div>
+
+            <div class="tb-status-pill hud-panel tb-a-status" id="br-status-pill">
+              <span>⏱️ <b id="br-timer">00:00</b></span>
+              <span class="tb-dot-sep">·</span>
+              <span>👥 <b id="br-alive">0 Alive</b></span>
+              <span class="tb-dot-sep">·</span>
+              <span>⚔️ <b id="br-kills">0 Kills</b></span>
+            </div>
+
+            <div class="power-status" id="power-status" style="display:none;"></div>
           </div>
 
-          <!-- Grid area: status -->
-          <div class="tb-status-pill hud-panel tb-a-status" id="br-status-pill">
-            <span>⏱️ <b id="br-timer">00:00</b></span>
-            <span class="tb-dot-sep">·</span>
-            <span>👥 <b id="br-alive">0 Alive</b></span>
-            <span class="tb-dot-sep">·</span>
-            <span>⚔️ <b id="br-kills">0 Kills</b></span>
-          </div>
-
-          <!-- Grid area: lb (leaderboard top-right) -->
+          <!-- Right Panel: Leaderboard -->
           <div class="tb-a-lb">
             <div class="hud-leaderboard hud-panel">
               <div class="lb-title">🏆 Top 10</div>
               <div id="hud-lb-rows"></div>
             </div>
           </div>
-
         </div>
 
-        <div class="power-status" id="power-status" style="display:none;"></div>
         <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
 
         <div class="hud-bottom-controls">
@@ -2594,81 +2614,52 @@ class AnacondaPark {
     const jop = this.settings.joyOpacity || 70;
     return `
       <div class="hud ctrl-${cpos} mode-team-battle">
-
-        <!-- CSS Grid: each element is an independent card placed in its own named grid area.
-             Desktop:  pause | player | hearts | lb
-                       pause | player | score  | lb
-                       pause | player | status | lb
-             Tablet:   pause | hearts | lb
-                       player| score  | lb
-                       player| status | lb
-             Mobile:   pause | hearts | lb
-                       player player  player
-                       score  score   score
-                       status status  status                                    -->
-        <div class="tb-top-bar">
-
-          <!-- Grid area: pause -->
+        <div class="tb-top-bar mode-tb-grid">
+          <!-- Left Panel: Pause Button -->
           <button id="nav-pause" class="hud-pause tb-a-pause">⏸</button>
 
-          <!-- Grid area: player — 2-row compact card: [Name | StageBadge] / [Score · Kills · Assists] -->
-          <div class="tb-player-card hud-panel tb-a-player">
-            <!-- Row 1: Name (left) + Stage badge (right) -->
-            <div class="tb-pc-header">
-              <span class="tb-player-name" id="tb-player-name">Explorer_7740</span>
-              <span class="tb-player-stage-badge" id="tb-player-stage">Baby Lv.1</span>
+          <!-- Center Panel: Hearts (Top) -> Team Score Banner -> Match Status Pill -> Active Powers -->
+          <div class="hud-center-stack">
+            <div class="tb-a-hearts">
+              <div class="hearts-row" id="hud-hearts-row">
+                ${this.renderHeartsHTML(100, 100)}
+              </div>
             </div>
-            <!-- Row 2: Score · Kills · Assists in one compact line -->
-            <div class="tb-pc-stats">
-              <span class="tb-lbl">Score:</span><b id="tb-player-score">0</b>
-              <span class="tb-pc-sep">|</span>
-              <span>⚔️ <b id="tb-player-kills">0</b></span>
-              <span>🤝 <b id="tb-player-assists">0</b></span>
+
+            <div class="tb-score-banner hud-panel tb-a-score" id="tb-score-banner">
+              <div class="tb-team-side blue" id="tb-blue-side">
+                <span class="tb-team-ico">🔵</span>
+                <span class="tb-team-title">BLUE</span>
+                <b class="tb-team-score" id="tb-blue-score">0</b>
+              </div>
+              <div class="tb-vs-divider">VS</div>
+              <div class="tb-team-side red" id="tb-red-side">
+                <b class="tb-team-score" id="tb-red-score">0</b>
+                <span class="tb-team-title">RED</span>
+                <span class="tb-team-ico">🔴</span>
+              </div>
             </div>
+
+            <div class="tb-status-pill hud-panel tb-a-status" id="tb-status-pill">
+              <span>⏱️ <b id="tb-match-timer">00:00</b></span>
+              <span class="tb-dot-sep">·</span>
+              <span>👥 <b id="tb-alive-counts">10 vs 10 Alive</b></span>
+              <span class="tb-dot-sep">·</span>
+              <span class="tb-rank-tag" id="tb-team-rank">🏆 #1</span>
+            </div>
+
+            <div class="power-status" id="power-status" style="display:none;"></div>
           </div>
 
-          <!-- Grid area: hearts — centered between player and leaderboard -->
-          <div class="tb-a-hearts">
-            <div class="hearts-row" id="hud-hearts-row">
-              ${this.renderHeartsHTML(100, 100)}
-            </div>
-          </div>
-
-          <!-- Grid area: score — Team Score card (BLUE vs RED) -->
-          <div class="tb-score-banner hud-panel tb-a-score" id="tb-score-banner">
-            <div class="tb-team-side blue" id="tb-blue-side">
-              <span class="tb-team-ico">🔵</span>
-              <span class="tb-team-title">BLUE</span>
-              <b class="tb-team-score" id="tb-blue-score">0</b>
-            </div>
-            <div class="tb-vs-divider">VS</div>
-            <div class="tb-team-side red" id="tb-red-side">
-              <b class="tb-team-score" id="tb-red-score">0</b>
-              <span class="tb-team-title">RED</span>
-              <span class="tb-team-ico">🔴</span>
-            </div>
-          </div>
-
-          <!-- Grid area: status — Match info (timer, alive, rank) -->
-          <div class="tb-status-pill hud-panel tb-a-status" id="tb-status-pill">
-            <span>⏱️ <b id="tb-match-timer">00:00</b></span>
-            <span class="tb-dot-sep">·</span>
-            <span>👥 <b id="tb-alive-counts">10 vs 10</b></span>
-            <span class="tb-dot-sep">·</span>
-            <span class="tb-rank-tag" id="tb-team-rank">🏆 #1</span>
-          </div>
-
-          <!-- Grid area: lb — Top 10 leaderboard -->
+          <!-- Right Panel: Leaderboard -->
           <div class="tb-a-lb">
             <div class="hud-leaderboard hud-panel">
               <div class="lb-title">🏆 Top 10</div>
               <div id="hud-lb-rows"></div>
             </div>
           </div>
-
         </div>
 
-        <div class="power-status" id="power-status" style="display:none;"></div>
         <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
         <div class="team-scores" id="team-scores" style="display:none;"></div>
 
@@ -2696,51 +2687,48 @@ class AnacondaPark {
 
     return `
       <div class="hud ctrl-${cpos} ${isClassic ? 'mode-classic' : 'mode-free-roam'}">
-        <!-- 3-Column Top HUD Header Grid: Left (Pause, Mission) | Center (Hearts, Player) | Right (Leaderboard) -->
         <div class="tb-top-bar mode-fr-grid">
-
-          <!-- Left Column Area 1: Pause -->
-          <button id="nav-pause" class="hud-pause tb-a-pause">⏸</button>
-
-          <!-- Center Column Area 1: Hearts (always centered horizontally, never moves) -->
-          <div class="tb-a-hearts">
-            <div class="hearts-row" id="hud-hearts-row">
-              ${this.renderHeartsHTML(100, 100)}
-            </div>
+          <!-- Left Panel: Pause Top, Daily Missions Below -->
+          <div class="hud-left-panel">
+            <button id="nav-pause" class="hud-pause tb-a-pause">⏸</button>
+            ${showMissions ? `
+            <div class="mission-tracker-card hud-panel tb-a-mission" id="mission-tracker">
+              <div id="mission-tracker-rows"></div>
+            </div>` : ''}
           </div>
 
-          <!-- Center Column Area 2: Compact Player Card (Name, Score, Stage) -->
-          <div class="fr-player-card hud-panel tb-a-player">
-            <div class="fr-pc-name" id="hv-name">Explorer_7740</div>
-            <div class="fr-pc-scoreline">
-              <span class="fr-pc-lbl">Score:</span>
-              <b class="fr-pc-score-val" id="hv-score">0</b>
-              <span class="tb-dot-sep">•</span>
-              <span class="fr-pc-stage" id="hud-stage">Baby • Lv 1</span>
+          <!-- Center Panel: 5 Hearts Top, Player Card Below, Active Power Status -->
+          <div class="hud-center-panel">
+            <div class="tb-a-hearts">
+              <div class="hearts-row" id="hud-hearts-row">
+                ${this.renderHeartsHTML(100, 100)}
+              </div>
             </div>
+
+            <div class="fr-player-card hud-panel tb-a-player">
+              <div class="fr-pc-name" id="hv-name">Explorer_7740</div>
+              <div class="fr-pc-scoreline">
+                <span class="fr-pc-lbl">Score:</span>
+                <b class="fr-pc-score-val" id="hv-score">0</b>
+                <span class="tb-dot-sep">•</span>
+                <span class="fr-pc-stage" id="hud-stage">Baby • Lv 1</span>
+              </div>
+            </div>
+            <div class="power-status" id="power-status" style="display:none;"></div>
           </div>
 
-          <!-- Left Column Area 2: Compact Daily Mission Card (Explorer & Free For All only) -->
-          ${showMissions ? `
-          <div class="mission-tracker-card hud-panel tb-a-mission" id="mission-tracker">
-            <div id="mission-tracker-rows"></div>
-          </div>` : ''}
-
-          <!-- Right Column: Top 10 Leaderboard (Hidden in Classic mode) -->
+          <!-- Right Panel: Leaderboard -->
           ${showLeaderboard ? `
-          <div class="tb-a-lb">
+          <div class="hud-right-panel tb-a-lb">
             <div class="hud-leaderboard hud-panel">
               <div class="lb-title">🏆 Top 10</div>
               <div id="hud-lb-rows"></div>
             </div>
-          </div>` : ''}
-
+          </div>` : '<div class="hud-right-panel"></div>'}
         </div>
 
         <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
-        <div class="power-status" id="power-status" style="display:none;"></div>
 
-        <!-- Bottom Controls Cluster -->
         <div class="hud-bottom-controls">
           <div class="touch-joystick joy-${jsize} joy-op-${jop}" id="touch-joystick">
             <div class="touch-knob" id="touch-knob"></div>
@@ -2770,9 +2758,21 @@ class AnacondaPark {
     const sw = (on: boolean, key: string) => `<button class="switch ${on ? 'on' : ''}" data-pset="${key}"></button>`;
     const cpos = this.settings.controlPos || 'center';
     const jsize = this.settings.joySize || 'medium';
-    const jop = this.settings.joyOpacity || 70;
     const camPreset = this.settings.cameraPreset || 'far';
     const hp = Math.max(0, Math.round(this.lastHp || 100));
+    const me = this.lastSnake;
+    const powers: string[] = [];
+    if (me) {
+      const superT = Math.max(0, (me as any).superTimer ?? 0);
+      const shieldT = Math.max(0, me.shieldTimer ?? 0);
+      const speedT = Math.max(0, me.speedBoostTimer ?? 0);
+      const abilityT = Math.max(0, me.abilityActiveTimer ?? 0);
+      if (superT > 0) powers.push(`<div class="pwr super"><span class="pwr-ico">🍄</span><span class="pwr-lbl">Super</span><b class="pwr-val">${Math.ceil(superT)}s</b></div>`);
+      if (shieldT > 0) powers.push(`<div class="pwr shield"><span class="pwr-ico">🛡️</span><span class="pwr-lbl">Shield</span><b class="pwr-val">${Math.ceil(shieldT)}s</b></div>`);
+      if (speedT > 0) powers.push(`<div class="pwr speed"><span class="pwr-ico">⚡</span><span class="pwr-lbl">Speed</span><b class="pwr-val">${Math.ceil(speedT)}s</b></div>`);
+      if (abilityT > 0) powers.push(`<div class="pwr ability"><span class="pwr-ico">✨</span><span class="pwr-lbl">Boost</span><b class="pwr-val">${Math.ceil(abilityT)}s</b></div>`);
+    }
+
     const dailyMissions = (this.missions || []).filter(m => m.category === 'daily');
     const dailyList = dailyMissions.length ? dailyMissions : [
       { id: 'dm_1', icon: '🍒', targetCount: 30, currentCount: 18, isCompleted: false },
@@ -2787,13 +2787,19 @@ class AnacondaPark {
       <div class="modal pause-modal">
         <div class="section-title pause-title">⏸️ Paused</div>
 
-        <!-- Snake Health Card (compact single row) -->
+        <!-- Snake Health Card (5 Hearts) -->
         <div class="pause-hearts-card">
           <div class="hearts-title">❤️ Health</div>
           <div class="hearts-row">${this.renderHeartsHTML(hp, 100)}</div>
         </div>
 
-        <!-- Compact Daily Tasks Section (Only in Free Roam / Explorer) -->
+        ${powers.length ? `
+        <div class="pause-powers-card">
+          <div class="pm-title">⚡ Active Powers</div>
+          <div class="power-status-inline">${powers.join('')}</div>
+        </div>` : ''}
+
+        <!-- Compact Daily Tasks Section (Free Roam / Explorer) -->
         ${showMissions ? `
         <div class="pause-missions-card">
           <div class="pm-header">
@@ -2813,11 +2819,11 @@ class AnacondaPark {
           </div>
         </div>` : ''}
 
-        <!-- Compact Settings Card -->
+        <!-- Single Horizontal Row Settings Card -->
         <div class="pause-settings-card">
-          <!-- Controller Position -->
-          <div class="toggle toggle-compact">
-            <span class="t-label">🕹️ Position</span>
+          <!-- Position Single Row -->
+          <div class="pause-setting-row">
+            <span class="p-setting-label">🕹️ Position</span>
             <div class="seg seg-sm">
               <button class="${cpos === 'left' ? 'active' : ''}" data-cpos="left">Left</button>
               <button class="${cpos === 'center' ? 'active' : ''}" data-cpos="center">Center</button>
@@ -2825,9 +2831,9 @@ class AnacondaPark {
             </div>
           </div>
 
-          <!-- Joystick Size -->
-          <div class="toggle toggle-compact">
-            <span class="t-label">📐 Joystick</span>
+          <!-- Joystick Single Row -->
+          <div class="pause-setting-row">
+            <span class="p-setting-label">📐 Joystick</span>
             <div class="seg seg-sm">
               <button class="${jsize === 'small' ? 'active' : ''}" data-jsize="small">Small</button>
               <button class="${jsize === 'medium' ? 'active' : ''}" data-jsize="medium">Medium</button>
@@ -2835,9 +2841,9 @@ class AnacondaPark {
             </div>
           </div>
 
-          <!-- Camera Preset -->
-          <div class="toggle toggle-compact">
-            <span class="t-label">🎥 Camera</span>
+          <!-- Camera Single Row -->
+          <div class="pause-setting-row">
+            <span class="p-setting-label">🎥 Camera</span>
             <div class="seg seg-sm">
               <button class="${camPreset === 'near' ? 'active' : ''}" data-campres="near">Near</button>
               <button class="${camPreset === 'medium' ? 'active' : ''}" data-campres="medium">Medium</button>
@@ -2846,10 +2852,10 @@ class AnacondaPark {
             </div>
           </div>
 
-          <!-- Sound & Music in one line -->
-          <div class="pause-audio-row">
-            <div class="toggle toggle-audio"><span class="t-label">🔊 SFX</span>${sw(this.settings.sfx, 'sfx')}</div>
-            <div class="toggle toggle-audio"><span class="t-label">🎵 Music</span>${sw(this.settings.music, 'music')}</div>
+          <!-- Audio Single Row -->
+          <div class="pause-setting-row pause-audio-row">
+            <div class="toggle-audio"><span class="p-setting-label">🔊 SFX</span>${sw(this.settings.sfx, 'sfx')}</div>
+            <div class="toggle-audio"><span class="p-setting-label">🎵 Music</span>${sw(this.settings.music, 'music')}</div>
           </div>
         </div>
 
@@ -2863,33 +2869,84 @@ class AnacondaPark {
   }
 
   private renderRespawn() {
-    const stars = this.profile?.stars ?? 0; const tickets = this.profile?.tickets ?? 0;
-    return `<div class="overlay"><div class="modal"><div class="section-title" style="justify-content:center;color:var(--danger);">💀 You Were Defeated!</div>
-      <div class="respawn-grid">
-        <button class="respawn-opt green" id="rs-stars" ${stars < 20 ? 'disabled' : ''}><span class="ro-ico">🌱</span><span><span class="ro-main">Respawn (20 ⭐)</span><br><span class="ro-sub">Use Stars${stars < 20 ? ' — not enough' : ''}</span></span></button>
-        <button class="respawn-opt gold" id="rs-ad"><span class="ro-ico">📺</span><span><span class="ro-main">Respawn (Watch Ad)</span><br><span class="ro-sub">Free Respawn</span></span></button>
-        <button class="respawn-opt blue" id="respawn-wait-btn" disabled><span class="ro-ico">⏳</span><span><span class="ro-main">Wait to Respawn</span><br><span class="ro-sub" id="respawn-wait">${this.respawnWait}s</span></span></button>
-        <button class="respawn-opt gray" id="rs-ticket" ${tickets < 1 ? 'disabled' : ''}><span class="ro-ico">🎟️</span><span><span class="ro-main">Use Ticket (${tickets})</span><br><span class="ro-sub">Instant Respawn</span></span></button>
+    const stars = this.profile?.stars ?? 0;
+    const tickets = this.profile?.tickets ?? 0;
+    return `<div class="overlay">
+      <div class="modal respawn-modal">
+        <div class="respawn-header">
+          <div class="respawn-title">💀 You Were Defeated!</div>
+          <div class="respawn-sub">Choose how you want to rejoin the match</div>
+        </div>
+
+        <div class="respawn-grid">
+          <button class="respawn-opt green" id="rs-stars" ${stars < 20 ? 'disabled' : ''}>
+            <div class="ro-ico-wrap"><span class="ro-ico">🌱</span></div>
+            <div class="ro-info">
+              <span class="ro-main">Respawn (20 ⭐)</span>
+              <span class="ro-sub">Use Stars${stars < 20 ? ' — not enough ⭐' : ''}</span>
+            </div>
+          </button>
+
+          <button class="respawn-opt gold" id="rs-ad">
+            <div class="ro-ico-wrap"><span class="ro-ico">📺</span></div>
+            <div class="ro-info">
+              <span class="ro-main">Respawn (Watch Ad)</span>
+              <span class="ro-sub">Free Respawn</span>
+            </div>
+          </button>
+
+          <button class="respawn-opt blue" id="respawn-wait-btn" disabled>
+            <div class="ro-ico-wrap"><span class="ro-ico">⏳</span></div>
+            <div class="ro-info">
+              <span class="ro-main">Wait to Respawn</span>
+              <span class="ro-sub" id="respawn-wait">${this.respawnWait}s</span>
+            </div>
+          </button>
+
+          <button class="respawn-opt purple" id="rs-ticket" ${tickets < 1 ? 'disabled' : ''}>
+            <div class="ro-ico-wrap"><span class="ro-ico">🎟️</span></div>
+            <div class="ro-info">
+              <span class="ro-main">Use Ticket (${tickets})</span>
+              <span class="ro-sub">Instant Free Respawn</span>
+            </div>
+          </button>
+        </div>
+
+        <button id="rs-end" class="btn btn-ghost btn-block">🏁 End Match & See Results</button>
       </div>
-      <button id="rs-end" class="btn btn-ghost btn-block" style="margin-top:12px;">🏁 End Match & See Results</button></div></div>`;
+    </div>`;
   }
 
   private renderGameover() {
     const s = this.summary || { score: 0, kills: 0, placement: 5, survival: 0, earnedStars: 0, earnedXP: 0, earnedEvoXP: 0 };
     const mins = Math.floor(s.survival / 60), secs = s.survival % 60;
-    return `<div class="overlay"><div class="modal" style="text-align:center;max-width:500px;">
-      <h1 style="color:var(--danger);">GAME OVER</h1><div class="muted">${this.modeDef.name}</div>
-      <div class="summary-grid">
-        <div class="summary-cell"><div class="sc-label">Placement</div><div class="sc-val" style="color:var(--green-deep);">#${s.placement}</div></div>
-        <div class="summary-cell"><div class="sc-label">Score</div><div class="sc-val" style="color:var(--gold-deep);">${s.score}</div></div>
-        <div class="summary-cell"><div class="sc-label">Kills</div><div class="sc-val">⚔️ ${s.kills}</div></div>
-        <div class="summary-cell"><div class="sc-label">Survived</div><div class="sc-val">${mins}:${String(secs).padStart(2, '0')}</div></div>
+    const isWinner = s.placement === 1;
+    const headerTitle = isWinner ? '🏆 VICTORY!' : '💀 DEFEATED!';
+    const headerColor = isWinner ? 'var(--gold-deep)' : 'var(--danger)';
+
+    return `<div class="overlay">
+      <div class="modal gameover-modal" style="text-align:center;max-width:480px;padding:24px;">
+        <h1 style="color:${headerColor};font-family:var(--font-title);font-weight:900;font-size:1.8rem;margin-bottom:2px;">${headerTitle}</h1>
+        <div class="muted" style="font-weight:700;font-size:0.88rem;margin-bottom:16px;">${this.modeDef.name}</div>
+
+        <div class="summary-grid" style="margin-bottom:16px;">
+          <div class="summary-cell"><div class="sc-label">Placement</div><div class="sc-val" style="color:var(--green-deep);">#${s.placement}</div></div>
+          <div class="summary-cell"><div class="sc-label">Score</div><div class="sc-val" style="color:var(--gold-deep);">${s.score}</div></div>
+          <div class="summary-cell"><div class="sc-label">Kills</div><div class="sc-val">⚔️ ${s.kills}</div></div>
+          <div class="summary-cell"><div class="sc-label">Survived</div><div class="sc-val">${mins}:${String(secs).padStart(2, '0')}</div></div>
+        </div>
+
+        <div class="chip" style="margin-bottom:18px;padding:8px 14px;font-size:0.85rem;">⭐ +${s.earnedStars} Stars · ✨ +${s.earnedXP} XP · 🧬 +${s.earnedEvoXP} Evo${s.levelsGained ? ` · 🎉 +${s.levelsGained} Level!` : ''}</div>
+
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <button id="go-ad" class="btn btn-gold btn-block">📺 Watch Ad · 2× Rewards</button>
+          <div style="display:flex;gap:10px;">
+            <button id="go-again" class="btn btn-primary" style="flex:1;">🔄 Play Again</button>
+            <button id="go-home" class="btn btn-ghost" style="flex:1;">🏠 Home</button>
+          </div>
+        </div>
       </div>
-      <div class="chip" style="margin-bottom:14px;">⭐ ${s.earnedStars} · ✨ ${s.earnedXP} XP · 🧬 ${s.earnedEvoXP} Evo${s.levelsGained ? ` · 🎉 +${s.levelsGained} Level` : ''}</div>
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        <button id="go-ad" class="btn btn-gold btn-block">📺 Watch Ad · 2× Rewards</button>
-        <div style="display:flex;gap:10px;"><button id="go-again" class="btn btn-primary" style="flex:1;">🔄 Play Again</button><button id="go-home" class="btn btn-ghost" style="flex:1;">🏠 Home</button></div>
-      </div></div></div>`;
+    </div>`;
   }
 
   private renderAd() {

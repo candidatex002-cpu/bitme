@@ -56,13 +56,13 @@ const OBSTACLE_TEMPLATES: Array<{ type: ObstacleType; icon: string; radius: numb
   { type: 'tree', icon: '🌳', radius: 44, blocking: true },
   { type: 'rock', icon: '🪨', radius: 34, blocking: true },
   { type: 'bush', icon: '🌲', radius: 32, blocking: true },
-  { type: 'cactus', icon: '🌵', radius: 30, blocking: true, damage: 10 },  // thorns hurt on contact
+  { type: 'cactus', icon: '🌵', radius: 30, blocking: true, damage: 15 },  // 15% HP damage on contact
   { type: 'flowerbed', icon: '🌼', radius: 28, blocking: false }, // decorative — passable
   { type: 'log', icon: '🪵', radius: 30, blocking: true },
   { type: 'pond', icon: '🪷', radius: 50, blocking: false },      // water — passable
   { type: 'hill', icon: '⛰️', radius: 46, blocking: true },
-  { type: 'lava', icon: '🔥', radius: 42, blocking: false, damage: 26 },   // §3 heavy burn, passable
-  { type: 'poison', icon: '☠️', radius: 36, blocking: false, damage: 14 }, // §3 toxic pool, passable
+  { type: 'lava', icon: '🔥', radius: 42, blocking: false, damage: 40 },   // 40% HP damage on contact
+  { type: 'poison', icon: '☠️', radius: 36, blocking: false, damage: 5 },  // 5% HP per sec DoT
 ];
 
 // §8/V6 Bot policy — Free Roam & Event fill empty space with bots (real players replace them
@@ -70,7 +70,7 @@ const OBSTACLE_TEMPLATES: Array<{ type: ObstacleType; icon: string; radius: numb
 const MODE_CONFIGS: Record<GameMode, GameModeConfig> = {
   classic: { mode: 'classic', label: 'Free Roam', tagline: 'Free For All', shrinkingZone: false, teamsEnabled: false, worldEvents: false, botCount: 20 },
   battle_royale: { mode: 'battle_royale', label: 'Battle Royale', tagline: 'Last Snake Standing', shrinkingZone: true, teamsEnabled: false, worldEvents: true, botCount: 0 },
-  team: { mode: 'team', label: 'Team Mode', tagline: 'Team Battle', shrinkingZone: false, teamsEnabled: true, worldEvents: false, botCount: 0 },
+  team: { mode: 'team', label: 'Team Mode', tagline: 'Team Battle', shrinkingZone: true, teamsEnabled: true, worldEvents: false, botCount: 0 },
   event: { mode: 'event', label: 'Event Mode', tagline: 'Special Events', shrinkingZone: true, teamsEnabled: false, worldEvents: true, botCount: 20 },
 };
 
@@ -329,8 +329,13 @@ export class GameSessionService {
 
     if (this.config.worldEvents) this.updateWorldEvent(dt);
 
-    if (this.config.shrinkingZone && this.state.safeZone.radius > this.state.safeZone.targetRadius) {
-      this.state.safeZone.radius -= this.state.safeZone.shrinkRate * dt;
+    if (this.config.shrinkingZone) {
+      const matchSeconds = (this.config as any).matchDurationSeconds || 180;
+      const elapsedSeconds = this.state.tick / 30;
+      const progress = Math.min(1, elapsedSeconds / matchSeconds);
+      const initialR = this.WORLD_SIZE * 0.47;
+      const targetR = this.WORLD_SIZE * 0.08;
+      this.state.safeZone.radius = Math.max(targetR, initialR - (initialR - targetR) * progress);
     }
 
     this.updateStars(dt);      // §3
@@ -482,11 +487,13 @@ export class GameSessionService {
       prev = { x: seg.x, y: seg.y };
     }
 
-    // Storm damage outside the safe zone (toroidal distance)
-    const dCx = this.wrapDelta(snake.head.x - this.state.safeZone.centerX);
-    const dCy = this.wrapDelta(snake.head.y - this.state.safeZone.centerY);
-    if (Math.sqrt(dCx * dCx + dCy * dCy) > this.state.safeZone.radius && snake.shieldTimer <= 0) {
-      this.damageSnake(snake, this.state.safeZone.damagePerSecond * dt, 'Caught in the storm');
+    // Storm damage outside the safe zone (only when shrinkingZone is active e.g. Battle Royale & Team Battle)
+    if (this.config.shrinkingZone) {
+      const dCx = this.wrapDelta(snake.head.x - this.state.safeZone.centerX);
+      const dCy = this.wrapDelta(snake.head.y - this.state.safeZone.centerY);
+      if (Math.sqrt(dCx * dCx + dCy * dCy) > this.state.safeZone.radius && snake.shieldTimer <= 0) {
+        this.damageSnake(snake, this.state.safeZone.damagePerSecond * dt, 'Caught in the storm');
+      }
     }
 
     // §8 Healing inside the Safe Sanctuary (moving zone) — temporary protection + regen.

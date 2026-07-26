@@ -108,18 +108,19 @@ const FOOD_TYPES = [
 ];
 
 // §2/§3 obstacle palette for the local engine (mirrors the server table)
-const OBSTACLE_TYPES: Array<{ type: string; icon: string; radius: number; blocking: boolean; damage?: number }> = [
-  { type: 'tree', icon: '🌳', radius: 44, blocking: true },
-  { type: 'rock', icon: '🪨', radius: 34, blocking: true },
-  { type: 'bush', icon: '🌲', radius: 32, blocking: true },
-  { type: 'cactus', icon: '🌵', radius: 30, blocking: true, damage: 10 }, // §3 thorns hurt
-  { type: 'flowerbed', icon: '🌼', radius: 28, blocking: false }, // decorative — passable
-  { type: 'log', icon: '🪵', radius: 30, blocking: true },
-  { type: 'pond', icon: '🪷', radius: 50, blocking: false },      // water — passable
-  { type: 'hill', icon: '⛰️', radius: 46, blocking: true },
-  { type: 'cave', icon: '🕳️', radius: 58, blocking: true },      // cave entrance
-  { type: 'lava', icon: '🔥', radius: 42, blocking: false, damage: 26 },   // §3 burn
-  { type: 'poison', icon: '☠️', radius: 36, blocking: false, damage: 14 }, // §3 toxic
+const OBSTACLE_TYPES: Array<{ type: string; icon: string; radius: number; blocking: boolean; damage?: number; isPoison?: boolean }> = [
+  { type: 'tree', icon: '🌳', radius: 44, blocking: true, damage: 0 },
+  { type: 'rock', icon: '🪨', radius: 34, blocking: true, damage: 0 },
+  { type: 'bush', icon: '🌲', radius: 32, blocking: true, damage: 0 },
+  { type: 'cactus', icon: '🌵', radius: 30, blocking: true, damage: 15 }, // 15% HP damage on contact
+  { type: 'flowerbed', icon: '🌼', radius: 28, blocking: false, damage: 0 },
+  { type: 'log', icon: '🪵', radius: 30, blocking: true, damage: 0 },
+  { type: 'pond', icon: '🪷', radius: 50, blocking: false, damage: 0 },
+  { type: 'hill', icon: '⛰️', radius: 46, blocking: true, damage: 0 },
+  { type: 'cave', icon: '🕳️', radius: 58, blocking: true, damage: 0 },
+  { type: 'lava', icon: '🔥', radius: 42, blocking: false, damage: 40 },  // 40% HP damage on contact
+  { type: 'poison', icon: '☠️', radius: 36, blocking: false, damage: 5, isPoison: true }, // 5% HP per sec DoT
+  { type: 'explosion', icon: '💥', radius: 40, blocking: false, damage: 50 }, // 50% HP damage on hit
 ];
 
 // §3 hp restored per food type (local engine health loop)
@@ -694,12 +695,13 @@ export class GameClient {
     }
   }
 
-  // §2 Blocking obstacles soft-push snake heads out (never kills).
+  // §2 Blocking obstacles soft-push snake heads out; hazards deal event-driven damage.
   private resolveLocalObstacles() {
     const obs = this.localState?.obstacles;
     if (!obs?.length) return;
     for (const s of this.localState!.snakes) {
       if (!s.isAlive) continue;
+      if (((s as any).hazardCd ?? 0) > 0) (s as any).hazardCd -= 0.033;
       if ((s.superTimer ?? 0) > 0 || s.shieldTimer > 0) continue; // §3 invincible power ignores hazards
       for (const ob of obs) {
         const dx = s.head.x - ob.x, dy = s.head.y - ob.y;
@@ -709,8 +711,15 @@ export class GameClient {
           const dist = Math.sqrt(distSq), push = minDist - dist;
           s.head.x += (dx / dist) * push; s.head.y += (dy / dist) * push;
         }
-        if (ob.damage) { // §3 environmental hazard — burns hp; 0 hp eliminates
-          s.hp = Math.max(0, (s.hp ?? 100) - ob.damage * 0.033);
+        if (ob.damage) {
+          if ((ob as any).isPoison) {
+            // Poison: Damage over time (5% HP per second)
+            s.hp = Math.max(0, (s.hp ?? 100) - ob.damage * 0.033);
+          } else if (((s as any).hazardCd ?? 0) <= 0) {
+            // Event-driven instant damage (Cactus 15%, Fire 40%, Explosion 50%) with 0.8s hit cooldown
+            s.hp = Math.max(0, (s.hp ?? 100) - ob.damage);
+            (s as any).hazardCd = 0.8;
+          }
           if (s.hp <= 0) { this.eliminateLocal(s, null); break; }
         }
       }
@@ -753,28 +762,50 @@ export class GameClient {
     return false;
   }
 
-  // §2 Battle Royale — timer, shrinking storm that eliminates snakes left outside, last-standing.
+  // §2 Battle Royale & Team Battle — timer, shrinking storm that eliminates snakes left outside, victory on timer / last standing / team wipe.
   private updateLocalMatch(dt: number) {
     const state = this.localState;
-    if (!state || !this.localBR || this.localMatchOver) return;
+    const isCompetitive = this.localBR || this.localTeam;
+    if (!state || !isCompetitive || this.localMatchOver) return;
+
     this.localMatchTimer = Math.max(0, this.localMatchTimer - dt);
     state.matchTimer = Math.ceil(this.localMatchTimer);
 
     const sz = state.safeZone;
-    if (sz.radius > sz.targetRadius) sz.radius = Math.max(sz.targetRadius, sz.radius - 16 * dt); // §8 scaled to the larger map
+    const totalTime = 180; // 3 minute match
+    const elapsed = Math.max(0, totalTime - this.localMatchTimer);
+    const progress = Math.min(1, elapsed / totalTime);
+    const initialR = HALF * 0.94;
+    const targetR = 350;
+    sz.radius = Math.max(targetR, initialR - (initialR - targetR) * progress);
+
     for (const s of state.snakes) {
       if (!s.isAlive || (s.shieldTimer ?? 0) > 0) continue;
       const dx = s.head.x - sz.centerX, dy = s.head.y - sz.centerY;
       if (dx * dx + dy * dy > sz.radius * sz.radius) {
         (s as any).stormT = ((s as any).stormT ?? 0) + dt;
-        if ((s as any).stormT > 3) this.eliminateLocal(s, null); // caught in the storm
-      } else (s as any).stormT = 0;
+        if ((s as any).stormT > 2) {
+          s.hp = Math.max(0, (s.hp ?? 100) - 15 * dt);
+          if (s.hp <= 0) this.eliminateLocal(s, null);
+        }
+      } else {
+        (s as any).stormT = 0;
+      }
     }
 
-    const alive = state.snakes.filter(s => s.isAlive);
-    if (this.localMatchTimer <= 0 || alive.length <= 1) {
-      this.localMatchOver = true;
-      state.matchOver = true;
+    if (this.localBR) {
+      const alive = state.snakes.filter(s => s.isAlive);
+      if (this.localMatchTimer <= 0 || alive.length <= 1) {
+        this.localMatchOver = true;
+        state.matchOver = true;
+      }
+    } else if (this.localTeam) {
+      const blueAlive = state.snakes.filter(s => s.isAlive && s.team === 'blue').length;
+      const redAlive = state.snakes.filter(s => s.isAlive && s.team === 'red').length;
+      if (this.localMatchTimer <= 0 || blueAlive === 0 || redAlive === 0) {
+        this.localMatchOver = true;
+        state.matchOver = true;
+      }
     }
   }
 

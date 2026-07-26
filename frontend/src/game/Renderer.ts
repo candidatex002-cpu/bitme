@@ -241,7 +241,8 @@ export class Renderer {
     this.ctx.translate(-this.cameraPos.x, -this.cameraPos.y);
 
     this.renderTerrain(WORLD);
-    this.renderSafeZone(state.safeZone);
+    const isCompetitive = state.mode === 'battle_royale' || state.mode === 'team';
+    if (isCompetitive && state.safeZone) this.renderSafeZone(state.safeZone);
     if (state.sanctuaryZone) this.renderSanctuaryZone(state.sanctuaryZone);
     if (state.obstacles) this.renderObstacles(state.obstacles);
     if (state.portals) this.renderPortals(state.portals);
@@ -354,14 +355,19 @@ export class Renderer {
     const ctx = this.ctx;
     const cx = this.wrapNear(zone.centerX, this.cameraPos.x); // §6
     const cy = this.wrapNear(zone.centerY, this.cameraPos.y);
-    const R = 5000;
+    const R = 6000;
     ctx.save();
     ctx.beginPath();
     ctx.rect(this.cameraPos.x - R, this.cameraPos.y - R, R * 2, R * 2);
     ctx.arc(cx, cy, zone.radius, 0, Math.PI * 2, true);
-    ctx.fillStyle = 'rgba(255, 183, 178, 0.12)';
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.16)';
     ctx.fill('evenodd');
-    // Removed thin red/pink boundary stroke line as requested!
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, zone.radius, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.75)';
+    ctx.lineWidth = 3.5;
+    ctx.stroke();
     ctx.restore();
   }
 
