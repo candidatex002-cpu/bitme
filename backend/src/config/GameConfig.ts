@@ -42,6 +42,14 @@ export interface GameConfig {
     sanctuaryRelocateSeconds: number;
     wormholeRelocateSeconds: number;
     eventDurationSeconds: number;
+    // §2 Competitive round pacing (Battle Royale / Team Battle). The storm is driven by this
+    // one clock, so the HUD countdown and the shrinking zone can never drift apart.
+    matchDurationSeconds: number;    // length of one competitive round
+    zoneGraceSeconds: number;        // zone holds full size for this long after a round starts
+    zoneIntermissionSeconds: number; // results window before the next round begins
+    zoneStartPct: number;            // opening radius as a fraction of world size
+    zoneFinalPct: number;            // fully-closed radius as a fraction of world size
+    zoneCloseAtPct: number;          // point in the round (0-1) where the zone reaches final size
   };
   maps: {
     // Add a new playable theme by appending an entry here (or in game-config.json) — no code change.
@@ -108,6 +116,12 @@ const DEFAULTS: GameConfig = {
     sanctuaryRelocateSeconds: 300,
     wormholeRelocateSeconds: 120,
     eventDurationSeconds: 180,
+    matchDurationSeconds: 180,
+    zoneGraceSeconds: 15,
+    zoneIntermissionSeconds: 8,
+    zoneStartPct: 0.47,
+    zoneFinalPct: 0.09,
+    zoneCloseAtPct: 0.9,
   },
   maps: {
     themes: [

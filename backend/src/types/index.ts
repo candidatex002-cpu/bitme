@@ -357,6 +357,7 @@ export interface GameModeConfig {
   teamsEnabled: boolean;    // 4v4 team mode
   worldEvents: boolean;     // dynamic world events
   botCount: number;
+  matchDurationSeconds?: number; // §2 round length for timed modes (undefined = untimed)
 }
 
 export interface SanctuaryZone {
@@ -394,6 +395,11 @@ export interface GameWorldState {
   leaderboard: Array<{ id: string; name: string; score: number; kills: number; team?: 'red' | 'blue' }>;
   teamScores?: { red: number; blue: number };
   currentEvent?: WorldEvent;
+  // §2 Competitive round clock — the same clock that drives the shrinking zone, so the HUD
+  // countdown always matches the storm the player can see.
+  matchTimer?: number;   // whole seconds remaining in the round (timed modes only)
+  matchOver?: boolean;   // round finished — clients show results during the intermission
+  round?: number;        // 1-based round counter for this long-lived mode session
 }
 
 export interface ClientInputPacket {

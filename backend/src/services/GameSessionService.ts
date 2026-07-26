@@ -69,9 +69,9 @@ const OBSTACLE_TEMPLATES: Array<{ type: ObstacleType; icon: string; radius: numb
 // as they join). Battle Royale & Team Battle are strictly real-player experiences (no bots).
 const MODE_CONFIGS: Record<GameMode, GameModeConfig> = {
   classic: { mode: 'classic', label: 'Free Roam', tagline: 'Free For All', shrinkingZone: false, teamsEnabled: false, worldEvents: false, botCount: 20 },
-  battle_royale: { mode: 'battle_royale', label: 'Battle Royale', tagline: 'Last Snake Standing', shrinkingZone: true, teamsEnabled: false, worldEvents: true, botCount: 0 },
-  team: { mode: 'team', label: 'Team Mode', tagline: 'Team Battle', shrinkingZone: true, teamsEnabled: true, worldEvents: false, botCount: 0 },
-  event: { mode: 'event', label: 'Event Mode', tagline: 'Special Events', shrinkingZone: true, teamsEnabled: false, worldEvents: true, botCount: 20 },
+  battle_royale: { mode: 'battle_royale', label: 'Battle Royale', tagline: 'Last Snake Standing', shrinkingZone: true, teamsEnabled: false, worldEvents: true, botCount: 0, matchDurationSeconds: gameConfig.world.matchDurationSeconds },
+  team: { mode: 'team', label: 'Team Mode', tagline: 'Team Battle', shrinkingZone: true, teamsEnabled: true, worldEvents: false, botCount: 0, matchDurationSeconds: gameConfig.world.matchDurationSeconds },
+  event: { mode: 'event', label: 'Event Mode', tagline: 'Special Events', shrinkingZone: true, teamsEnabled: false, worldEvents: true, botCount: 20, matchDurationSeconds: gameConfig.world.matchDurationSeconds },
 };
 
 export function getModeConfig(mode: GameMode): GameModeConfig {
@@ -104,6 +104,16 @@ export class GameSessionService {
   // Reset when a player (re)registers; updated every tick; read at match completion so the
   // client can never report a score/kill count the server didn't actually observe.
   private peakStats: Map<string, { score: number; kills: number; killStreak: number; joinedAt: number }> = new Map();
+  // §2 Competitive round clock (Battle Royale / Team Battle / Event).
+  // A mode session is long-lived and shared, so the zone must be driven by a per-ROUND clock
+  // that restarts — never by `state.tick`, which only ever counts up since server boot and
+  // would leave the zone pinned at its smallest radius for everyone who joins later.
+  private readonly MATCH_SECONDS = gameConfig.world.matchDurationSeconds;
+  private readonly ZONE_GRACE = gameConfig.world.zoneGraceSeconds;
+  private readonly ZONE_START_R: number; // assigned in the constructor (depends on the mode)
+  private readonly ZONE_FINAL_R: number;
+  private roundStartedAt = Date.now();
+  private roundEndedAt = 0;
   private currentEventIndex = 0;
   private availableEvents: WorldEvent[] = [
     { id: 'evt_rain', type: 'rain_storm', title: '🌧️ Monsoon Rain Storm', description: 'Vision restricted! Frog & Star spawns tripled!', active: true, timerSeconds: 180, icon: '🌧️' },
@@ -114,6 +124,8 @@ export class GameSessionService {
 
   constructor(matchId: string, mode: GameMode = 'classic') {
     this.config = getModeConfig(mode);
+    this.ZONE_START_R = this.WORLD_SIZE * (this.config.shrinkingZone ? gameConfig.world.zoneStartPct : 0.5);
+    this.ZONE_FINAL_R = this.WORLD_SIZE * (this.config.shrinkingZone ? gameConfig.world.zoneFinalPct : 0.5);
     this.state = {
       matchId,
       mode,
@@ -124,9 +136,12 @@ export class GameSessionService {
       safeZone: {
         centerX: this.WORLD_SIZE / 2,
         centerY: this.WORLD_SIZE / 2,
-        radius: this.config.shrinkingZone ? this.WORLD_SIZE * 0.47 : this.WORLD_SIZE * 0.5,
-        targetRadius: this.config.shrinkingZone ? this.WORLD_SIZE * 0.09 : this.WORLD_SIZE * 0.5,
-        shrinkRate: this.config.shrinkingZone ? 11 : 0,
+        radius: this.ZONE_START_R,
+        targetRadius: this.ZONE_FINAL_R,
+        // Average units/second the ring closes at — derived so it always agrees with the clock.
+        shrinkRate: this.config.shrinkingZone
+          ? (this.ZONE_START_R - this.ZONE_FINAL_R) / Math.max(1, this.MATCH_SECONDS * gameConfig.world.zoneCloseAtPct - this.ZONE_GRACE)
+          : 0,
         damagePerSecond: 15,
       },
       // Peaceful Sanctuary Zone — No PvP / No Damage / Hide Safely Inside!
@@ -145,7 +160,11 @@ export class GameSessionService {
       leaderboard: [],
       teamScores: this.config.teamsEnabled ? { red: 0, blue: 0 } : undefined,
       currentEvent: this.config.worldEvents ? this.availableEvents[0] : undefined,
+      matchTimer: this.isTimedMode() ? this.MATCH_SECONDS : undefined,
+      matchOver: this.isTimedMode() ? false : undefined,
+      round: this.isTimedMode() ? 1 : undefined,
     };
+    this.roundStartedAt = Date.now();
 
     this.spawnInitialCollectibles(gameConfig.world.foodCount); // §12 config-driven
     this.spawnMovingStars(this.STAR_TARGET); // §3
@@ -329,14 +348,7 @@ export class GameSessionService {
 
     if (this.config.worldEvents) this.updateWorldEvent(dt);
 
-    if (this.config.shrinkingZone) {
-      const matchSeconds = (this.config as any).matchDurationSeconds || 180;
-      const elapsedSeconds = this.state.tick / 30;
-      const progress = Math.min(1, elapsedSeconds / matchSeconds);
-      const initialR = this.WORLD_SIZE * 0.47;
-      const targetR = this.WORLD_SIZE * 0.08;
-      this.state.safeZone.radius = Math.max(targetR, initialR - (initialR - targetR) * progress);
-    }
+    this.updateMatchClock(); // §2 round timer + shrinking zone (Battle Royale / Team Battle)
 
     this.updateStars(dt);      // §3
     this.updateWormhole(dt);   // §7
