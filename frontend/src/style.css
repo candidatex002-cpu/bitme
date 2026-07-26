@@ -514,6 +514,61 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   justify-content: flex-end;
 }
 
+/* Mobile Responsiveness for Team Battle HUD (Prevents Top Header Overlap on Mobile Screens) */
+@media (max-width: 640px) {
+  .tb-top-bar {
+    top: clamp(4px, 1vh, 8px);
+    left: clamp(4px, 1vw, 8px);
+    right: clamp(4px, 1vw, 8px);
+    gap: 4px;
+  }
+  .tb-player-card {
+    padding: 3px 8px;
+    min-width: 0;
+  }
+  .tb-player-name {
+    font-size: 0.7rem;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tb-player-scoreline {
+    font-size: 0.65rem;
+    gap: 3px;
+  }
+  .tb-player-stats {
+    font-size: 0.6rem;
+    gap: 6px;
+    margin-top: 1px;
+  }
+  .tb-score-banner {
+    padding: 3px 8px;
+    gap: 4px;
+    border-radius: 14px;
+  }
+  .tb-team-side {
+    font-size: 0.78rem;
+    gap: 2px;
+  }
+  .tb-team-title {
+    display: none; /* Icon 🔵 and 🔴 are crystal clear while saving 60px horizontal space */
+  }
+  .tb-team-score {
+    font-size: 0.95rem;
+  }
+  .tb-vs-divider {
+    font-size: 0.6rem;
+    padding: 1px 3px;
+  }
+  .tb-status-pill {
+    padding: 2px 6px;
+    font-size: 0.62rem;
+    gap: 4px;
+    border-radius: 12px;
+  }
+}
+
 /* ---- Top HUD Header Grid: Pause | Score | Hearts | Leaderboard ---- */
 .hud-top-bar {
   position: absolute;
@@ -1084,10 +1139,10 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .touch-joystick.joy-op-70 { opacity: 0.70 !important; }
 .touch-joystick.joy-op-100 { opacity: 1.00 !important; }
 
-/* ---- Touch devices: show joystick + action cluster ---- */
-@media (pointer: coarse) {
-  .touch-joystick { display: block; }
-  .touch-actions { display: flex; }
+/* ---- Touch & Mobile devices: show joystick + action cluster ---- */
+@media (pointer: coarse), (max-width: 1024px), (hover: none) {
+  .touch-joystick { display: block !important; }
+  .touch-actions { display: flex !important; }
 }
 
 /* ================================================================
