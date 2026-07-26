@@ -2543,40 +2543,42 @@ class AnacondaPark {
     const jop = this.settings.joyOpacity || 70;
     return `
       <div class="hud ctrl-${cpos} mode-battle-royale">
+
+        <!-- CSS Grid: each element is an independent card in its own named grid area -->
         <div class="tb-top-bar">
 
-          <!-- MOBILE ROW 1: Pause | Hearts | Leaderboard (shown as one row on mobile) -->
-          <div class="tb-mobile-row1">
-            <div class="tb-top-left">
-              <button id="nav-pause" class="hud-pause">⏸</button>
-              <div class="hud-score-pill">
-                <span class="score-lbl">Score:</span>
-                <span class="score-val" id="hv-score">0</span>
-                <span class="stage-val" id="hud-stage">Lv 1</span>
-              </div>
-            </div>
+          <!-- Grid area: pause -->
+          <button id="nav-pause" class="hud-pause tb-a-pause">⏸</button>
 
-            <div class="tb-top-center">
-              <div class="hearts-row" id="hud-hearts-row">
-                ${this.renderHeartsHTML(100, 100)}
-              </div>
-            </div>
+          <!-- Grid area: player (Battle Royale uses score pill instead of player card) -->
+          <div class="hud-score-pill tb-a-player" id="br-score-pill">
+            <span class="score-lbl">Score:</span>
+            <span class="score-val" id="hv-score">0</span>
+            <span class="stage-val" id="hud-stage">Lv 1</span>
+          </div>
 
-            <div class="tb-top-right">
-              <div class="hud-leaderboard hud-panel">
-                <div class="lb-title">🏆 Top 10</div>
-                <div id="hud-lb-rows"></div>
-              </div>
+          <!-- Grid area: hearts (centered) -->
+          <div class="tb-a-hearts">
+            <div class="hearts-row" id="hud-hearts-row">
+              ${this.renderHeartsHTML(100, 100)}
             </div>
           </div>
 
-          <!-- MOBILE ROW 2: BR Match Status Pill (Timer, Alive, Kills) -->
-          <div class="tb-status-pill hud-panel tb-row-status" id="br-status-pill">
+          <!-- Grid area: score (BR uses status here in desktop too) -->
+          <div class="tb-status-pill hud-panel tb-a-score" id="br-status-pill">
             <span>⏱️ <b id="br-timer">00:00</b></span>
             <span class="tb-dot-sep">·</span>
             <span>👥 <b id="br-alive">0 Alive</b></span>
             <span class="tb-dot-sep">·</span>
             <span>⚔️ <b id="br-kills">0 Kills</b></span>
+          </div>
+
+          <!-- Grid area: lb (leaderboard top-right) -->
+          <div class="tb-a-lb">
+            <div class="hud-leaderboard hud-panel">
+              <div class="lb-title">🏆 Top 10</div>
+              <div id="hud-lb-rows"></div>
+            </div>
           </div>
 
         </div>
@@ -2604,41 +2606,46 @@ class AnacondaPark {
     const jop = this.settings.joyOpacity || 70;
     return `
       <div class="hud ctrl-${cpos} mode-team-battle">
+
+        <!-- CSS Grid: each element is an independent card placed in its own named grid area.
+             Desktop:  pause | player | hearts | lb
+                       pause | player | score  | lb
+                       pause | player | status | lb
+             Tablet:   pause | hearts | lb
+                       player| score  | lb
+                       player| status | lb
+             Mobile:   pause | hearts | lb
+                       player player  player
+                       score  score   score
+                       status status  status                                    -->
         <div class="tb-top-bar">
 
-          <!-- MOBILE ROW 1: Pause | Hearts | Leaderboard -->
-          <div class="tb-mobile-row1">
-            <div class="tb-top-left">
-              <button id="nav-pause" class="hud-pause">⏸</button>
-              <div class="tb-player-card hud-panel">
-                <div class="tb-player-name" id="tb-player-name">Explorer_7740</div>
-                <div class="tb-player-scoreline">
-                  <span class="tb-lbl">Score:</span> <b id="tb-player-score">0</b>
-                  <span class="tb-stage" id="tb-player-stage">Lv.1</span>
-                </div>
-                <div class="tb-player-stats">
-                  <span>⚔️ <b id="tb-player-kills">0</b> Kills</span>
-                  <span>🤝 <b id="tb-player-assists">0</b> Assists</span>
-                </div>
-              </div>
-            </div>
+          <!-- Grid area: pause -->
+          <button id="nav-pause" class="hud-pause tb-a-pause">⏸</button>
 
-            <div class="tb-top-center">
-              <div class="hearts-row" id="hud-hearts-row">
-                ${this.renderHeartsHTML(100, 100)}
-              </div>
+          <!-- Grid area: player — ALWAYS a vertical compact card, never a horizontal banner -->
+          <div class="tb-player-card hud-panel tb-a-player">
+            <div class="tb-player-name" id="tb-player-name">Explorer_7740</div>
+            <div class="tb-player-scoreline">
+              <span class="tb-lbl">Score:</span>
+              <b id="tb-player-score">0</b>
+              <span class="tb-stage" id="tb-player-stage">Baby · Lv.1</span>
             </div>
-
-            <div class="tb-top-right">
-              <div class="hud-leaderboard hud-panel">
-                <div class="lb-title">🏆 Top 10</div>
-                <div id="hud-lb-rows"></div>
-              </div>
+            <div class="tb-player-stats">
+              <span>⚔️ <b id="tb-player-kills">0</b> Kills</span>
+              <span>🤝 <b id="tb-player-assists">0</b> Assists</span>
             </div>
           </div>
 
-          <!-- MOBILE ROW 2: Team Score Banner -->
-          <div class="tb-score-banner hud-panel tb-row-score" id="tb-score-banner">
+          <!-- Grid area: hearts — centered between player and leaderboard -->
+          <div class="tb-a-hearts">
+            <div class="hearts-row" id="hud-hearts-row">
+              ${this.renderHeartsHTML(100, 100)}
+            </div>
+          </div>
+
+          <!-- Grid area: score — Team Score card (BLUE vs RED) -->
+          <div class="tb-score-banner hud-panel tb-a-score" id="tb-score-banner">
             <div class="tb-team-side blue" id="tb-blue-side">
               <span class="tb-team-ico">🔵</span>
               <span class="tb-team-title">BLUE</span>
@@ -2652,13 +2659,21 @@ class AnacondaPark {
             </div>
           </div>
 
-          <!-- MOBILE ROW 3: Match Status Pill -->
-          <div class="tb-status-pill hud-panel tb-row-status" id="tb-status-pill">
+          <!-- Grid area: status — Match info (timer, alive, rank) -->
+          <div class="tb-status-pill hud-panel tb-a-status" id="tb-status-pill">
             <span>⏱️ <b id="tb-match-timer">00:00</b></span>
             <span class="tb-dot-sep">·</span>
             <span>👥 <b id="tb-alive-counts">10 vs 10</b></span>
             <span class="tb-dot-sep">·</span>
             <span class="tb-rank-tag" id="tb-team-rank">🏆 #1</span>
+          </div>
+
+          <!-- Grid area: lb — Top 10 leaderboard -->
+          <div class="tb-a-lb">
+            <div class="hud-leaderboard hud-panel">
+              <div class="lb-title">🏆 Top 10</div>
+              <div id="hud-lb-rows"></div>
+            </div>
           </div>
 
         </div>

@@ -353,73 +353,69 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 }
 
 /* ================================================================
-   RESPONSIVE HUD ARCHITECTURE — TRUE FLEX/GRID REFLOW SYSTEM
-   Desktop (>768px): single-row layout
-   Tablet (481-768px): two-row layout, center wraps below
-   Mobile (<=480px): multi-row stacked layout, no overlaps
+   HUD LAYOUT SYSTEM — CSS GRID WITH NAMED TEMPLATE AREAS
+   Each HUD element is an independent card in its own grid slot.
+
+   DESKTOP (>768px):
+     "pause  player  hearts  lb"
+     "pause  player  score   lb"
+     "pause  player  status  lb"
+
+   TABLET (481–768px):
+     "pause  hearts  lb"
+     "player score   lb"
+     "player status  lb"
+
+   MOBILE (≤480px):
+     "pause  hearts  lb"
+     "player player  player"
+     "score  score   score"
+     "status status  status"
+
    ================================================================ */
 
-/* ---- Shared HUD Top Container ---- */
-.tb-top-bar, .hud-top-bar {
+/* ---- Container: CSS Grid ---- */
+.tb-top-bar {
   position: absolute;
   top: max(env(safe-area-inset-top), 6px);
   left: max(env(safe-area-inset-left), 8px);
   right: max(env(safe-area-inset-right), 8px);
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  grid-template-rows: auto auto auto;
+  grid-template-areas:
+    "pause  player  hearts  lb"
+    "pause  player  score   lb"
+    "pause  player  status  lb";
+  align-items: start;
+  column-gap: 8px;
+  row-gap: 5px;
   pointer-events: none;
   z-index: 25;
   box-sizing: border-box;
-  flex-wrap: nowrap;
 }
-.tb-top-bar > *, .hud-top-bar > * { pointer-events: auto; }
+.tb-top-bar > * { pointer-events: auto; }
 
-/* ---- Left Column: Pause + Player Card ---- */
-.tb-top-left, .hud-top-left {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  /* Desktop: let it take natural width */
-  min-width: 0;
-}
+/* ---- Grid area assignments ---- */
+.tb-a-pause   { grid-area: pause;  align-self: start; }
+.tb-a-player  { grid-area: player; }
+.tb-a-hearts  { grid-area: hearts; display: flex; align-items: center; justify-content: center; }
+.tb-a-score   { grid-area: score;  justify-self: center; align-self: center; }
+.tb-a-status  { grid-area: status; justify-self: center; align-self: center; }
+.tb-a-lb      { grid-area: lb; }
 
-/* ---- Center Column: Hearts + Score + Status ---- */
-.tb-top-center, .hud-top-center {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 4px;
-  flex: 1;
-  min-width: 0;
-  pointer-events: auto;
-}
-
-/* ---- Right Column: Leaderboard ---- */
-.tb-top-right, .hud-top-right {
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  flex-shrink: 0;
-  min-width: 0;
-}
-
-/* ---- Player Card ---- */
+/* ---- Player Card (Desktop/Tablet: vertical stack card) ---- */
 .tb-player-card {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 5px 10px;
+  gap: 3px;
+  padding: 6px 10px;
   background: rgba(255, 255, 255, 0.94);
   border: 1.5px solid var(--line);
   border-radius: 12px;
   box-shadow: var(--shadow);
-  min-width: 0;
+  min-width: 130px;
+  max-width: 180px;
   overflow: hidden;
 }
 .tb-player-card.team-blue {
@@ -433,33 +429,40 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .tb-player-name {
   font-family: var(--font-title);
   font-weight: 900;
-  font-size: 0.83rem;
+  font-size: 0.82rem;
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 120px;
 }
 .tb-player-scoreline {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--ink);
   white-space: nowrap;
 }
 .tb-player-scoreline .tb-lbl { color: var(--muted); font-weight: 600; }
 .tb-player-scoreline .tb-stage {
-  font-size: 0.62rem; font-weight: 800; color: var(--green-deep);
+  font-size: 0.6rem; font-weight: 800; color: var(--green-deep);
   background: var(--green-bg); padding: 1px 5px; border-radius: 8px;
 }
 .tb-player-stats {
   display: flex;
   gap: 8px;
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   font-weight: 800;
   color: #334155;
   white-space: nowrap;
+}
+
+/* ---- Hearts Area (centered in grid slot) ---- */
+.tb-hearts-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 0;
 }
 
 /* ---- Team Score Banner ---- */
@@ -468,14 +471,13 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 4px 14px;
+  padding: 5px 14px;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.96);
   border: 1.5px solid var(--line);
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.08);
   white-space: nowrap;
 }
-
 .tb-team-side {
   display: flex;
   align-items: center;
@@ -485,21 +487,14 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   font-size: 0.95rem;
 }
 .tb-team-side.blue { color: #2563eb; }
-.tb-team-side.red { color: #dc2626; }
-.tb-team-side.blue.leading { filter: drop-shadow(0 0 5px rgba(37, 99, 235, 0.6)); }
-.tb-team-side.red.leading { filter: drop-shadow(0 0 5px rgba(220, 38, 38, 0.6)); }
-
-.tb-team-title { font-size: 0.66rem; letter-spacing: 0.5px; opacity: 0.85; }
+.tb-team-side.red  { color: #dc2626; }
+.tb-team-side.blue.leading { filter: drop-shadow(0 0 5px rgba(37, 99, 235, 0.5)); }
+.tb-team-side.red.leading  { filter: drop-shadow(0 0 5px rgba(220, 38, 38, 0.5)); }
+.tb-team-title { font-size: 0.65rem; letter-spacing: 0.5px; opacity: 0.85; }
 .tb-team-score { font-size: 1.1rem; }
-
 .tb-vs-divider {
-  font-family: var(--font-title);
-  font-weight: 900;
-  font-size: 0.66rem;
-  color: #94a3b8;
-  padding: 1px 6px;
-  background: #f1f5f9;
-  border-radius: 8px;
+  font-family: var(--font-title); font-weight: 900; font-size: 0.65rem;
+  color: #94a3b8; padding: 1px 6px; background: #f1f5f9; border-radius: 8px;
 }
 
 /* ---- Status Pill ---- */
@@ -508,9 +503,10 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 3px 10px;
+  padding: 4px 12px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--line);
   font-size: 0.7rem;
   font-weight: 800;
   color: #334155;
@@ -520,136 +516,129 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .tb-dot-sep { opacity: 0.4; }
 .tb-rank-tag { color: var(--gold-deep); font-weight: 900; }
 
-/* Match Objective Toast Banner (Auto-fade 5s) */
+/* Match Objective Toast Banner */
 .match-obj-toast {
   position: absolute;
-  top: clamp(75px, 14vh, 110px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 35;
-  pointer-events: none;
-  background: rgba(15, 23, 42, 0.92);
-  border: 1.5px solid var(--line);
-  color: #ffffff;
-  font-family: var(--font-title);
-  font-weight: 800;
-  font-size: clamp(0.75rem, 1.8vw, 0.92rem);
-  padding: 5px 14px;
-  border-radius: 20px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  top: clamp(120px, 18vh, 160px);
+  left: 50%; transform: translateX(-50%);
+  z-index: 35; pointer-events: none;
+  background: rgba(15, 23, 42, 0.92); border: 1.5px solid var(--line);
+  color: #ffffff; font-family: var(--font-title); font-weight: 800;
+  font-size: clamp(0.75rem, 1.8vw, 0.92rem); padding: 5px 14px;
+  border-radius: 20px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
   animation: matchObjFade 5.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
-
 @keyframes matchObjFade {
-  0% { opacity: 0; transform: translate(-50%, -10px) scale(0.9); }
-  12% { opacity: 1; transform: translate(-50%, 0) scale(1); }
-  80% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  0%   { opacity: 0; transform: translate(-50%, -10px) scale(0.9); }
+  12%  { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  80%  { opacity: 1; transform: translate(-50%, 0) scale(1); }
   100% { opacity: 0; transform: translate(-50%, -12px) scale(0.95); }
 }
 
 /* ==============================================================
-   TABLET BREAKPOINT (481px – 768px)
-   Center column wraps: Player card moves to row 2
+   TABLET (481px – 768px):
+   "pause  hearts  lb"
+   "player score   lb"
+   "player status  lb"
    ============================================================== */
 @media (max-width: 768px) {
-  .tb-top-bar, .hud-top-bar {
-    flex-wrap: wrap;
-    gap: 5px;
+  .tb-top-bar {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      "pause  hearts  lb"
+      "player score   lb"
+      "player status  lb";
+    column-gap: 7px;
+    row-gap: 4px;
   }
-  .tb-top-left, .hud-top-left {
-    order: 1;
-    flex-shrink: 0;
-  }
-  .tb-top-center, .hud-top-center {
-    order: 2;
-    flex: 1;
-    min-width: 0;
-  }
-  .tb-top-right, .hud-top-right {
-    order: 3;
-    flex-shrink: 0;
-  }
-  /* Player card: hide name text-overflow by allowing a bit more room */
-  .tb-player-name { max-width: 100px; }
+  .tb-player-card { min-width: 110px; max-width: 160px; }
+  .tb-a-score, .tb-a-status { justify-self: start; }
 }
 
 /* ==============================================================
-   MOBILE BREAKPOINT (<= 480px)
-   Full multi-row stack:
-   Row 1: [⏸] [Hearts] [Top 10]
-   Row 2: [Player Card — full width]
-   Row 3: [Team Score Banner — full width centered]
-   Row 4: [Status Pill — full width centered]
+   MOBILE (≤480px) — INDEPENDENT CARD ROWS, ZERO OVERLAP
+   Row 1: [⏸]      [❤️❤️❤️❤️❤️]      [Top10]
+   Row 2: [      Player Card         ]
+   Row 3: [  🔵 BLUE 0  VS  0 RED 🔴 ]
+   Row 4: [  ⏱ 00:00 · 👥 Alive · 🏆 ]
    ============================================================== */
 @media (max-width: 480px) {
-  .tb-top-bar, .hud-top-bar {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 4px;
-    flex-wrap: nowrap;
+  .tb-top-bar {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      "pause   hearts   lb"
+      "player  player   player"
+      "score   score    score"
+      "status  status   status";
+    column-gap: 6px;
+    row-gap: 5px;
   }
 
-  /* Row 1: Pause | Hearts | Leaderboard in one flex row */
-  .tb-mobile-row1 {
-    display: flex !important;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    gap: 6px;
-    width: 100%;
-  }
+  /* Hearts: fill the center slot, centered */
+  .tb-a-hearts { padding: 2px 0; }
 
-  /* On mobile: left moves into row 1 (pause + hearts together), center hidden from row1 */
-  .tb-top-left, .hud-top-left {
-    order: unset;
-    flex-shrink: 0;
-    gap: 5px;
-  }
-
-  /* Player card expands to full width on mobile */
+  /* Player card: full-width, stays vertical (compact card, not a banner) */
+  .tb-a-player { justify-self: stretch; }
   .tb-player-card {
-    flex-direction: row;
-    align-items: center;
-    gap: 10px;
-    padding: 5px 10px;
     width: 100%;
+    max-width: none;
+    min-width: 0;
     box-sizing: border-box;
+    /* Keep as vertical stack — do NOT make horizontal */
+    flex-direction: column;
+    padding: 7px 12px;
+    gap: 3px;
   }
-  .tb-player-name { max-width: none; font-size: 0.78rem; }
-  .tb-player-scoreline { font-size: 0.68rem; }
-  .tb-player-stats { font-size: 0.64rem; gap: 6px; }
+  .tb-player-name {
+    font-size: 0.85rem;
+    max-width: none;
+    font-weight: 900;
+  }
+  .tb-player-scoreline { font-size: 0.72rem; gap: 6px; }
+  .tb-player-stats { font-size: 0.68rem; gap: 10px; }
 
-  /* Score banner full width centered */
+  /* Score banner: full-width centered card */
+  .tb-a-score { justify-self: stretch; align-self: stretch; }
   .tb-score-banner {
-    width: 100%;
+    width: 100%; box-sizing: border-box;
     justify-content: center;
-    gap: 12px;
-    padding: 5px 12px;
+    padding: 7px 16px;
+    border-radius: 14px;
   }
-  .tb-team-side { font-size: 0.88rem; }
-  .tb-team-score { font-size: 1rem; }
+  .tb-team-side { font-size: 0.9rem; }
+  .tb-team-score { font-size: 1.05rem; }
 
-  /* Status pill full width centered */
+  /* Status pill: full-width centered card */
+  .tb-a-status { justify-self: stretch; align-self: stretch; }
   .tb-status-pill {
-    width: 100%;
+    width: 100%; box-sizing: border-box;
     justify-content: center;
-    padding: 4px 10px;
-    font-size: 0.68rem;
-    gap: 5px;
+    padding: 5px 12px;
+    font-size: 0.7rem;
+    border-radius: 14px;
+    gap: 8px;
   }
 
-  /* Hearts center, normal size */
-  .hearts-row { gap: 5px; }
-  .heart-unit { width: 22px; height: 20px; }
-  .heart-fill-svg { width: 22px; height: 20px; }
-
-  /* Leaderboard shrinks on mobile */
-  .hud-leaderboard {
-    width: clamp(90px, 26vw, 120px);
-    font-size: 0.6rem;
+  /* Leaderboard: compact but visible */
+  .tb-a-lb .hud-leaderboard {
+    width: clamp(88px, 24vw, 115px);
+    font-size: 0.58rem;
+    padding: 4px 6px;
   }
-  .hud-leaderboard .lb-title { font-size: 0.62rem; }
+  .tb-a-lb .hud-leaderboard .lb-title { font-size: 0.6rem; }
+}
+
+/* Very small screens (≤360px) */
+@media (max-width: 360px) {
+  .tb-top-bar { column-gap: 4px; row-gap: 4px; }
+  .tb-player-name { font-size: 0.78rem; }
+  .tb-player-scoreline { font-size: 0.66rem; }
+  .tb-player-stats { font-size: 0.62rem; gap: 8px; }
+  .tb-team-side { font-size: 0.82rem; gap: 3px; }
+  .tb-team-score { font-size: 0.95rem; }
+  .tb-status-pill { font-size: 0.64rem; gap: 5px; padding: 4px 8px; }
+  .tb-a-lb .hud-leaderboard { width: clamp(75px, 22vw, 100px); font-size: 0.55rem; }
 }
 
 /* ---- Free Roam / Explorer Top HUD (non-competitive modes) ---- */
