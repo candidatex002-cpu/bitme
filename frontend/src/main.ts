@@ -2543,50 +2543,51 @@ class AnacondaPark {
     const jop = this.settings.joyOpacity || 70;
     return `
       <div class="hud ctrl-${cpos} mode-battle-royale">
-        <!-- Dedicated Battle Royale Top Header Architecture -->
         <div class="tb-top-bar">
-          <!-- Top-Left: Pause & Score -->
-          <div class="tb-top-left">
-            <button id="nav-pause" class="hud-pause">⏸</button>
-            <div class="hud-score-pill">
-              <span class="score-lbl">Score:</span>
-              <span class="score-val" id="hv-score">0</span>
-              <span class="stage-val" id="hud-stage">Lv 1</span>
+
+          <!-- MOBILE ROW 1: Pause | Hearts | Leaderboard (shown as one row on mobile) -->
+          <div class="tb-mobile-row1">
+            <div class="tb-top-left">
+              <button id="nav-pause" class="hud-pause">⏸</button>
+              <div class="hud-score-pill">
+                <span class="score-lbl">Score:</span>
+                <span class="score-val" id="hv-score">0</span>
+                <span class="stage-val" id="hud-stage">Lv 1</span>
+              </div>
+            </div>
+
+            <div class="tb-top-center">
+              <div class="hearts-row" id="hud-hearts-row">
+                ${this.renderHeartsHTML(100, 100)}
+              </div>
+            </div>
+
+            <div class="tb-top-right">
+              <div class="hud-leaderboard hud-panel">
+                <div class="lb-title">🏆 Top 10</div>
+                <div id="hud-lb-rows"></div>
+              </div>
             </div>
           </div>
 
-          <!-- Top-Center: Hearts + BR Match Status (Timer, Alive, Kills) -->
-          <div class="tb-top-center">
-            <div class="hearts-row" id="hud-hearts-row">
-              ${this.renderHeartsHTML(100, 100)}
-            </div>
-            <div class="tb-status-pill hud-panel" id="br-status-pill">
-              <span>⏱️ <b id="br-timer">00:00</b></span>
-              <span class="tb-dot-sep">·</span>
-              <span>👥 <b id="br-alive">0 Alive</b></span>
-              <span class="tb-dot-sep">·</span>
-              <span>⚔️ <b id="br-kills">0 Kills</b></span>
-            </div>
+          <!-- MOBILE ROW 2: BR Match Status Pill (Timer, Alive, Kills) -->
+          <div class="tb-status-pill hud-panel tb-row-status" id="br-status-pill">
+            <span>⏱️ <b id="br-timer">00:00</b></span>
+            <span class="tb-dot-sep">·</span>
+            <span>👥 <b id="br-alive">0 Alive</b></span>
+            <span class="tb-dot-sep">·</span>
+            <span>⚔️ <b id="br-kills">0 Kills</b></span>
           </div>
 
-          <!-- Top-Right: Top 10 Leaderboard -->
-          <div class="tb-top-right">
-            <div class="hud-leaderboard hud-panel">
-              <div class="lb-title">🏆 Top 10</div>
-              <div id="hud-lb-rows"></div>
-            </div>
-          </div>
         </div>
 
         <div class="power-status" id="power-status" style="display:none;"></div>
         <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
 
-        <!-- Bottom Controls Cluster -->
         <div class="hud-bottom-controls">
           <div class="touch-joystick joy-${jsize} joy-op-${jop}" id="touch-joystick">
             <div class="touch-knob" id="touch-knob"></div>
           </div>
-
           <div class="touch-actions">
             <div class="touch-row">
               <div class="touch-btn mini" id="touch-mini" title="Fullscreen Tactical Map">🗺️</div>
@@ -2603,77 +2604,73 @@ class AnacondaPark {
     const jop = this.settings.joyOpacity || 70;
     return `
       <div class="hud ctrl-${cpos} mode-team-battle">
-        <!-- Dedicated Team Battle Top Header Architecture -->
         <div class="tb-top-bar">
-          <!-- Top-Left: Player Personal Info Panel -->
-          <div class="tb-top-left">
-            <button id="nav-pause" class="hud-pause">⏸</button>
-            <div class="tb-player-card hud-panel">
-              <div class="tb-player-name" id="tb-player-name">Explorer_7740</div>
-              <div class="tb-player-scoreline">
-                <span class="tb-lbl">Score:</span> <b id="tb-player-score">0</b>
-                <span class="tb-stage" id="tb-player-stage">Lv.1</span>
+
+          <!-- MOBILE ROW 1: Pause | Hearts | Leaderboard -->
+          <div class="tb-mobile-row1">
+            <div class="tb-top-left">
+              <button id="nav-pause" class="hud-pause">⏸</button>
+              <div class="tb-player-card hud-panel">
+                <div class="tb-player-name" id="tb-player-name">Explorer_7740</div>
+                <div class="tb-player-scoreline">
+                  <span class="tb-lbl">Score:</span> <b id="tb-player-score">0</b>
+                  <span class="tb-stage" id="tb-player-stage">Lv.1</span>
+                </div>
+                <div class="tb-player-stats">
+                  <span>⚔️ <b id="tb-player-kills">0</b> Kills</span>
+                  <span>🤝 <b id="tb-player-assists">0</b> Assists</span>
+                </div>
               </div>
-              <div class="tb-player-stats">
-                <span>⚔️ <b id="tb-player-kills">0</b> Kills</span>
-                <span>🤝 <b id="tb-player-assists">0</b> Assists</span>
+            </div>
+
+            <div class="tb-top-center">
+              <div class="hearts-row" id="hud-hearts-row">
+                ${this.renderHeartsHTML(100, 100)}
+              </div>
+            </div>
+
+            <div class="tb-top-right">
+              <div class="hud-leaderboard hud-panel">
+                <div class="lb-title">🏆 Top 10</div>
+                <div id="hud-lb-rows"></div>
               </div>
             </div>
           </div>
 
-          <!-- Top-Center: Hearts + Centered Real-Time Team Score Panel + Match Status -->
-          <div class="tb-top-center">
-            <!-- Floating Hearts Row -->
-            <div class="hearts-row" id="hud-hearts-row">
-              ${this.renderHeartsHTML(100, 100)}
+          <!-- MOBILE ROW 2: Team Score Banner -->
+          <div class="tb-score-banner hud-panel tb-row-score" id="tb-score-banner">
+            <div class="tb-team-side blue" id="tb-blue-side">
+              <span class="tb-team-ico">🔵</span>
+              <span class="tb-team-title">BLUE</span>
+              <b class="tb-team-score" id="tb-blue-score">0</b>
             </div>
-
-            <!-- Centered Team Score Banner -->
-            <div class="tb-score-banner hud-panel" id="tb-score-banner">
-              <div class="tb-team-side blue" id="tb-blue-side">
-                <span class="tb-team-ico">🔵</span>
-                <span class="tb-team-title">BLUE</span>
-                <b class="tb-team-score" id="tb-blue-score">0</b>
-              </div>
-
-              <div class="tb-vs-divider">VS</div>
-
-              <div class="tb-team-side red" id="tb-red-side">
-                <b class="tb-team-score" id="tb-red-score">0</b>
-                <span class="tb-team-title">RED</span>
-                <span class="tb-team-ico">🔴</span>
-              </div>
-            </div>
-
-            <!-- Match Status Sub-Pill -->
-            <div class="tb-status-pill hud-panel" id="tb-status-pill">
-              <span>⏱️ <b id="tb-match-timer">00:00</b></span>
-              <span class="tb-dot-sep">·</span>
-              <span>👥 <b id="tb-alive-counts">10 vs 10</b></span>
-              <span class="tb-dot-sep">·</span>
-              <span class="tb-rank-tag" id="tb-team-rank">🏆 #1</span>
+            <div class="tb-vs-divider">VS</div>
+            <div class="tb-team-side red" id="tb-red-side">
+              <b class="tb-team-score" id="tb-red-score">0</b>
+              <span class="tb-team-title">RED</span>
+              <span class="tb-team-ico">🔴</span>
             </div>
           </div>
 
-          <!-- Top-Right: Top 10 Leaderboard -->
-          <div class="tb-top-right">
-            <div class="hud-leaderboard hud-panel">
-              <div class="lb-title">🏆 Top 10</div>
-              <div id="hud-lb-rows"></div>
-            </div>
+          <!-- MOBILE ROW 3: Match Status Pill -->
+          <div class="tb-status-pill hud-panel tb-row-status" id="tb-status-pill">
+            <span>⏱️ <b id="tb-match-timer">00:00</b></span>
+            <span class="tb-dot-sep">·</span>
+            <span>👥 <b id="tb-alive-counts">10 vs 10</b></span>
+            <span class="tb-dot-sep">·</span>
+            <span class="tb-rank-tag" id="tb-team-rank">🏆 #1</span>
           </div>
+
         </div>
 
         <div class="power-status" id="power-status" style="display:none;"></div>
         <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
         <div class="team-scores" id="team-scores" style="display:none;"></div>
 
-        <!-- Bottom Controls Cluster -->
         <div class="hud-bottom-controls">
           <div class="touch-joystick joy-${jsize} joy-op-${jop}" id="touch-joystick">
             <div class="touch-knob" id="touch-knob"></div>
           </div>
-
           <div class="touch-actions">
             <div class="touch-row">
               <div class="touch-btn mini" id="touch-mini" title="Fullscreen Tactical Map">🗺️</div>
