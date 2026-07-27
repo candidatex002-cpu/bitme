@@ -68,6 +68,15 @@ export interface GameConfig {
   // Live-ops calendar. Scheduled events are pure data — add one here (or in game-config.json)
   // and it appears in the client's Events page with no code change.
   events: ScheduledEvent[];
+  // §power Buff duration + stacking rules, shared by the server and the offline engine.
+  powers: {
+    baseSeconds: number;      // duration a pickup grants at level 1
+    bonusPerLevels: number;   // +1s for every N account levels
+    maxSeconds: number;       // ceiling on a SINGLE pickup's granted duration
+    // Ceiling on ACCUMULATED time. Picking a power up again extends what is left rather than
+    // replacing it, so without a cap a player could chain shields into permanent invincibility.
+    maxStackedSeconds: number;
+  };
 }
 
 export interface SkinDef {
@@ -202,6 +211,7 @@ const DEFAULTS: GameConfig = {
       { id: 'Mythical',  name: 'Mythical',  family: 'Mystical', rarity: 'legendary', costStars: 5000, costTickets: 8, minLevel: 25 },
     ],
   },
+  powers: { baseSeconds: 5, bonusPerLevels: 8, maxSeconds: 10, maxStackedSeconds: 30 },
   events: [
     { id: 'evt_jungle_festival', icon: '🐍', name: 'Jungle Festival',    description: 'Double stars from every collectible all weekend.', months: [], rewardHint: '2× Stars' },
     { id: 'evt_monsoon',         icon: '🌧️', name: 'Monsoon Rush',        description: 'Frog & star spawns tripled across the reserve.',   months: [6, 7, 8], rewardHint: '3× Frogs & Stars' },
@@ -277,5 +287,7 @@ export function clientConfig() {
     // Skin pricing is published so the shop UI renders one source of truth — but ownership
     // and the actual charge are always decided server-side.
     cosmetics: { skins: gameConfig.cosmetics.skins, starterSkins: gameConfig.cosmetics.starterSkins },
+    // §power Published so the offline engine grants and stacks buffs on the same curve.
+    powers: gameConfig.powers,
   };
 }

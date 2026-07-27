@@ -173,6 +173,16 @@ const OBSTACLE_TYPES: Array<{ type: string; icon: string; radius: number; blocki
 // §3 hp restored per food type (local engine health loop)
 const LOCAL_HEAL: Record<string, number> = { cherry: 5, apple: 8, mushroom: 4, frog: 3, egg: 25 };
 
+// §power Buff duration + stacking rules. Defaults mirror GameConfig.powers; when a server is
+// reachable, /api/config overwrites these so offline and online play stay on one curve.
+const POWERS = { baseSeconds: 5, bonusPerLevels: 8, maxSeconds: 10, maxStackedSeconds: 30 };
+export function applyPowerConfig(p?: Partial<typeof POWERS>) {
+  if (!p) return;
+  for (const k of Object.keys(POWERS) as Array<keyof typeof POWERS>) {
+    if (typeof p[k] === 'number' && p[k]! > 0) POWERS[k] = p[k]!;
+  }
+}
+
 // Ceiling on the local world's collectibles. Eaten food is replaced 1-for-1, but corpse drops
 // are pure additions — with bots dying and respawning every few seconds the array would grow
 // without bound, and food collision is O(snakes × food) every tick.
@@ -670,12 +680,14 @@ export class GameClient {
             const last = s.body[s.body.length - 1] || s.head;
             s.body.push({ x: last.x, y: last.y });
           }
-          // §power apply level-scaled buffs (⚡ speed, 🛡️ shield, 🍄 super) — were ignored before.
-          // 5s at level 1, +1s every 8 levels, up to 10s (matches the server formula).
-          const dur = Math.min(10, 5 + Math.floor(s.level / 8));
-          if (f.type === 'shield') s.shieldTimer = Math.max(s.shieldTimer, dur);
-          else if (f.type === 'speed') s.speedBoostTimer = Math.max(s.speedBoostTimer, dur);
-          else if (f.type === 'mushroom') s.superTimer = Math.max(s.superTimer ?? 0, dur);
+          // §power Level-scaled buffs (⚡ speed, 🛡️ shield, 🍄 super), stacked exactly the way
+          // the authoritative server does: a re-pickup EXTENDS the time left rather than
+          // replacing it (2s left + a 5s power = 7s), capped so it can't become permanent.
+          const dur = Math.min(POWERS.maxSeconds, POWERS.baseSeconds + Math.floor(s.level / POWERS.bonusPerLevels));
+          const stack = (remaining: number) => Math.min(POWERS.maxStackedSeconds, Math.max(0, remaining) + dur);
+          if (f.type === 'shield') s.shieldTimer = stack(s.shieldTimer);
+          else if (f.type === 'speed') s.speedBoostTimer = stack(s.speedBoostTimer);
+          else if (f.type === 'mushroom') s.superTimer = stack(s.superTimer ?? 0);
           if (s.id === this.localUserId) this.onCollect?.(f.type, f.value); // §V7 real-time mission/stat tracking
           state.food.splice(i, 1);
           state.food.push(this.genFood(`f_${Date.now()}_${i}`));

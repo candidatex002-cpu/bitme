@@ -669,7 +669,21 @@ export class GameSessionService {
   private powerDuration(snake: SnakeState): number {
     let level = snake.level;
     if (!snake.isBot) { const p = db.getProfile(snake.userId); if (p) level = p.level; }
-    return Math.min(10, 5 + Math.floor(Math.max(0, level) / 8));
+    const P = gameConfig.powers;
+    return Math.min(P.maxSeconds, P.baseSeconds + Math.floor(Math.max(0, level) / P.bonusPerLevels));
+  }
+
+  // §power Re-picking a power EXTENDS the time left instead of replacing it.
+  //
+  //   5s power, 3s elapsed (2s left) + another pickup → 2 + 5 = 7s
+  //   power already expired (0s left)  + a pickup     → 0 + 5 = 5s
+  //
+  // The old `Math.max(remaining, duration)` threw away everything a player had banked, so a
+  // second pickup mid-buff was worth nothing unless the timer had already dropped below a
+  // full duration. Accumulation is capped so chained shields can't become permanent
+  // invincibility (shields negate combat, hazards AND the storm).
+  private stackPower(remaining: number, add: number): number {
+    return Math.min(gameConfig.powers.maxStackedSeconds, Math.max(0, remaining) + add);
   }
 
   private onPickupCallback?: (userId: string, foodId: string, foodType: string, updatedMissions: any[]) => void;
@@ -682,9 +696,9 @@ export class GameSessionService {
     const wasHurt = snake.hp < snake.maxHp;
     if (food.hpRestore) snake.hp = Math.min(snake.maxHp, snake.hp + food.hpRestore);
     const dur = this.powerDuration(snake); // duration scales with the player's level
-    if (food.buff === 'shield') snake.shieldTimer = Math.max(snake.shieldTimer, dur);
-    if (food.buff === 'speed') snake.speedBoostTimer = Math.max(snake.speedBoostTimer, dur);
-    if (food.buff === 'super') snake.superTimer = Math.max(snake.superTimer ?? 0, dur);
+    if (food.buff === 'shield') snake.shieldTimer = this.stackPower(snake.shieldTimer, dur);
+    if (food.buff === 'speed') snake.speedBoostTimer = this.stackPower(snake.speedBoostTimer, dur);
+    if (food.buff === 'super') snake.superTimer = this.stackPower(snake.superTimer ?? 0, dur);
 
     if (food.couponData && !snake.isBot) {
       const profile = db.getProfile(snake.userId);

@@ -239,6 +239,93 @@ test('classic (no storm): zone never shrinks and no round clock is published', (
   assert.equal(st.matchTimer, undefined, 'untimed mode publishes no countdown');
 });
 
+// §power Buff stacking — a re-pickup EXTENDS the remaining time instead of replacing it.
+const buffFood = (id, x, y, buff, type) => ({ id, x, y, value: 15, type, icon: '⚡', color: '#fff', buff });
+
+test('power stacking: picking up mid-buff ADDS to the time left (2s left + 5s = 7s)', () => {
+  const s = new GameSessionService('pw1', 'classic');
+  s.stop();
+  const st = s.getState();
+  Object.keys(st.snakes).forEach(id => delete st.snakes[id]);
+  const p = s.registerPlayer('p1', 'P'); p.angle = 0;
+  p.head.x = 1000; p.head.y = 1000; p.body = Array.from({ length: 9 }, (_, i) => ({ x: 1000 - i * 14, y: 1000 }));
+
+  // First pickup on a level-1 player grants the 5s base duration.
+  st.food = {}; st.food['s1'] = buffFood('s1', p.head.x, p.head.y, 'shield', 'shield');
+  s.stepForTest(0);
+  assert.equal(Math.round(p.shieldTimer), 5, 'first pickup grants the full 5s');
+
+  // Burn 3 seconds → 2s remaining.
+  s.stepForTest(3);
+  assert.ok(Math.abs(p.shieldTimer - 2) < 0.001, `expected 2s left, got ${p.shieldTimer}`);
+
+  // Second pickup while 2s remain must total 7s — the old Math.max() reset it to 5s.
+  st.food['s2'] = buffFood('s2', p.head.x, p.head.y, 'shield', 'shield');
+  s.stepForTest(0);
+  assert.ok(Math.abs(p.shieldTimer - 7) < 0.001, `expected 7s after stacking, got ${p.shieldTimer}`);
+});
+
+test('power stacking: a pickup after the buff EXPIRED grants exactly one duration', () => {
+  const s = new GameSessionService('pw2', 'classic');
+  s.stop();
+  const st = s.getState();
+  Object.keys(st.snakes).forEach(id => delete st.snakes[id]);
+  const p = s.registerPlayer('p1', 'P'); p.angle = 0;
+  p.head.x = 1000; p.head.y = 1000; p.body = Array.from({ length: 9 }, (_, i) => ({ x: 1000 - i * 14, y: 1000 }));
+
+  st.food = {}; st.food['s1'] = buffFood('s1', p.head.x, p.head.y, 'shield', 'shield');
+  s.stepForTest(0);
+  s.stepForTest(6); // run past the full 5s
+  assert.equal(p.shieldTimer, 0, 'buff fully expired');
+
+  st.food['s2'] = buffFood('s2', p.head.x, p.head.y, 'shield', 'shield');
+  s.stepForTest(0);
+  assert.equal(Math.round(p.shieldTimer), 5, 'a fresh pickup is 5s, never more');
+});
+
+test('power stacking: each buff type stacks independently', () => {
+  const s = new GameSessionService('pw3', 'classic');
+  s.stop();
+  const st = s.getState();
+  Object.keys(st.snakes).forEach(id => delete st.snakes[id]);
+  const p = s.registerPlayer('p1', 'P'); p.angle = 0;
+  p.head.x = 1000; p.head.y = 1000; p.body = Array.from({ length: 9 }, (_, i) => ({ x: 1000 - i * 14, y: 1000 }));
+
+  st.food = {};
+  st.food['a'] = buffFood('a', p.head.x, p.head.y, 'shield', 'shield');
+  st.food['b'] = buffFood('b', p.head.x, p.head.y, 'speed', 'speed');
+  st.food['c'] = buffFood('c', p.head.x, p.head.y, 'super', 'mushroom');
+  s.stepForTest(0);
+  assert.equal(Math.round(p.shieldTimer), 5);
+  assert.equal(Math.round(p.speedBoostTimer), 5);
+  assert.equal(Math.round(p.superTimer), 5);
+
+  // Stacking speed must not touch shield or super.
+  st.food['b2'] = buffFood('b2', p.head.x, p.head.y, 'speed', 'speed');
+  s.stepForTest(0);
+  assert.equal(Math.round(p.speedBoostTimer), 10, 'speed stacked');
+  assert.equal(Math.round(p.shieldTimer), 5, 'shield untouched');
+  assert.equal(Math.round(p.superTimer), 5, 'super untouched');
+});
+
+test('power stacking: accumulation is capped so a shield can never be permanent', () => {
+  const s = new GameSessionService('pw4', 'classic');
+  s.stop();
+  const st = s.getState();
+  Object.keys(st.snakes).forEach(id => delete st.snakes[id]);
+  const p = s.registerPlayer('p1', 'P'); p.angle = 0;
+  p.head.x = 1000; p.head.y = 1000; p.body = Array.from({ length: 9 }, (_, i) => ({ x: 1000 - i * 14, y: 1000 }));
+
+  st.food = {};
+  // Chain 20 shields with no time passing — without a cap this would be 100s and climbing.
+  for (let i = 0; i < 20; i++) {
+    st.food[`s${i}`] = buffFood(`s${i}`, p.head.x, p.head.y, 'shield', 'shield');
+    s.stepForTest(0);
+  }
+  assert.ok(p.shieldTimer <= 30, `capped at 30s, got ${p.shieldTimer}`);
+  assert.ok(p.shieldTimer > 5, 'but stacking did accumulate well past a single pickup');
+});
+
 // §3 shield/sanctuary protects from hazards
 test('shield protects from hazard damage', () => {
   const s = new GameSessionService('hz2', 'classic');

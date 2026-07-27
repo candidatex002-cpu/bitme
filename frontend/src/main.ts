@@ -1,4 +1,4 @@
-import { GameClient, GameMode, GameStateTick, SnakeData, serverBase, hasConfiguredServer, WORLD } from './game/GameClient.js';
+import { GameClient, GameMode, GameStateTick, SnakeData, serverBase, hasConfiguredServer, applyPowerConfig, WORLD } from './game/GameClient.js';
 import { Renderer } from './game/Renderer.js';
 import { audio } from './game/AudioSystem.js';
 import { ads } from './game/AdService.js';
@@ -604,6 +604,7 @@ class AnacondaPark {
       this.achievements = (await a.json()).achievements || [];
       this.leaderboard = (await lb.json()).leaderboard || [];
       this.serverConfig = await cfg.json().catch(() => null);
+      applyPowerConfig(this.serverConfig?.powers); // §power keep the offline engine on the server's curve
       this.shopSkins = (await shop.json().catch(() => ({}))).skins || [];
     } catch { /* */ }
   }
