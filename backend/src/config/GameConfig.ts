@@ -68,6 +68,9 @@ export interface GameConfig {
   // Live-ops calendar. Scheduled events are pure data — add one here (or in game-config.json)
   // and it appears in the client's Events page with no code change.
   events: ScheduledEvent[];
+  // §milestone Story checkpoints. Reaching one banks its reward IMMEDIATELY — that is the
+  // auto-save: a crash or a quit mid-match can no longer erase what the run achieved.
+  milestones: Milestone[];
   // §power Buff duration + stacking rules, shared by the server and the offline engine.
   powers: {
     baseSeconds: number;      // duration a pickup grants at level 1
@@ -88,6 +91,28 @@ export interface SkinDef {
   costTickets: number;
   minLevel: number;
 }
+
+// §milestone A single story checkpoint on the journey to the throne.
+//
+// Milestones are LIFETIME and one-time: "The First Shed" happens once in a snake's story,
+// not once per match. They can be claimed mid-match, which is what makes them checkpoints —
+// the reward is banked the instant it is earned rather than at the match summary.
+export interface Milestone {
+  id: string;
+  chapter: number;          // story chapter this beat belongs to
+  icon: string;
+  title: string;
+  story: string;            // the narration shown on the timeline + celebration
+  metric: MilestoneMetric;
+  target: number;
+  rewardStars: number;
+  rewardXp: number;
+  rewardEvoXp: number;
+  modes: string[];          // UI modes this milestone appears in
+}
+
+// What a milestone measures. Each maps to a server-observed value — never a client claim.
+export type MilestoneMetric = 'score' | 'kills' | 'stars' | 'survival' | 'areas' | 'level';
 
 export interface ScheduledEvent {
   id: string;
@@ -211,6 +236,36 @@ const DEFAULTS: GameConfig = {
       { id: 'Mythical',  name: 'Mythical',  family: 'Mystical', rarity: 'legendary', costStars: 5000, costTickets: 8, minLevel: 25 },
     ],
   },
+  // §milestone The journey, told in checkpoints. Explorer carries the full Lost Crown arc;
+  // Free Roam gets a shorter arcade run of the same voice. Pure data — reorder, retitle or
+  // re-price any of it from game-config.json without a code change.
+  milestones: [
+    // ---- Explorer: Chapter I — The Lost Prince ----
+    { id: 'ex_hatch',     chapter: 1, icon: '🥚', title: 'The Egg Cracks',            story: 'You slip from the last royal egg into a world that has forgotten your name.',            metric: 'score',    target: 100,   rewardStars: 50,   rewardXp: 40,   rewardEvoXp: 10,  modes: ['explorer'] },
+    { id: 'ex_forage',    chapter: 1, icon: '🍒', title: 'First Forage',              story: 'Cherries. Small, sweet, and the first thing that has ever been yours.',                  metric: 'score',    target: 300,   rewardStars: 75,   rewardXp: 60,   rewardEvoXp: 15,  modes: ['explorer'] },
+    { id: 'ex_shed',      chapter: 1, icon: '🐍', title: 'The First Shed',            story: 'Your old skin splits. Underneath, the royal mark shows clearly for the first time.',     metric: 'score',    target: 500,   rewardStars: 120,  rewardXp: 100,  rewardEvoXp: 25,  modes: ['explorer'] },
+    // ---- Chapter II — Forest of Memories ----
+    { id: 'ex_fragment',  chapter: 2, icon: '⭐', title: 'A Fragment of the Crown',   story: 'It hums when you touch it. Somewhere, a broken crown remembers being whole.',           metric: 'stars',    target: 5,     rewardStars: 150,  rewardXp: 120,  rewardEvoXp: 40,  modes: ['explorer'] },
+    { id: 'ex_scout',     chapter: 2, icon: '🗡️', title: 'The Order Notices',         story: 'A Venom scout falls beneath you. They know the heir is alive now — and so do you.',    metric: 'kills',    target: 1,     rewardStars: 180,  rewardXp: 150,  rewardEvoXp: 50,  modes: ['explorer'] },
+    { id: 'ex_grove',     chapter: 2, icon: '🌳', title: 'Into the Deep Grove',       story: 'These trees are older than the betrayal. They lean in as you pass, and they whisper.',  metric: 'score',    target: 1500,  rewardStars: 250,  rewardXp: 200,  rewardEvoXp: 60,  modes: ['explorer'] },
+    // ---- Chapter III — The Sleeping Giant ----
+    { id: 'ex_rivers',    chapter: 3, icon: '🏞️', title: 'Crossing the Riverlands',   story: 'Water you cannot see the bottom of. You cross it anyway. That is the whole story.',    metric: 'areas',    target: 3,     rewardStars: 300,  rewardXp: 240,  rewardEvoXp: 75,  modes: ['explorer'] },
+    { id: 'ex_endure',    chapter: 3, icon: '⏳', title: 'The Long Night',            story: 'You survive long enough to watch the light change. Few hatchlings ever do.',            metric: 'survival', target: 180,   rewardStars: 350,  rewardXp: 280,  rewardEvoXp: 90,  modes: ['explorer'] },
+    { id: 'ex_guardian',  chapter: 3, icon: '🛡️', title: "The Guardian's Gaze",       story: 'Something ancient beneath the hills opens one eye, considers you, and does not close it.', metric: 'score', target: 3000, rewardStars: 450,  rewardXp: 360,  rewardEvoXp: 120, modes: ['explorer'] },
+    // ---- Chapter IV — Trial and Titan ----
+    { id: 'ex_fire',      chapter: 4, icon: '🔥', title: 'Trial by Fire',             story: 'The Volcano Kingdom tests every heir who passes. Most of them stay there.',             metric: 'score',    target: 5000,  rewardStars: 600,  rewardXp: 500,  rewardEvoXp: 180, modes: ['explorer'] },
+    { id: 'ex_hunter',    chapter: 4, icon: '⚔️', title: 'No Longer Prey',            story: 'Ten of the Order have fallen to you. The hunt has quietly changed direction.',          metric: 'kills',    target: 10,    rewardStars: 700,  rewardXp: 560,  rewardEvoXp: 200, modes: ['explorer'] },
+    { id: 'ex_titan',     chapter: 4, icon: '🐲', title: 'The Titan Rises',           story: 'You are no longer the thing that runs. You are the thing they run from.',               metric: 'score',    target: 8000,  rewardStars: 1000, rewardXp: 800,  rewardEvoXp: 300, modes: ['explorer'] },
+
+    // ---- Free Roam: the same voice, a shorter arc ----
+    { id: 'fr_bite',      chapter: 1, icon: '🍒', title: 'First Bite',                story: 'The park is enormous and you are very small. Start anyway.',                            metric: 'score',    target: 250,   rewardStars: 50,   rewardXp: 40,   rewardEvoXp: 10,  modes: ['free_roam'] },
+    { id: 'fr_grow',      chapter: 1, icon: '🐍', title: 'Growing Strong',            story: 'Your coils thicken. The smaller ones start choosing another path.',                     metric: 'score',    target: 500,   rewardStars: 100,  rewardXp: 80,   rewardEvoXp: 20,  modes: ['free_roam'] },
+    { id: 'fr_hunt',      chapter: 2, icon: '⚔️', title: 'First Hunt',                story: 'Head to head, and you did not blink. Neither did they — that was their mistake.',        metric: 'kills',    target: 1,     rewardStars: 150,  rewardXp: 120,  rewardEvoXp: 35,  modes: ['free_roam'] },
+    { id: 'fr_stars',     chapter: 2, icon: '⭐', title: 'Star Collector',            story: 'Ten fragments, all of them still warm. The crown is out there in pieces.',              metric: 'stars',    target: 10,    rewardStars: 200,  rewardXp: 160,  rewardEvoXp: 50,  modes: ['free_roam'] },
+    { id: 'fr_apex',      chapter: 3, icon: '👑', title: 'Apex Predator',             story: 'Five rivals down. The park has learned your shape.',                                    metric: 'kills',    target: 5,     rewardStars: 350,  rewardXp: 280,  rewardEvoXp: 90,  modes: ['free_roam'] },
+    { id: 'fr_titan',     chapter: 3, icon: '🐲', title: 'Titan of the Park',         story: 'You fill the horizon now. Somewhere a smaller snake is telling a story about you.',     metric: 'score',    target: 5000,  rewardStars: 600,  rewardXp: 480,  rewardEvoXp: 170, modes: ['free_roam'] },
+    { id: 'fr_legend',    chapter: 4, icon: '🏆', title: 'Legend of the Park',        story: 'Ten thousand. They will not say your name — they will just point.',                     metric: 'score',    target: 10000, rewardStars: 1200, rewardXp: 900,  rewardEvoXp: 350, modes: ['free_roam'] },
+  ],
   powers: { baseSeconds: 5, bonusPerLevels: 8, maxSeconds: 10, maxStackedSeconds: 30 },
   events: [
     { id: 'evt_jungle_festival', icon: '🐍', name: 'Jungle Festival',    description: 'Double stars from every collectible all weekend.', months: [], rewardHint: '2× Stars' },
@@ -289,5 +344,8 @@ export function clientConfig() {
     cosmetics: { skins: gameConfig.cosmetics.skins, starterSkins: gameConfig.cosmetics.starterSkins },
     // §power Published so the offline engine grants and stacks buffs on the same curve.
     powers: gameConfig.powers,
+    // §milestone Published so offline play can still show the journey and celebrate beats.
+    // Reaching one is recorded locally and reconciled by the server on the next connection.
+    milestones: gameConfig.milestones,
   };
 }

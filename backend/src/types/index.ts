@@ -64,6 +64,9 @@ export interface PlayerProfile {
   preferredRegion?: string;
   lastNameChange?: number;       // epoch ms of the last display-name change (cooldown gate)
   lastAdClaim?: number;          // epoch ms of the last /api/ads/claim (anti-farm cooldown)
+  // §milestone Story checkpoints reached, ever. One-time and permanent: the reward is banked
+  // the moment it is earned mid-match, so a crash or a quit can't undo the journey.
+  milestones?: string[];
   inventory?: Record<string, number>; // §V7 owned consumable/collectible items (eggs, event items) → count
   lastDailyBonus?: string;       // §V7 YYYY-MM-DD of the last daily-all-complete bonus (once/day gate)
 }
@@ -96,6 +99,9 @@ export interface PlayerStats {
   mostDamageDealt: number;
   mostDamageReceived: number;
   bossKills?: number;
+  // §milestone Best number of distinct landmarks reached in a single run. Explore progress was
+  // only ever fed to missions; the journey timeline needs it as a durable stat too.
+  areasExplored?: number;
 }
 
 // §V7 Per-mode independent statistics. Keyed by stat-mode: 'free_roam' | 'explorer' |

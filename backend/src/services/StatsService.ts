@@ -129,6 +129,7 @@ export class StatsService {
     s.totalDamageReceived += damageReceived;
     s.mostDamageDealt = Math.max(s.mostDamageDealt, damageDealt);
     s.mostDamageReceived = Math.max(s.mostDamageReceived, damageReceived);
+    s.areasExplored = Math.max(s.areasExplored || 0, areasVisited); // §milestone journey progress
 
     // ---- Per-mode stats ----
     const modeStats = { ...(profile.modeStats || {}) };

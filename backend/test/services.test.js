@@ -255,6 +255,133 @@ test('Social: overview returns only YOUR friend code', () => {
   assert.ok(!JSON.stringify(ov.friends).includes(other.profile.friendCode));
 });
 
+// ---------------------------------------------------------------- Milestones (§milestone)
+const { MilestoneService } = require(dist('services/MilestoneService.js'));
+
+test('Milestones: Explorer and Free Roam each get their own story ladder', () => {
+  const ex = MilestoneService.forMode('explorer');
+  const fr = MilestoneService.forMode('free_roam');
+  assert.ok(ex.length >= 10, `explorer arc has depth, got ${ex.length}`);
+  assert.ok(fr.length >= 5, `free roam arc exists, got ${fr.length}`);
+  assert.equal(ex.filter(m => fr.some(f => f.id === m.id)).length, 0, 'the two ladders do not overlap');
+  // Every beat must carry narration — the story IS the feature.
+  for (const m of [...ex, ...fr]) {
+    assert.ok(m.story && m.story.length > 20, `${m.id} has narration`);
+    assert.ok(m.rewardStars > 0 && m.target > 0, `${m.id} is rewarding and measurable`);
+  }
+  // Explorer targets rise monotonically within a metric, so the ladder always climbs.
+  const scores = ex.filter(m => m.metric === 'score').map(m => m.target);
+  assert.deepEqual(scores, [...scores].sort((a, b) => a - b), 'score beats ascend');
+});
+
+test('Milestones: a beat is refused until its target is actually met', () => {
+  const { user } = db.createUser('MsA', 'msa@x.io', 'hash', false);
+  const early = MilestoneService.claim(user.id, 'ex_titan'); // needs 8000 score
+  assert.equal(early.success, false, 'cannot claim a beat you have not reached');
+  assert.ok(/8000/.test(early.message), 'the message shows the gap');
+  assert.equal((db.getProfile(user.id).milestones || []).length, 0, 'nothing was recorded');
+});
+
+test('Milestones: reaching one banks its reward immediately (the auto-save)', () => {
+  const { user, profile } = db.createUser('MsB', 'msb@x.io', 'hash', false);
+  const starsBefore = profile.stars;
+  // The player's best score now clears the first beat.
+  db.updateProfile(user.id, { stats: { ...profile.stats, highestScore: 150 } });
+
+  const r = MilestoneService.claim(user.id, 'ex_hatch'); // target 100
+  assert.equal(r.success, true, r.message);
+  assert.equal(r.milestone.id, 'ex_hatch');
+
+  const after = db.getProfile(user.id);
+  assert.ok(after.milestones.includes('ex_hatch'), 'recorded permanently');
+  assert.equal(after.stars, starsBefore + r.milestone.rewardStars, 'reward is banked right away');
+});
+
+test('Milestones: claiming twice never pays twice', () => {
+  const { user, profile } = db.createUser('MsC', 'msc@x.io', 'hash', false);
+  db.updateProfile(user.id, { stats: { ...profile.stats, highestScore: 600 } });
+  const first = MilestoneService.claim(user.id, 'ex_shed'); // target 500
+  assert.equal(first.success, true);
+  const banked = db.getProfile(user.id).stars;
+
+  const second = MilestoneService.claim(user.id, 'ex_shed');
+  assert.equal(second.success, false);
+  assert.equal(second.alreadyClaimed, true, 'reported as already reached, not as an error');
+  assert.equal(db.getProfile(user.id).stars, banked, 'no double payout');
+  assert.equal(db.getProfile(user.id).milestones.filter(m => m === 'ex_shed').length, 1, 'recorded once');
+});
+
+test('Milestones: each metric is graded against its own stat', () => {
+  const { user, profile } = db.createUser('MsD', 'msd@x.io', 'hash', false);
+  // Kills beat: driven by mostKillsInMatch, not by score.
+  db.updateProfile(user.id, { stats: { ...profile.stats, highestScore: 99999, mostKillsInMatch: 0 } });
+  assert.equal(MilestoneService.claim(user.id, 'ex_scout').success, false, 'a huge score does not buy a kills beat');
+  db.updateProfile(user.id, { stats: { ...db.getProfile(user.id).stats, mostKillsInMatch: 1 } });
+  assert.equal(MilestoneService.claim(user.id, 'ex_scout').success, true, 'one kill unlocks it');
+
+  // Stars beat: lifetime totalStars.
+  assert.equal(MilestoneService.claim(user.id, 'ex_fragment').success, false, 'no stars yet');
+  db.updateProfile(user.id, { stats: { ...db.getProfile(user.id).stats, totalStars: 5 } });
+  assert.equal(MilestoneService.claim(user.id, 'ex_fragment').success, true);
+
+  // Survival beat: longestSurvivalSeconds.
+  db.updateProfile(user.id, { stats: { ...db.getProfile(user.id).stats, longestSurvivalSeconds: 200 } });
+  assert.equal(MilestoneService.claim(user.id, 'ex_endure').success, true, '180s survived');
+});
+
+test('Milestones: overview reports progress and reached state for the timeline', () => {
+  const { user, profile } = db.createUser('MsE', 'mse@x.io', 'hash', false);
+  db.updateProfile(user.id, { stats: { ...profile.stats, highestScore: 250 } });
+  MilestoneService.claim(user.id, 'ex_hatch');
+
+  const ov = MilestoneService.overview(user.id, 'explorer');
+  assert.equal(ov.reachedCount, 1);
+  assert.equal(ov.total, MilestoneService.forMode('explorer').length);
+
+  const hatch = ov.milestones.find(m => m.id === 'ex_hatch');
+  const forage = ov.milestones.find(m => m.id === 'ex_forage'); // target 300, have 250
+  assert.equal(hatch.reached, true);
+  assert.equal(forage.reached, false);
+  assert.equal(forage.progress, 250, 'partial progress is surfaced');
+  assert.ok(forage.pct > 80 && forage.pct < 100, `bar is ~83%, got ${forage.pct}`);
+  // Progress never overshoots its own target, so a bar cannot render past full.
+  for (const m of ov.milestones) assert.ok(m.progress <= m.target && m.pct <= 100);
+});
+
+test('Milestones: unknown ids and unknown modes are handled, not crashed on', () => {
+  const { user } = db.createUser('MsF', 'msf@x.io', 'hash', false);
+  assert.equal(MilestoneService.claim(user.id, 'not_a_real_beat').success, false);
+  assert.equal(MilestoneService.claim('usr_ghost', 'ex_hatch').success, false, 'unknown player rejected');
+  assert.deepEqual(MilestoneService.forMode('battle_royale'), [], 'a mode with no ladder is empty, not an error');
+  const ov = MilestoneService.overview(user.id, 'nonsense_mode');
+  assert.equal(ov.total, 0);
+});
+
+test('Milestones: the end-of-match sweep banks everything earned, once', () => {
+  const { user, profile } = db.createUser('MsG', 'msg@x.io', 'hash', false);
+  db.updateProfile(user.id, { stats: { ...profile.stats, highestScore: 600, totalStars: 20, mostKillsInMatch: 3 } });
+
+  const first = MilestoneService.claimAllReached(user.id, 'free_roam');
+  assert.ok(first.length >= 3, `swept several beats at once, got ${first.length}`);
+  const stars = db.getProfile(user.id).stars;
+
+  // Running the sweep again must be a no-op — this is what makes it safe as a safety net.
+  const second = MilestoneService.claimAllReached(user.id, 'free_roam');
+  assert.equal(second.length, 0, 'nothing left to claim');
+  assert.equal(db.getProfile(user.id).stars, stars, 'no extra payout');
+});
+
+test('Milestones: survive a restart (persisted with the profile)', () => {
+  const { user, profile } = db.createUser('MsPersist', 'msp@x.io', 'hash', false);
+  db.updateProfile(user.id, { stats: { ...profile.stats, highestScore: 150 } });
+  MilestoneService.claim(user.id, 'ex_hatch');
+  db.flush();
+
+  delete require.cache[require.resolve(dist('db/Database.js'))];
+  const { db: db2 } = require(dist('db/Database.js'));
+  assert.ok((db2.getProfile(user.id).milestones || []).includes('ex_hatch'), 'journey survived the reload');
+});
+
 // ---------------------------------------------------------------- Match invites (§social)
 const befriend = (a, b) => {
   SocialService.sendRequest(a.user.id, b.profile.friendCode);

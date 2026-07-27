@@ -10,6 +10,7 @@ import { RewardsService } from './services/RewardsService';
 import { CouponService } from './services/CouponService';
 import { SocialService } from './services/SocialService';
 import { StatsService } from './services/StatsService';
+import { MilestoneService } from './services/MilestoneService';
 import { presence } from './services/Presence';
 import { sessionManager } from './services/GameSessionManager';
 import { getModeConfig } from './services/GameSessionService';
@@ -308,6 +309,37 @@ app.post('/api/missions/daily-bonus', writeLimiter, (req, res) => {
   db.grantItem(a.userId, b.item, 1);
   const updated = db.updateProfile(a.userId, { lastDailyBonus: today });
   res.json({ success: true, rewards: { stars: b.stars, xp: b.xp, evoXp: b.evoXp, item: b.itemName, itemIcon: b.itemIcon }, profile: withRank(updated) });
+});
+
+// §milestone The journey timeline for a mode, annotated with this player's progress.
+app.get('/api/milestones', (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const mode = String(req.query.mode || 'explorer');
+  res.json(MilestoneService.overview(a.userId, mode));
+});
+
+// §milestone Bank a story checkpoint mid-match. The body says only WHICH milestone; whether
+// it was actually earned is decided from the server's own observation of the live run, so a
+// client can't checkpoint its way to rewards it never played for.
+app.post('/api/match/checkpoint', writeLimiter, (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const id = String(req.body?.milestoneId || '');
+  if (!id) return res.status(400).json({ success: false, message: 'milestoneId is required' });
+  const r = MilestoneService.claim(a.userId, id);
+  res.status(r.success || r.alreadyClaimed ? 200 : 400).json({ ...r, profile: r.profile ? withRank(r.profile) : undefined });
+});
+
+// §milestone Safety net at match end: bank anything whose target is met but that wasn't
+// checkpointed live (a beat reached in the last seconds, or while briefly offline).
+app.post('/api/match/checkpoint-all', writeLimiter, (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const mode = String(req.body?.mode || 'explorer');
+  const claimed = MilestoneService.claimAllReached(a.userId, mode);
+  res.json({
+    success: true,
+    claimed: claimed.map(c => ({ id: c.milestone!.id, title: c.milestone!.title, icon: c.milestone!.icon, rewards: c.rewards })),
+    profile: withRank(db.getProfile(a.userId)),
+  });
 });
 
 app.get('/api/achievements', (req, res) => {

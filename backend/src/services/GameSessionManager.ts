@@ -36,6 +36,17 @@ export class GameSessionManager {
     this.sessions.clear();
   }
 
+  // §milestone Read a player's server-observed peak WITHOUT clearing it. Mid-match checkpoints
+  // need to validate against live progress many times, so they must not consume it the way a
+  // final match summary does.
+  public getPlayerPeak(userId: string): { score: number; kills: number; killStreak: number; survivalSeconds: number } | null {
+    for (const session of this.sessions.values()) {
+      const peak = session.getPeakStats(userId);
+      if (peak) return peak;
+    }
+    return null;
+  }
+
   // §V7/P1 Read + clear a player's server-observed peak stats from whichever session holds them.
   public consumePlayerPeak(userId: string): { score: number; kills: number; killStreak: number; survivalSeconds: number } | null {
     for (const session of this.sessions.values()) {

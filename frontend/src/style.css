@@ -1635,6 +1635,66 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .rarity-tag.epic      { color: #EC4899; }
 .rarity-tag.legendary { color: #D97706; }
 
+/* ---------------------------------------------------------------- §milestone journey */
+.journey-summary { margin-bottom: 14px; }
+.journey-track { position: relative; }
+
+.journey-node { display: flex; gap: 12px; align-items: flex-start; padding-bottom: 14px; }
+/* The rail is the road: a continuous line the dots sit on, cut off after the last node. */
+.jn-rail { position: relative; flex: 0 0 auto; width: 34px; display: flex; justify-content: center; }
+.jn-rail::before {
+  content: ''; position: absolute; top: 30px; bottom: -14px; left: 50%;
+  width: 2px; margin-left: -1px; background: var(--line);
+}
+.journey-node:last-child .jn-rail::before { display: none; }
+.jn-dot {
+  position: relative; z-index: 1;
+  width: 34px; height: 34px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 1rem;
+  background: var(--card-2); border: 2px solid var(--line);
+}
+.journey-node.done .jn-dot { background: #ECFDF5; border-color: var(--green-deep); }
+.journey-node.done .jn-rail::before { background: var(--green); }
+.journey-node.current .jn-dot {
+  background: #FEF9C3; border-color: var(--gold-deep);
+  box-shadow: 0 0 0 4px rgba(255, 210, 63, 0.25);
+}
+.journey-node.locked .jn-dot { opacity: 0.55; }
+
+.jn-body { flex: 1; min-width: 0; padding-top: 3px; }
+.jn-head { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.jn-ch { font-size: 0.62rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.jn-title { font-family: var(--font-title); font-weight: 800; font-size: 0.94rem; color: var(--ink); }
+.journey-node.locked .jn-title { color: var(--muted); }
+.jn-tag { font-size: 0.6rem; }
+.jn-story { font-size: 0.8rem; line-height: 1.45; color: var(--ink); opacity: 0.85; margin-top: 3px; font-style: italic; }
+.jn-story.next { opacity: 0.95; }
+.jn-story.locked { opacity: 0.5; font-style: normal; }
+.jn-reward { font-size: 0.7rem; font-weight: 700; color: var(--muted); margin-top: 4px; }
+
+/* ---- Checkpoint celebration ---- */
+.milestone-pop {
+  position: fixed; inset: 0; z-index: 90;
+  display: grid; place-items: center; padding: 20px;
+  background: rgba(15, 23, 42, 0.55);
+  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  opacity: 0; transition: opacity 0.35s ease; pointer-events: none;
+}
+.milestone-pop.show { opacity: 1; }
+.ms-card {
+  max-width: 380px; width: 100%; text-align: center;
+  background: var(--card); border: 2px solid var(--gold); border-radius: var(--r-lg);
+  padding: 22px 20px; box-shadow: var(--shadow-lg);
+  transform: translateY(14px) scale(0.96); transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.milestone-pop.show .ms-card { transform: translateY(0) scale(1); }
+.ms-kicker { font-size: 0.66rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; }
+.ms-icon { font-size: 2.8rem; margin: 8px 0 4px; }
+.ms-title { font-family: var(--font-title); font-weight: 900; font-size: 1.25rem; color: var(--gold-deep); }
+.ms-story { font-size: 0.86rem; line-height: 1.5; color: var(--ink); opacity: 0.9; margin-top: 8px; font-style: italic; }
+.ms-rewards { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; font-weight: 800; font-size: 0.8rem; }
+.ms-saved { margin-top: 10px; font-size: 0.72rem; font-weight: 700; color: var(--green-deep); }
+
 /* ---- Match invites + notification badge ---- */
 .notif-wrap { position: relative; }
 .notif-badge {

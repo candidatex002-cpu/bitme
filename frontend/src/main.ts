@@ -640,7 +640,7 @@ class AnacondaPark {
       this.startRenderLoop();
     }
   }
-  private go(p: Page) { this.page = p; this.screen = 'app'; audio.playClick(); this.render(); if (p === 'rewards') this.loadRewards(); if (p === 'inventory') { this.loadAvailableCoupons(); this.loadShopCatalog(); } if (p === 'events') this.loadEvents(); if (p === 'social') { this.loadSocial(); this.loadInvites(); } if (p === 'history') this.loadMatchHistory(); if (p === 'leaderboard') this.loadLeaderboardCategory(); if (p === 'admin') this.loadAdminCoupons(); if (p === 'play' && this.matchType === 'global') this.measureGlobalPing(); ads.showBanner(); /* §14 lobby-only banner */ }
+  private go(p: Page) { this.page = p; this.screen = 'app'; audio.playClick(); this.render(); if (p === 'rewards') this.loadRewards(); if (p === 'inventory') { this.loadAvailableCoupons(); this.loadShopCatalog(); } if (p === 'events') this.loadEvents(); if (p === 'social') { this.loadSocial(); this.loadInvites(); } if (p === 'story') this.loadMilestones(this.journeyMode); if (p === 'history') this.loadMatchHistory(); if (p === 'leaderboard') this.loadLeaderboardCategory(); if (p === 'admin') this.loadAdminCoupons(); if (p === 'play' && this.matchType === 'global') this.measureGlobalPing(); ads.showBanner(); /* §14 lobby-only banner */ }
 
   // §shop Server-driven skin catalog (prices, ownership, level gates). Loaded with the
   // Inventory page; the client never decides what the player owns.
@@ -805,6 +805,9 @@ class AnacondaPark {
     // §V7 reset per-match tracking
     this.matchStats = { cherry: 0, apple: 0, frog: 0, star: 0, mushroom: 0, shield: 0, speed: 0, powerup: 0, kills: 0, deaths: 0 };
     this.lastKills = 0; this.liveMissionDone.clear();
+    // §milestone Load this mode's checkpoints so the run can bank them as they're reached.
+    this.checkpointing.clear();
+    if (this.milestoneMode !== this.selectedUIMode) this.loadMilestones(this.selectedUIMode);
     this.setScreen('play'); // render() creates/attaches the renderer to the live canvas
     this.showMatchObjectiveBanner();
     ads.hideBanner(); // §14 never show ads during active gameplay
@@ -860,7 +863,104 @@ class AnacondaPark {
         this.updateMissionTracker();
       }
     }
-    if (this.screen === 'play') this.updateHUD(state, me);
+    if (this.screen === 'play') { this.updateHUD(state, me); this.checkMilestones(me); }
+  }
+
+  // ---------- §milestone Story checkpoints ----------
+  // Reaching a beat banks its reward IMMEDIATELY rather than at the match summary, so a
+  // crash, a lost connection or simply closing the app can't erase what the run achieved.
+  private milestones: any[] = [];
+  private milestoneMode = '';
+  private checkpointing = new Set<string>(); // in-flight, so a 30 Hz tick can't double-claim
+
+  private async loadMilestones(mode = this.selectedUIMode) {
+    if (!this.token) return;
+    try {
+      const res = await this.api(`/api/milestones?mode=${encodeURIComponent(mode)}`);
+      if (!res.ok) return;
+      const d = await res.json();
+      this.milestones = d.milestones || [];
+      this.milestoneMode = mode;
+      if (this.page === 'story') this.render();
+    } catch {
+      // Offline: fall back to whatever the server config carried, so the timeline still shows.
+      const defs = (this.serverConfig?.milestones || []).filter((m: any) => m.modes?.includes(mode));
+      if (defs.length && !this.milestones.length) {
+        const reached: string[] = this.profile?.milestones || [];
+        this.milestones = defs.map((m: any) => ({ ...m, reached: reached.includes(m.id), progress: 0, pct: 0 }));
+        this.milestoneMode = mode;
+      }
+    }
+  }
+
+  // The live value for a milestone metric, from this match plus what the profile records.
+  private milestoneValue(metric: string, me?: SnakeData | null): number {
+    const s = this.profile?.stats || {};
+    const survival = Math.max(0, Math.floor((Date.now() - this.matchStart) / 1000));
+    switch (metric) {
+      case 'score':    return Math.max(Math.round(me?.score || 0), s.highestScore || 0);
+      case 'kills':    return Math.max(this.matchStats.kills || 0, s.mostKillsInMatch || 0);
+      case 'stars':    return (s.totalStars || 0) + (this.matchStats.star || 0) * 50;
+      case 'survival': return Math.max(survival, s.longestSurvivalSeconds || 0);
+      case 'areas':    return Math.max(this.visitedAreas.size, s.areasExplored || 0);
+      case 'level':    return this.profile?.level || 1;
+      default:         return 0;
+    }
+  }
+
+  // Called every tick while playing. Cheap: a few numeric comparisons over <=13 milestones.
+  private checkMilestones(me?: SnakeData | null) {
+    if (!this.milestones.length) return;
+    for (const m of this.milestones) {
+      if (m.reached || this.checkpointing.has(m.id)) continue;
+      if (this.milestoneValue(m.metric, me) < m.target) continue;
+      this.checkpointing.add(m.id);
+      this.bankCheckpoint(m);
+    }
+  }
+
+  private async bankCheckpoint(m: any) {
+    // Mark it locally straight away so the celebration fires once even if the network is slow
+    // or absent — offline runs still get the story beat, and the server reconciles later.
+    m.reached = true;
+    this.celebrateMilestone(m);
+    try {
+      const res = await this.api('/api/match/checkpoint', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
+        body: JSON.stringify({ milestoneId: m.id }),
+      });
+      const d = await res.json();
+      if (d.profile) { this.profile = d.profile; this.persistSession(); }
+      else if (d.success === false && !d.alreadyClaimed) m.reached = false; // server says not yet — let it retry
+    } catch {
+      // Offline: remember it locally so the timeline stays honest; the end-of-match
+      // checkpoint-all sweep banks it for real once a server is reachable again.
+      const owned: string[] = this.profile?.milestones || [];
+      if (this.profile && !owned.includes(m.id)) { this.profile.milestones = [...owned, m.id]; this.persistSession(); }
+    } finally {
+      this.checkpointing.delete(m.id);
+    }
+  }
+
+  // A story beat, not a score popup — the narration is the point.
+  private celebrateMilestone(m: any) {
+    audio.playFanfare?.();
+    document.getElementById('milestone-pop')?.remove();
+    const el = document.createElement('div');
+    el.id = 'milestone-pop';
+    el.className = 'milestone-pop';
+    el.innerHTML = `
+      <div class="ms-card">
+        <div class="ms-kicker">📜 Chapter ${m.chapter} · Checkpoint reached</div>
+        <div class="ms-icon">${m.icon}</div>
+        <div class="ms-title">${m.title}</div>
+        <div class="ms-story">${m.story}</div>
+        <div class="ms-rewards"><span>⭐ +${m.rewardStars}</span><span>XP +${m.rewardXp}</span><span>🧬 +${m.rewardEvoXp}</span></div>
+        <div class="ms-saved">✓ Progress saved</div>
+      </div>`;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+    setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 400); }, 4200);
   }
 
   // §V7 A collectible was picked up (local engine) — update counters + live mission tracker.
@@ -1043,6 +1143,16 @@ class AnacondaPark {
           const cr = await this.api('/api/missions/claim-all', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } });
           const cd = await cr.json();
           if (cd?.claimed?.length) { if (cd.profile) this.profile = cd.profile; this.summary.missionBonus = { stars: cd.stars, xp: cd.xp, evoXp: cd.evoXp, count: cd.claimed.length }; }
+        } catch { /* */ }
+        // §milestone Safety net — bank any beat reached in the final seconds, or while the
+        // connection was briefly down, that the live checkpoint missed.
+        try {
+          const mr = await this.api('/api/match/checkpoint-all', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
+            body: JSON.stringify({ mode: this.selectedUIMode }),
+          });
+          const md = await mr.json();
+          if (md?.claimed?.length) { if (md.profile) this.profile = md.profile; this.summary.milestones = md.claimed; }
         } catch { /* */ }
       } else {
         // No authoritative server (deployed local-engine build) — apply + persist locally.
@@ -2785,6 +2895,8 @@ class AnacondaPark {
           </div>
         </div>
 
+        ${this.renderJourneyTimeline()}
+
         <div class="card">
           <div class="section-title">📖 Story Chapters</div>
           <div class="list">
@@ -2809,6 +2921,66 @@ class AnacondaPark {
           <div class="muted" style="font-size:0.76rem;margin-top:6px;">Each kingdom's guardian is a major milestone on the road to the throne.</div>
         </div>
       </div>`;
+  }
+
+  // §milestone The journey, drawn as a route rather than a list. Reached beats are lit and
+  // show their narration; the next one shows a progress bar so the goal is always legible;
+  // everything beyond stays sealed so the story is not spoiled.
+  private journeyMode: UIMode = 'explorer';
+  private renderJourneyTimeline(): string {
+    const list = this.milestones;
+    if (!list.length) {
+      return `<div class="card"><div class="section-title">🗺️ Journey Timeline</div>
+        <div class="muted" style="text-align:center;padding:18px;">Loading your journey…</div></div>`;
+    }
+    const reached = list.filter(m => m.reached).length;
+    const pct = Math.round((reached / list.length) * 100);
+    // The first unreached beat is the "current" one — the only locked node we reveal.
+    const nextIdx = list.findIndex(m => !m.reached);
+
+    const nodes = list.map((m, i) => {
+      const isNext = i === nextIdx;
+      const state = m.reached ? 'done' : isNext ? 'current' : 'locked';
+      const body = m.reached
+        ? `<div class="jn-story">${m.story}</div>
+           <div class="jn-reward">⭐ ${m.rewardStars} · XP ${m.rewardXp} · 🧬 ${m.rewardEvoXp}</div>`
+        : isNext
+          ? `<div class="jn-story next">${m.story}</div>
+             <div class="progress" style="height:6px;margin-top:6px;"><div style="width:${m.pct || 0}%"></div></div>
+             <div class="jn-reward">${m.progress || 0} / ${m.target} ${this.metricLabel(m.metric)}</div>`
+          : `<div class="jn-story locked">Sealed until you reach ${m.title.replace(/^The /, '')}.</div>`;
+      return `
+        <div class="journey-node ${state}">
+          <div class="jn-rail"><span class="jn-dot">${m.reached ? m.icon : isNext ? m.icon : '🔒'}</span></div>
+          <div class="jn-body">
+            <div class="jn-head">
+              <span class="jn-ch">Chapter ${m.chapter}</span>
+              <span class="jn-title">${m.reached || isNext ? m.title : '???'}</span>
+              ${m.reached ? '<span class="pill gold jn-tag">✓ Reached</span>' : isNext ? '<span class="pill jn-tag">In progress</span>' : ''}
+            </div>
+            ${body}
+          </div>
+        </div>`;
+    }).join('');
+
+    const modeTabs: Array<[UIMode, string]> = [['explorer', '📜 Explorer'], ['free_roam', '🌿 Free Roam']];
+    return `
+      <div class="card">
+        <div class="section-title">🗺️ Journey Timeline</div>
+        <div class="seg" style="margin-bottom:10px;">
+          ${modeTabs.map(([id, l]) => `<button class="${this.journeyMode === id ? 'active' : ''}" data-journey="${id}">${l}</button>`).join('')}
+        </div>
+        <div class="journey-summary">
+          <div class="progress" style="height:10px;"><div style="width:${pct}%"></div></div>
+          <div class="xp-label"><span>${reached} of ${list.length} checkpoints reached</span><span>${pct}%</span></div>
+          <div class="muted" style="font-size:0.74rem;margin-top:4px;">Checkpoints save the moment you reach them — you never lose a beat by leaving a match.</div>
+        </div>
+        <div class="journey-track">${nodes}</div>
+      </div>`;
+  }
+
+  private metricLabel(metric: string): string {
+    return { score: 'score', kills: 'eliminations', stars: '⭐ collected', survival: 'seconds survived', areas: 'landmarks found', level: 'level' }[metric] || metric;
   }
 
   // ---------- SETTINGS ----------
@@ -3299,6 +3471,13 @@ ${this.renderBottomControls()}
     document.querySelectorAll('.copy-btn').forEach(b => b.addEventListener('click', (e) => { const c = (e.currentTarget as HTMLElement).dataset.code!; navigator.clipboard?.writeText(c); this.showToast(`📋 Copied ${c}`); }));
     document.querySelectorAll('[data-rwregion]').forEach(b => b.addEventListener('click', () => { this.rewardRegion = (b as HTMLElement).dataset.rwregion!; audio.playClick(); this.render(); this.loadRewards(); }));
     document.querySelectorAll('.redeem-btn').forEach(b => b.addEventListener('click', () => this.redeemReward((b as HTMLElement).dataset.reward!)));
+    document.querySelectorAll('[data-journey]').forEach(b => b.addEventListener('click', () => {
+      audio.playClick();
+      this.journeyMode = (b as HTMLElement).dataset.journey as UIMode;
+      this.milestones = []; // show the loading state rather than the other mode's beats
+      this.render();
+      this.loadMilestones(this.journeyMode);
+    }));
     document.getElementById('replay-legend')?.addEventListener('click', () => { audio.playClick(); this.showLegend(); });
     document.getElementById('replay-story')?.addEventListener('click', () => { audio.playClick(); this.showLegend(); });
     document.getElementById('replay-tutorial')?.addEventListener('click', () => { audio.playClick(); this.showTutorial(); });
