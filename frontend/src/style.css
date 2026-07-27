@@ -592,16 +592,25 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .fr-pc-score-val { font-family: var(--font-title); font-weight: 900; color: var(--green-deep); font-size: 0.9rem; }
 .fr-pc-stage { font-size: 0.65rem; font-weight: 800; color: var(--green-deep); background: var(--green-bg); padding: 1px 6px; border-radius: 8px; }
 
-/* ---- Compact Daily Mission Card (Left Column) ---- */
+/* ---- Compact Daily Mission tracker (Left Column, under the pause button) ----
+   Deliberately chrome-free: no card, no border, no shadow — it reads as part of the world
+   rather than a panel sitting on top of it. Legibility comes from a white halo on the text
+   instead of a background plate. */
 .mission-tracker-card {
-  background: rgba(255, 255, 255, 0.92);
-  border: 1.5px solid var(--line);
-  border-radius: 12px;
-  padding: 5px 8px;
-  box-shadow: var(--shadow);
+  background: none;
+  border: 0;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  padding: 2px 0;
   width: auto;
   max-width: 135px;
   box-sizing: border-box;
+}
+.mission-tracker-card .mt-row {
+  text-shadow:
+    0 1px 2px rgba(255, 255, 255, 0.95),
+    0 0 6px rgba(255, 255, 255, 0.85);
 }
 .hud-mission-row {
   display: flex;
@@ -1048,12 +1057,19 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 }
 .tb-top-bar > * { pointer-events: auto; }
 
+/* Left column: pause on top, daily tasks stacked underneath it. Explicitly placed in the
+   grid's first column across both rows so the stack owns the whole left edge. */
 .hud-left-panel {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
   flex-shrink: 0;
+}
+.mode-fr-grid > .hud-left-panel {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: start;
 }
 
 .hud-center-panel, .hud-center-stack {
@@ -2553,9 +2569,11 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   pointer-events: auto;
 }
 
-/* Pause Button pinned to top-left */
-.tb-top-bar .tb-a-pause,
-.hud-left-panel .tb-a-pause {
+/* Pause button pinned to top-left — ONLY when it is a direct grid child (Battle Royale /
+   Team Battle). In Free Roam it lives inside .hud-left-panel above the daily tasks; pinning
+   it there took it out of that column's flow, so the opaque mission card rendered on top of
+   it and the pause button was invisible. */
+.tb-top-bar > .tb-a-pause {
   position: absolute;
   top: 0;
   left: 0;

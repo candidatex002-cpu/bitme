@@ -3167,7 +3167,9 @@ ${this.renderBottomControls()}
           <div class="hud-left-panel">
             <button id="nav-pause" class="hud-pause tb-a-pause">⏸</button>
             ${showMissions ? `
-            <div class="mission-tracker-card hud-panel tb-a-mission" id="mission-tracker">
+            <!-- No hud-panel class: the daily tracker is deliberately chrome-free, so it
+                 must not pick up the shared panel's white plate and blur. -->
+            <div class="mission-tracker-card tb-a-mission" id="mission-tracker">
               <div id="mission-tracker-rows"></div>
             </div>` : ''}
           </div>
