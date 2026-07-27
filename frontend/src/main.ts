@@ -874,6 +874,7 @@ class AnacondaPark {
   private checkpointing = new Set<string>(); // in-flight, so a 30 Hz tick can't double-claim
 
   private async loadMilestones(mode = this.selectedUIMode) {
+    if (!this.online) { this.loadMilestonesOffline(mode); return; }
     if (!this.token) return;
     try {
       const res = await this.api(`/api/milestones?mode=${encodeURIComponent(mode)}`);
@@ -883,14 +884,27 @@ class AnacondaPark {
       this.milestoneMode = mode;
       if (this.page === 'story') this.render();
     } catch {
-      // Offline: fall back to whatever the server config carried, so the timeline still shows.
-      const defs = (this.serverConfig?.milestones || []).filter((m: any) => m.modes?.includes(mode));
-      if (defs.length && !this.milestones.length) {
-        const reached: string[] = this.profile?.milestones || [];
-        this.milestones = defs.map((m: any) => ({ ...m, reached: reached.includes(m.id), progress: 0, pct: 0 }));
-        this.milestoneMode = mode;
-      }
+      this.loadMilestonesOffline(mode);
     }
+  }
+
+  // No backend reachable: grade the journey against locally-recorded progress so the timeline
+  // still tells the story and beats still celebrate. The server reconciles on next connection.
+  private loadMilestonesOffline(mode: string) {
+    const defs = (this.serverConfig?.milestones?.length ? this.serverConfig.milestones : story.MILESTONES)
+      .filter((m: any) => m.modes?.includes(mode));
+    const reached: string[] = this.profile?.milestones || [];
+    this.milestones = defs.map((m: any) => {
+      const progress = Math.min(this.milestoneValue(m.metric, this.lastSnake), m.target);
+      return {
+        ...m,
+        reached: reached.includes(m.id),
+        progress,
+        pct: m.target > 0 ? Math.min(100, Math.round((progress / m.target) * 100)) : 100,
+      };
+    });
+    this.milestoneMode = mode;
+    if (this.page === 'story') this.render();
   }
 
   // The live value for a milestone metric, from this match plus what the profile records.

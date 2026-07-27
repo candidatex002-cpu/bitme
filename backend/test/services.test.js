@@ -371,6 +371,29 @@ test('Milestones: the end-of-match sweep banks everything earned, once', () => {
   assert.equal(db.getProfile(user.id).stars, stars, 'no extra payout');
 });
 
+test('Milestones: the offline client copy matches the server ladder exactly', () => {
+  // The frontend ships a copy so a build with no backend can still show the journey. The
+  // server owns the real thing, so any drift between them is a bug — catch it here rather
+  // than as a player seeing one story and being paid for another.
+  const src = fs.readFileSync(path.resolve(__dirname, '..', '..', 'frontend', 'src', 'game', 'story.ts'), 'utf8');
+  const block = src.slice(src.indexOf('export const MILESTONES'));
+  const { gameConfig } = require(dist('config/GameConfig.js'));
+
+  for (const m of gameConfig.milestones) {
+    assert.ok(block.includes(`id: '${m.id}'`), `client copy is missing "${m.id}"`);
+    assert.ok(block.includes(`target: ${m.target},`), `client copy is missing target ${m.target} (${m.id})`);
+    assert.ok(block.includes(m.title), `client copy is missing the title "${m.title}"`);
+    // Narration is the feature — a drifted story is as bad as a drifted number.
+    const story = m.story.replace(/'/g, "\\'");
+    assert.ok(block.includes(m.story) || block.includes(story), `client copy is missing the narration for "${m.id}"`);
+  }
+  // And nothing extra on the client that the server would refuse to pay out.
+  const clientIds = [...block.matchAll(/id: '([a-z_]+)'/g)].map(x => x[1]);
+  const serverIds = new Set(gameConfig.milestones.map(m => m.id));
+  for (const id of clientIds) assert.ok(serverIds.has(id), `client copy has an unknown milestone "${id}"`);
+  assert.equal(clientIds.length, gameConfig.milestones.length, 'both ladders have the same number of beats');
+});
+
 test('Milestones: survive a restart (persisted with the profile)', () => {
   const { user, profile } = db.createUser('MsPersist', 'msp@x.io', 'hash', false);
   db.updateProfile(user.id, { stats: { ...profile.stats, highestScore: 150 } });
