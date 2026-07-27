@@ -1,47 +1,92 @@
 import { db } from '../db/Database';
+import { gameConfig, skinById, SkinDef } from '../config/GameConfig';
 
-export interface ShopItem {
-  id: string;
-  name: string;
-  category: 'skin' | 'trail' | 'emote';
-  priceStars: number;
-  priceTickets: number;
-  previewColor: string;
-  description: string;
+// Server-authoritative cosmetics shop.
+//
+// Skin definitions (and their prices) live in GameConfig, so a content editor can re-price or
+// add a skin from game-config.json with no code change. Ownership lives on the profile as
+// `unlockedSkins`. The client is never trusted for either: it can render a shop, but only the
+// server decides what a player owns, what it costs, and whether they may equip it.
+
+export interface ShopSkinView extends SkinDef {
+  owned: boolean;
+  equipped: boolean;
+  affordable: boolean;
+  levelMet: boolean;
+  purchasable: boolean;
+}
+
+export interface PurchaseResult {
+  success: boolean;
+  message: string;
+  profile?: any;
+  skinId?: string;
 }
 
 export class EconomyService {
-  private static catalog: ShopItem[] = [
-    { id: 'skin_emerald', name: 'Emerald Anaconda', category: 'skin', priceStars: 0, priceTickets: 0, previewColor: '#2A9D8F', description: 'Standard sleek forest python' },
-    { id: 'skin_golden', name: 'Golden Serpent', category: 'skin', priceStars: 1000, priceTickets: 10, previewColor: '#E9C46A', description: 'Shimmering gold scales from the sunlit reserve' },
-    { id: 'skin_crimson', name: 'Crimson Viper', category: 'skin', priceStars: 2500, priceTickets: 25, previewColor: '#E76F51', description: 'Aggressive fiery viper aesthetics' },
-    { id: 'skin_shadow', name: 'Shadow Cobra', category: 'skin', priceStars: 5000, priceTickets: 50, previewColor: '#264653', description: 'Stealth night hunter pattern' },
-    { id: 'trail_glow', name: 'Jungle Glow', category: 'trail', priceStars: 800, priceTickets: 5, previewColor: '#A8DADC', description: 'Bioluminescent spore trail' },
-    { id: 'trail_fire', name: 'Solar Flare', category: 'trail', priceStars: 1500, priceTickets: 15, previewColor: '#F4A261', description: 'Blazing particles behind your path' },
-  ];
+  // The full catalog annotated for one player. Without a userId it degrades to the raw price
+  // list (the anonymous catalog view) — it never reveals anything about another account.
+  public static getCatalog(userId?: string): { skins: ShopSkinView[]; starterSkins: string[] } {
+    const profile = userId ? db.getProfile(userId) : undefined;
+    const owned = new Set(profile?.unlockedSkins || gameConfig.cosmetics.starterSkins);
+    const stars = profile?.stars ?? 0;
+    const tickets = profile?.tickets ?? 0;
+    const level = profile?.level ?? 1;
 
-  public static getCatalog(): ShopItem[] {
-    return this.catalog;
+    const skins = gameConfig.cosmetics.skins.map((s): ShopSkinView => {
+      const isOwned = owned.has(s.id);
+      const affordable = stars >= s.costStars && tickets >= s.costTickets;
+      const levelMet = level >= s.minLevel;
+      return {
+        ...s,
+        owned: isOwned,
+        equipped: profile?.equippedSkin === s.id,
+        affordable,
+        levelMet,
+        purchasable: !isOwned && affordable && levelMet,
+      };
+    });
+    return { skins, starterSkins: gameConfig.cosmetics.starterSkins };
   }
 
-  public static purchaseItem(userId: string, itemId: string): { success: boolean; message: string; profile?: any } {
-    const item = this.catalog.find(i => i.id === itemId);
-    if (!item) return { success: false, message: 'Item not found in catalog' };
+  public static ownsSkin(userId: string, skinId: string): boolean {
+    const profile = db.getProfile(userId);
+    if (!profile) return false;
+    // A profile written before the ownership model falls back to the starter set.
+    const owned = profile.unlockedSkins?.length ? profile.unlockedSkins : gameConfig.cosmetics.starterSkins;
+    return owned.includes(skinId);
+  }
+
+  // Buy a skin. Every gate (existence, double-purchase, level, funds) is checked here and the
+  // charge is derived from the config price — never from anything the client sent.
+  public static purchaseSkin(userId: string, skinId: string): PurchaseResult {
+    const skin = skinById(skinId);
+    if (!skin) return { success: false, message: 'Unknown skin' };
 
     const profile = db.getProfile(userId);
     if (!profile) return { success: false, message: 'Player profile not found' };
 
-    if (profile.stars < item.priceStars || profile.tickets < item.priceTickets) {
-      return { success: false, message: 'Insufficient stars or battle pass tickets' };
+    const owned = profile.unlockedSkins || [];
+    if (owned.includes(skinId)) return { success: false, message: `You already own ${skin.name}` };
+    if (profile.level < skin.minLevel) return { success: false, message: `${skin.name} unlocks at level ${skin.minLevel}` };
+    if (profile.stars < skin.costStars || profile.tickets < skin.costTickets) {
+      return { success: false, message: `Not enough ${profile.stars < skin.costStars ? 'stars' : 'tickets'}` };
     }
 
     const updated = db.updateProfile(userId, {
-      stars: profile.stars - item.priceStars,
-      tickets: profile.tickets - item.priceTickets,
-      equippedSkin: item.category === 'skin' ? item.name : profile.equippedSkin,
-      equippedTrail: item.category === 'trail' ? item.name : profile.equippedTrail,
+      stars: profile.stars - skin.costStars,
+      tickets: profile.tickets - skin.costTickets,
+      unlockedSkins: [...owned, skinId],
     });
+    return { success: true, message: `Unlocked ${skin.name}!`, profile: updated, skinId };
+  }
 
-    return { success: true, message: `Successfully unlocked ${item.name}!`, profile: updated };
+  // Equip an owned skin. Refuses anything the player has not actually unlocked.
+  public static equipSkin(userId: string, skinId: string): PurchaseResult {
+    if (!skinById(skinId)) return { success: false, message: 'Unknown skin' };
+    if (!this.ownsSkin(userId, skinId)) return { success: false, message: 'You do not own that skin' };
+    const updated = db.updateProfile(userId, { equippedSkin: skinId });
+    if (!updated) return { success: false, message: 'Player profile not found' };
+    return { success: true, message: `Equipped ${skinId}`, profile: updated, skinId };
   }
 }

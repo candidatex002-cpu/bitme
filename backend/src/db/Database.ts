@@ -1,5 +1,6 @@
-import { UserAccount, PlayerProfile, PlayerStats, MissionObjective, Achievement, AntiCheatViolation, ProgressMetric, Evolution, CouponDefinition, CouponRedemption, SocialGraph, MatchRecord } from '../types';
+import { UserAccount, PlayerProfile, PlayerStats, MissionObjective, Achievement, AntiCheatViolation, ProgressMetric, Evolution, CouponDefinition, CouponRedemption, SocialGraph, MatchRecord, MatchInvite } from '../types';
 import { ProgressionService } from '../services/ProgressionService';
+import { gameConfig } from '../config/GameConfig';
 import { SupabaseSync } from './SupabaseSync';
 import bcrypt from 'bcryptjs';
 import fs from 'fs';
@@ -19,6 +20,8 @@ export class Database {
   private social: Map<string, SocialGraph> = new Map();
   // §V7 Per-user match history (most-recent-first, capped).
   private matchHistory: Map<string, MatchRecord[]> = new Map();
+  // §social Pending "come play" invites, keyed by RECIPIENT userId.
+  private matchInvites: Map<string, MatchInvite[]> = new Map();
 
   // §10 File-based persistence — profiles/progress/leaderboard survive restarts.
   // Swap load()/flush() for a Postgres/Redis client to go fully cloud/multi-node.
@@ -69,6 +72,10 @@ export class Database {
       couponRedemptions: this.couponRedemptions,
       social: Array.from(this.social.entries()),
       matchHistory: Array.from(this.matchHistory.entries()),
+      // Drop already-expired invites on the way out rather than persisting dead rows.
+      matchInvites: Array.from(this.matchInvites.entries())
+        .map(([k, v]) => [k, v.filter(i => i.expiresAt > Date.now())] as [string, MatchInvite[]])
+        .filter(([, v]) => v.length > 0),
     };
     try {
       fs.mkdirSync(path.dirname(this.dataFile), { recursive: true });
@@ -79,10 +86,28 @@ export class Database {
     SupabaseSync.saveSnapshot(snapshot); // §11 mirror to the cloud (no-op unless configured)
   }
 
+  // Skins predate the ownership model, so a snapshot written by an older build has no
+  // `unlockedSkins`. Grant the starter set plus whatever the player already had equipped —
+  // nobody loses the look they were using, but from here on ownership is enforced.
+  private migrateSkinOwnership(p: PlayerProfile): PlayerProfile {
+    if (Array.isArray(p.unlockedSkins)) return p;
+    const owned = new Set(gameConfig.cosmetics.starterSkins);
+    if (p.equippedSkin) owned.add(p.equippedSkin);
+    p.unlockedSkins = Array.from(owned);
+    return p;
+  }
+
+  // Profiles written before friend codes existed get one on load, then are indexed either way.
+  private migrateFriendCode(p: PlayerProfile): PlayerProfile {
+    if (!p.friendCode) p.friendCode = this.generateFriendCode();
+    this.indexFriendCode(p);
+    return p;
+  }
+
   // Populate the in-memory maps from a persisted snapshot (file or cloud).
   private applySnapshot(data: any) {
     if (data.users) for (const u of data.users) { this.users.set(u.id, u); this.users.set(u.username.toLowerCase(), u); }
-    if (data.profiles) for (const p of data.profiles) this.profiles.set(p.userId, p);
+    if (data.profiles) for (const p of data.profiles) this.profiles.set(p.userId, this.migrateFriendCode(this.migrateSkinOwnership(p)));
     if (data.missions) for (const [k, v] of data.missions) this.missions.set(k, v);
     if (data.achievements) for (const [k, v] of data.achievements) this.achievements.set(k, v);
     if (data.leaderboard) for (const [k, v] of data.leaderboard) this.globalLeaderboard.set(k, v);
@@ -90,6 +115,7 @@ export class Database {
     if (data.couponRedemptions) this.couponRedemptions = data.couponRedemptions;
     if (data.social) for (const [k, v] of data.social) this.social.set(k, v);
     if (data.matchHistory) for (const [k, v] of data.matchHistory) this.matchHistory.set(k, v);
+    if (data.matchInvites) for (const [k, v] of data.matchInvites) this.matchInvites.set(k, v);
   }
 
   private load() {
@@ -156,7 +182,8 @@ export class Database {
       displayName: 'Apex Anaconda',
       avatarUrl: 'https://api.dicebear.com/7.x/bottts/svg?seed=AnacondaAlpha',
       level: 176, xp: 3450, evolutionXp: 2100, prestige: 0, rating: 1420, stars: 1250, tickets: 15,
-      equippedSkin: 'Forest', equippedEvolution: 'Young', unlockedEvolutions: ['Baby', 'Young'], equippedTrail: 'Jungle Glow',
+      friendCode: 'AP-RANG-ER01',
+      equippedSkin: 'Forest', unlockedSkins: [...gameConfig.cosmetics.starterSkins], equippedEvolution: 'Young', unlockedEvolutions: ['Baby', 'Young'], equippedTrail: 'Jungle Glow',
       equippedAccessory: undefined, unlockedAccessories: [],
       stats: { ...Database.defaultStats(), matchesPlayed: 42, matchesWon: 11, matchesLost: 31, totalKills: 156, totalFoodEaten: 4200, highestScore: 18500, survivalTimeSeconds: 14200, cherriesCollected: 320, totalStars: 5200 },
     };
@@ -164,6 +191,7 @@ export class Database {
     this.users.set(demoUser.id, demoUser);
     this.users.set(demoUser.username.toLowerCase(), demoUser);
     this.profiles.set(demoUser.id, demoProfile);
+    this.indexFriendCode(demoProfile);
     this.missions.set(demoUser.id, this.defaultMissions());
     this.achievements.set(demoUser.id, this.defaultAchievements());
 
@@ -193,7 +221,8 @@ export class Database {
       displayName: username,
       avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`,
       level: 1, xp: 0, evolutionXp: 0, prestige: 0, rating: 1000, stars: 500, tickets: 5,
-      equippedSkin: 'Forest', equippedEvolution: 'Baby', unlockedEvolutions: ['Baby'], equippedTrail: 'Classic Dust',
+      friendCode: this.generateFriendCode(),
+      equippedSkin: 'Forest', unlockedSkins: [...gameConfig.cosmetics.starterSkins], equippedEvolution: 'Baby', unlockedEvolutions: ['Baby'], equippedTrail: 'Classic Dust',
       equippedAccessory: undefined, unlockedAccessories: [],
       stats: Database.defaultStats(),
       modeStats: {},
@@ -202,6 +231,7 @@ export class Database {
     this.users.set(id, user);
     this.users.set(username.toLowerCase(), user);
     this.profiles.set(id, profile);
+    this.indexFriendCode(profile);
     this.missions.set(id, this.defaultMissions());
     this.achievements.set(id, this.defaultAchievements());
     this.markDirty();
@@ -220,6 +250,37 @@ export class Database {
 
   public getUserByUsername(username: string): UserAccount | undefined { return this.users.get(username.toLowerCase()); }
   public getUserById(id: string): UserAccount | undefined { return this.users.get(id); }
+
+  // §social Friend codes -----------------------------------------------------
+  // A short, shareable public id. Ambiguous glyphs (O/0, I/1, S/5) are excluded so a code
+  // read off a screen or spoken aloud can't be mistyped into someone else's account.
+  private static readonly CODE_ALPHABET = 'ABCDEFGHJKLMNPQRTUVWXY2346789';
+  private friendCodeIndex: Map<string, string> = new Map(); // code → userId
+
+  public static normalizeFriendCode(raw: string): string {
+    return String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  }
+
+  private generateFriendCode(): string {
+    const A = Database.CODE_ALPHABET;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      let body = '';
+      for (let i = 0; i < 8; i++) body += A[Math.floor(Math.random() * A.length)];
+      const code = `AP-${body.slice(0, 4)}-${body.slice(4)}`;
+      if (!this.friendCodeIndex.has(Database.normalizeFriendCode(code))) return code;
+    }
+    // Astronomically unlikely; fall back to something guaranteed unique.
+    return `AP-${Date.now().toString(36).toUpperCase().slice(-8)}`;
+  }
+
+  private indexFriendCode(profile: PlayerProfile) {
+    if (profile.friendCode) this.friendCodeIndex.set(Database.normalizeFriendCode(profile.friendCode), profile.userId);
+  }
+
+  public getProfileByFriendCode(code: string): PlayerProfile | undefined {
+    const userId = this.friendCodeIndex.get(Database.normalizeFriendCode(code));
+    return userId ? this.profiles.get(userId) : undefined;
+  }
   public getProfile(userId: string): PlayerProfile | undefined { return this.profiles.get(userId); }
 
   public updateProfile(userId: string, updates: Partial<PlayerProfile>): PlayerProfile | undefined {
@@ -413,6 +474,63 @@ export class Database {
     return g;
   }
   public saveSocial() { this.markDirty(); }
+
+  // ------------------------------------------------------------- §social match invites
+  // Stored per RECIPIENT so "what am I waiting on?" is a single map read, and so an invite
+  // survives a restart — the whole point is that it outlives the sender's session.
+  private static readonly INVITE_TTL_MS = 24 * 60 * 60 * 1000; // a day; after that it's noise
+  private static readonly MAX_INVITES_PER_USER = 20;
+
+  public addMatchInvite(invite: Omit<MatchInvite, 'id' | 'createdAt' | 'expiresAt'>): MatchInvite {
+    const list = this.matchInvites.get(invite.toUserId) || [];
+    // One pending invite per sender: re-inviting refreshes the existing one instead of
+    // stacking duplicates that the recipient would have to dismiss one by one.
+    const existing = list.findIndex(i => i.fromUserId === invite.fromUserId);
+    if (existing >= 0) list.splice(existing, 1);
+
+    const now = Date.now();
+    const full: MatchInvite = { ...invite, id: `inv_${now}_${Math.random().toString(36).slice(2, 7)}`, createdAt: now, expiresAt: now + Database.INVITE_TTL_MS };
+    list.unshift(full);
+    // Newest-first, bounded — an unread inbox can't grow without limit.
+    this.matchInvites.set(invite.toUserId, list.slice(0, Database.MAX_INVITES_PER_USER));
+    this.markDirty();
+    return full;
+  }
+
+  // Live (non-expired) invites for a user. Prunes as it reads so expiry needs no sweeper.
+  public getMatchInvites(userId: string): MatchInvite[] {
+    const list = this.matchInvites.get(userId);
+    if (!list?.length) return [];
+    const now = Date.now();
+    const live = list.filter(i => i.expiresAt > now);
+    if (live.length !== list.length) { this.matchInvites.set(userId, live); this.markDirty(); }
+    return live;
+  }
+
+  public getMatchInvite(userId: string, inviteId: string): MatchInvite | undefined {
+    return this.getMatchInvites(userId).find(i => i.id === inviteId);
+  }
+
+  public removeMatchInvite(userId: string, inviteId: string): boolean {
+    const list = this.matchInvites.get(userId);
+    if (!list) return false;
+    const next = list.filter(i => i.id !== inviteId);
+    if (next.length === list.length) return false;
+    this.matchInvites.set(userId, next);
+    this.markDirty();
+    return true;
+  }
+
+  // Stamp invites as handed to a live socket, so the client can tell a fresh nudge from one
+  // it has already been shown.
+  public markInvitesDelivered(userId: string): MatchInvite[] {
+    const live = this.getMatchInvites(userId);
+    if (!live.length) return live;
+    const now = Date.now();
+    for (const i of live) if (!i.deliveredAt) i.deliveredAt = now;
+    this.markDirty();
+    return live;
+  }
 }
 
 export const db = new Database();

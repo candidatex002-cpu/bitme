@@ -1,4 +1,4 @@
-import { GameClient, GameMode, GameStateTick, SnakeData, serverBase } from './game/GameClient.js';
+import { GameClient, GameMode, GameStateTick, SnakeData, serverBase, hasConfiguredServer, WORLD } from './game/GameClient.js';
 import { Renderer } from './game/Renderer.js';
 import { audio } from './game/AudioSystem.js';
 import { ads } from './game/AdService.js';
@@ -209,7 +209,7 @@ class AnacondaPark {
   private usernameState: { status: 'idle' | 'checking' | 'ok' | 'bad'; reason?: string; suggestions?: string[] } = { status: 'idle' };
   private usernameTimer: any = null;
   // §8 Server-driven social graph (loaded from /api/social/overview)
-  private social: { friends: any[]; incoming: any[]; outgoing: any[]; blocked: any[] } = { friends: [], incoming: [], outgoing: [], blocked: [] };
+  private social: { friends: any[]; incoming: any[]; outgoing: any[]; blocked: any[]; myFriendCode?: string } = { friends: [], incoming: [], outgoing: [], blocked: [] };
   private isEditingProfile = false;
   private editingAvatar = '🐍';
 
@@ -321,7 +321,7 @@ class AnacondaPark {
     if (unameEl) { unameEl.className = 'onb-uname checking'; unameEl.innerText = 'Checking availability…'; }
     this.usernameTimer = setTimeout(async () => {
       try {
-        const res = await fetch(`${API}/api/auth/username-check?name=${encodeURIComponent(name)}`);
+        const res = await this.api(`/api/auth/username-check?name=${encodeURIComponent(name)}`);
         const d = await res.json();
         if (name !== this.onboardName) return; // stale
         if (d.available) {
@@ -364,7 +364,7 @@ class AnacondaPark {
     const submit = document.getElementById('onb-submit') as HTMLButtonElement | null;
     if (submit) { submit.disabled = true; submit.innerText = 'Creating…'; }
     try {
-      const res = await fetch(`${API}/api/auth/onboard`, {
+      const res = await this.api(`/api/auth/onboard`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: this.onboardName, country, language }),
       });
@@ -548,7 +548,7 @@ class AnacondaPark {
       // silently re-authenticate as a guest instead of spamming 401s with a dead token.
       let valid = false;
       if (this.token && this.token !== 'guest_local_token' && this.tokenLooksValid(this.token)) {
-        const res = await fetch(API + '/api/player/profile', { headers: { Authorization: `Bearer ${this.token}` } });
+        const res = await this.api('/api/player/profile', { headers: { Authorization: `Bearer ${this.token}` } });
         if (res.ok) {
           const d = await res.json();
           if (d?.profile) {
@@ -558,7 +558,7 @@ class AnacondaPark {
         }
       }
       if (!valid) {
-        const res = await fetch(API + '/api/auth/guest', { method: 'POST' });
+        const res = await this.api('/api/auth/guest', { method: 'POST' });
         const data = await res.json();
         if (data?.token) { this.token = data.token; this.profile = data.profile; }
       }
@@ -594,14 +594,17 @@ class AnacondaPark {
     if (!this.token) return;
     const h = { Authorization: `Bearer ${this.token}` };
     try {
-      const [m, a, lb, cfg] = await Promise.all([
-        fetch(API + '/api/missions', { headers: h }), fetch(API + '/api/achievements', { headers: h }), fetch(API + '/api/leaderboard'),
-        fetch(API + '/api/config'), // §12 public gameplay config (no auth)
+      const [m, a, lb, cfg, shop] = await Promise.all([
+        this.api('/api/missions', { headers: h }), this.api('/api/achievements', { headers: h }),
+        this.api('/api/leaderboard', { headers: h }), // §sec now authenticated
+        this.api('/api/config'), // §12 public gameplay config (no auth)
+        this.api('/api/shop/catalog', { headers: h }), // §shop ownership + pricing
       ]);
       this.missions = (await m.json()).missions || [];
       this.achievements = (await a.json()).achievements || [];
       this.leaderboard = (await lb.json()).leaderboard || [];
       this.serverConfig = await cfg.json().catch(() => null);
+      this.shopSkins = (await shop.json().catch(() => ({}))).skins || [];
     } catch { /* */ }
   }
 
@@ -609,10 +612,22 @@ class AnacondaPark {
     // Only overwrite the cached profile when the server actually returns one (§10 — a 401
     // or an offline fetch must not wipe locally-persisted progress).
     try {
-      const res = await fetch(API + '/api/player/profile', { headers: { Authorization: `Bearer ${this.token}` } });
+      const res = await this.api('/api/player/profile', { headers: { Authorization: `Bearer ${this.token}` } });
       const data = await res.json();
       if (data?.profile) { this.profile = data.profile; this.persistSession(); }
     } catch { /* keep cached profile */ }
+  }
+
+  // Single gate for every backend call.
+  //
+  // The game server is a long-lived Socket.IO process and cannot be hosted on a static/
+  // serverless deploy, so a build with no configured backend has no API to talk to. Firing
+  // requests at it anyway produced a doomed 404/500 on every screen. We fail fast instead —
+  // every caller already has an offline fallback — and flip to local play.
+  private online = hasConfiguredServer();
+  private async api(path: string, init?: RequestInit): Promise<Response> {
+    if (!this.online) throw new Error('offline: no backend configured');
+    return fetch(API + path, init);
   }
 
   private rank() { return this.profile?.rank || { label: 'Bronze III', color: '#b45309', tier: 'Bronze' }; }
@@ -624,18 +639,97 @@ class AnacondaPark {
       this.startRenderLoop();
     }
   }
-  private go(p: Page) { this.page = p; this.screen = 'app'; audio.playClick(); this.render(); if (p === 'rewards') this.loadRewards(); if (p === 'inventory') this.loadAvailableCoupons(); if (p === 'social') this.loadSocial(); if (p === 'history') this.loadMatchHistory(); if (p === 'leaderboard') this.loadLeaderboardCategory(); if (p === 'admin') this.loadAdminCoupons(); if (p === 'play' && this.matchType === 'global') this.measureGlobalPing(); ads.showBanner(); /* §14 lobby-only banner */ }
+  private go(p: Page) { this.page = p; this.screen = 'app'; audio.playClick(); this.render(); if (p === 'rewards') this.loadRewards(); if (p === 'inventory') { this.loadAvailableCoupons(); this.loadShopCatalog(); } if (p === 'events') this.loadEvents(); if (p === 'social') { this.loadSocial(); this.loadInvites(); } if (p === 'history') this.loadMatchHistory(); if (p === 'leaderboard') this.loadLeaderboardCategory(); if (p === 'admin') this.loadAdminCoupons(); if (p === 'play' && this.matchType === 'global') this.measureGlobalPing(); ads.showBanner(); /* §14 lobby-only banner */ }
+
+  // §shop Server-driven skin catalog (prices, ownership, level gates). Loaded with the
+  // Inventory page; the client never decides what the player owns.
+  private shopSkins: any[] = [];
+  private async loadShopCatalog() {
+    try {
+      const res = await this.api('/api/shop/catalog', { headers: { Authorization: `Bearer ${this.token}` } });
+      const d = await res.json();
+      this.shopSkins = d.skins || [];
+      if (this.page === 'inventory') this.render();
+    } catch { /* offline — fall back to the locally-known skin list */ }
+  }
+  private skinMeta(id: string) { return this.shopSkins.find(s => s.id === id); }
+  private ownsSkin(id: string): boolean {
+    // Offline (no catalog) the client can only trust its cached profile.
+    const owned: string[] = this.profile?.unlockedSkins || [];
+    if (this.shopSkins.length) return !!this.skinMeta(id)?.owned;
+    return owned.length ? owned.includes(id) : id === 'Forest' || id === 'Jungle';
+  }
 
   private async equipSkin(id: string) {
-    audio.playClick(); this.selectedSkin = id; if (this.profile) this.profile.equippedSkin = id;
-    try { await fetch(API + '/api/player/equip', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify({ skin: id }) }); } catch { /* */ }
+    audio.playClick();
+    if (!this.ownsSkin(id)) { this.promptBuySkin(id); return; }
+    const prev = this.selectedSkin;
+    this.selectedSkin = id; if (this.profile) this.profile.equippedSkin = id;
+    this.render();
+    try {
+      const res = await this.api('/api/player/equip', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify({ skin: id }) });
+      const d = await res.json();
+      if (!res.ok || !d.success) {
+        // Server rejected it (not owned) — roll the optimistic change back.
+        this.selectedSkin = prev; if (this.profile) this.profile.equippedSkin = prev;
+        this.showToast(`🔒 ${d.message || 'You do not own that skin'}`);
+      } else if (d.profile) { this.profile = d.profile; this.persistSession(); }
+    } catch { /* offline — keep the local choice */ }
+    this.render();
+  }
+
+  // Confirm-then-buy. The price shown comes from the server catalog and the charge is applied
+  // server-side; this dialog only collects intent.
+  private promptBuySkin(id: string) {
+    const meta = this.skinMeta(id);
+    const visual = SKINS.find(s => s.id === id);
+    if (!meta) { this.showToast('🔒 This skin is locked'); return; }
+    document.getElementById('buy-overlay')?.remove();
+    const el = document.createElement('div');
+    el.id = 'buy-overlay';
+    el.className = 'onb-overlay';
+    const cost = `${meta.costStars} ⭐${meta.costTickets ? ` + ${meta.costTickets} 🎟️` : ''}`;
+    const blocked = !meta.levelMet ? `Unlocks at level ${meta.minLevel}` : !meta.affordable ? 'Not enough stars' : '';
+    el.innerHTML = `
+      <div class="onb-card buy-card">
+        <div class="buy-preview" style="background:${visual?.grad || '#2E7D32'}"></div>
+        <div class="onb-title">${meta.name}</div>
+        <div class="onb-sub"><span class="rarity-tag ${meta.rarity}">${meta.rarity}</span> · ${meta.family} family</div>
+        <div class="buy-price">${cost}</div>
+        ${blocked ? `<div class="buy-blocked">🔒 ${blocked}</div>` : ''}
+        <button class="btn btn-primary btn-block" id="buy-confirm" ${blocked ? 'disabled' : ''}>Unlock &amp; Equip</button>
+        <button class="btn btn-ghost btn-block" id="buy-cancel" style="margin-top:8px;">Cancel</button>
+      </div>`;
+    document.body.appendChild(el);
+    document.getElementById('buy-cancel')?.addEventListener('click', () => { audio.playClick(); el.remove(); });
+    document.getElementById('buy-confirm')?.addEventListener('click', () => { el.remove(); this.buySkin(id); });
+  }
+
+  private async buySkin(id: string) {
+    audio.playClick();
+    try {
+      const res = await this.api('/api/shop/purchase', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
+        body: JSON.stringify({ skinId: id }),
+      });
+      const d = await res.json();
+      if (res.ok && d.success) {
+        if (d.profile) { this.profile = d.profile; this.persistSession(); }
+        audio.playFanfare();
+        this.showToast(`✨ ${d.message}`);
+        await this.loadShopCatalog();
+        await this.equipSkin(id); // owned now — equips for real
+        return;
+      }
+      this.showToast(`❌ ${d.message || d.error || 'Purchase failed'}`);
+    } catch { this.showToast('❌ Purchase failed — you appear to be offline'); }
     this.render();
   }
 
   private async equipEvolution(evo: string) {
     audio.playClick();
     try {
-      const res = await fetch(API + '/api/player/evolution', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify({ evolution: evo }) });
+      const res = await this.api('/api/player/evolution', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify({ evolution: evo }) });
       const data = await res.json();
       if (data.success) { this.profile = data.profile; this.showToast(`🐍 ${data.message}`); audio.playChime(); } else this.showToast(`🔒 ${data.message}`);
     } catch { /* */ }
@@ -645,7 +739,7 @@ class AnacondaPark {
   private async doPrestige() {
     audio.playClick();
     try {
-      const res = await fetch(API + '/api/player/prestige', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } });
+      const res = await this.api('/api/player/prestige', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } });
       const data = await res.json();
       if (data.success) { this.profile = data.profile; this.showToast(`👑 ${data.message}`); audio.playFanfare(); } else this.showToast(data.message);
     } catch { /* */ }
@@ -659,7 +753,7 @@ class AnacondaPark {
     this.equippedAccessory = newId;
     if (this.profile) this.profile.equippedAccessory = newId || undefined;
     try {
-      await fetch(API + '/api/player/equip-accessory', {
+      await this.api('/api/player/equip-accessory', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
         body: JSON.stringify({ accessoryId: newId || null }),
@@ -716,7 +810,7 @@ class AnacondaPark {
     audio.startMusic();
     this.client.onStateUpdate = (s) => this.onTick(s);
     this.client.onRespawnResult = (r) => this.onRespawn(r);
-    this.client.onMatchInvite = (inv) => this.showToast(`🎮 ${inv.from} invited you to a match!`); // §8
+    this.client.onMatchInvite = (r) => this.onInvitePush(r.invites || []); // §social
     this.client.onCollect = (type) => this.onCollect(type); // §V7 real-time mission tracking
     const region = this.matchType === 'local' ? (this.localCity || 'Local') : 'Global'; // §7
     // §2 Each mode carries its own rules/flags into the engine (solo, story, timed).
@@ -732,6 +826,9 @@ class AnacondaPark {
       if (this.screen === 'play' || this.screen === 'pause' || this.screen === 'respawn') {
         if (this.renderer && this.lastState) {
           this.renderer.render(this.lastState, this.client.localUserId);
+          // §net Keep the server's interest radius in step with the live camera (zoom,
+          // rotation, resize). setViewRadius() throttles this to meaningful changes only.
+          this.client.setViewRadius(this.renderer.getViewRadius());
         }
         this.animFrameId = requestAnimationFrame(loop);
       }
@@ -748,10 +845,19 @@ class AnacondaPark {
     if ((state as any).matchOver && (this.screen === 'play' || this.screen === 'respawn')) { this.endMatch(); return; }
     if (me && !me.isAlive && this.lastAlive && this.screen === 'play') { this.lastAlive = false; audio.playDeath(); this.openRespawn(); return; }
     if (me && me.isAlive) this.lastAlive = true;
-    // §V7 real-time kill tracking (works in both server + local engine via snake.kills)
+    // §V7 real-time kill tracking (works in both server + local engine via snake.kills).
+    // This is the single owner of `lastKills` — updateHUD only reads it, so the kill toast
+    // still sees the delta (it used to compare against an already-advanced counter and
+    // therefore never fired).
     if (me) {
       const k = me.kills || 0;
-      if (k > this.lastKills) { this.matchStats.kills += (k - this.lastKills); this.lastKills = k; this.updateMissionTracker(); }
+      if (k > this.lastKills) {
+        const gained = k - this.lastKills;
+        this.matchStats.kills += gained;
+        this.lastKills = k;
+        this.showKillToast(`⚔️ +${gained} Kill${gained > 1 ? 's' : ''}!`);
+        this.updateMissionTracker();
+      }
     }
     if (this.screen === 'play') this.updateHUD(state, me);
   }
@@ -823,7 +929,7 @@ class AnacondaPark {
     let rewardsHtml = '<div>⭐ Bonus Stars</div><div>🥚 Rare Egg</div><div>XP Boost</div>';
     let headline = 'You completed today\'s Daily Missions.';
     try {
-      const res = await fetch(API + '/api/missions/daily-bonus', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } });
+      const res = await this.api('/api/missions/daily-bonus', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } });
       const d = await res.json();
       if (d.success && d.rewards) {
         if (d.profile) { this.profile = d.profile; this.persistSession(); }
@@ -886,18 +992,41 @@ class AnacondaPark {
     this.client.requestRespawn(method);
   }
 
+  // Final placement for the match summary. The server (and the offline reward formula) treat
+  // placement === 1 as the win, which gates the win bonus, the `matchesWon` stat and the
+  // "Claim a Royal Victory" missions — so a survivor who topped the board has to be able to
+  // reach #1. Survivors rank by score among the living; a player who died ranks behind
+  // everyone still alive.
+  private computePlacement(state: GameStateTick | null, me: SnakeData | null): number {
+    if (!state || !me) return 1;
+    const alive = state.snakes.filter(s => s.isAlive);
+    if (me.isAlive) return alive.filter(s => s.id !== me.id && s.score > me.score).length + 1;
+    return alive.length + 1;
+  }
+
+  // Guards against submitting the same match more than once. endMatch() awaits two network
+  // round-trips before it switches screens, and onTick() fires 30×/second — without this the
+  // `matchOver` branch re-entered it on every tick in that window and POSTed a pile of
+  // duplicate summaries.
+  private endingMatch = false;
+
   private async endMatch() {
+    if (this.endingMatch) return;
+    this.endingMatch = true;
+    try { await this.runEndMatch(); } finally { this.endingMatch = false; }
+  }
+
+  private async runEndMatch() {
     audio.playClick(); this.clearRespawnTimers(); this.teardownInput();
     const snake = this.lastSnake; const state = this.lastState;
     const survival = Math.max(5, Math.floor((Date.now() - this.matchStart) / 1000));
-    const alive = state ? state.snakes.filter(s => s.isAlive).length : 8;
-    const placement = alive + 1;
+    const placement = this.computePlacement(state, snake);
     const distanceKm = snake ? +((snake as any).distanceTravelled?.toFixed?.(2) || 0) : 0;
     const score = snake?.score || 0; const kills = snake?.kills || 0;
     const ms = this.matchStats;
     const starsCollected = ms.star * 50; // ⭐ stars are worth 50 each
     try {
-      const res = await fetch(API + '/api/match/summary', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify({
+      const res = await this.api('/api/match/summary', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify({
         score, kills, placement, survivalSeconds: survival, distanceKm, areasVisited: this.visitedAreas.size,
         // §V7 richer, mode-tagged payload so per-mode stats + missions populate correctly
         mode: this.selectedUIMode, map: this.activeMapTheme, deaths: 1, killStreak: kills,
@@ -910,7 +1039,7 @@ class AnacondaPark {
         if (data.levelsGained > 0) this.showLevelUp(data.profile.level);
         // §V7 §8 auto-claim any missions this match completed (server-authoritative payout)
         try {
-          const cr = await fetch(API + '/api/missions/claim-all', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } });
+          const cr = await this.api('/api/missions/claim-all', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } });
           const cd = await cr.json();
           if (cd?.claimed?.length) { if (cd.profile) this.profile = cd.profile; this.summary.missionBonus = { stars: cd.stars, xp: cd.xp, evoXp: cd.evoXp, count: cd.claimed.length }; }
         } catch { /* */ }
@@ -980,7 +1109,7 @@ class AnacondaPark {
 
   private async abandon() {
     audio.playClick(); this.teardownInput(); this.clearRespawnTimers();
-    try { await fetch(API + '/api/match/abandon', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } }); } catch { /* */ }
+    try { await this.api('/api/match/abandon', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } }); } catch { /* */ }
     this.client.disconnect(); await this.refreshProfile(); await this.fetchAux(); this.page = 'home'; this.setScreen('app');
   }
 
@@ -997,7 +1126,7 @@ class AnacondaPark {
   private async claimMission(id: string) {
     audio.playClick();
     try {
-      const res = await fetch(API + '/api/missions/claim', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify({ missionId: id }) });
+      const res = await this.api('/api/missions/claim', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify({ missionId: id }) });
       const data = await res.json();
       if (data.success) { audio.playFanfare(); this.missions = data.updatedMissions; if (data.profile) this.profile = data.profile; if (data.evoXp) this.showToast(`Claimed! +${data.stars}⭐ +${data.evoXp} Evo-XP`); this.render(); }
     } catch { /* */ }
@@ -1029,7 +1158,7 @@ class AnacondaPark {
   }
   private onMouseMove = (e: MouseEvent) => { if (this.screen !== 'play' || this.joyActive || this.isWasd()) return; this.angle = Math.atan2(e.clientY - innerHeight / 2, e.clientX - innerWidth / 2); };
   private onMouseDown = (e: MouseEvent) => { if (this.screen === 'play' && !(e.target as HTMLElement)?.closest('.hud-panel,.touch-btn,.hud-pause')) this.keyBoost = true; };
-  private onMouseUp = () => { this.keyBoost = false; };
+  private onMouseUp = () => { this.keyBoost = false; document.getElementById('touch-boost')?.classList.remove('active'); };
   private onWheel = (e: WheelEvent) => { if (this.screen !== 'play') return; e.preventDefault(); this.renderer?.adjustZoom(e.deltaY < 0 ? 1.08 : 0.926); };
   private onKeyDown = (e: KeyboardEvent) => {
     if (this.screen !== 'play') return;
@@ -1133,11 +1262,13 @@ class AnacondaPark {
     // on-screen action buttons, which are recreated every time the HUD is rendered.
     const boost = document.getElementById('touch-boost');
     if (boost) {
-      const on = (e: Event) => { e.preventDefault(); e.stopPropagation(); this.keyBoost = true; };
-      const off = (e: Event) => { e.stopPropagation(); this.keyBoost = false; };
+      const on = (e: Event) => { e.preventDefault(); e.stopPropagation(); this.keyBoost = true; boost.classList.add('active'); };
+      const off = (e: Event) => { e.stopPropagation(); this.keyBoost = false; boost.classList.remove('active'); };
       boost.addEventListener('touchstart', on, { passive: false });
       boost.addEventListener('touchend', off); boost.addEventListener('touchcancel', off);
       boost.addEventListener('mousedown', on); boost.addEventListener('mouseup', off);
+      // A pointer released outside the button is caught by the window-level onMouseUp from
+      // setupInput() — binding another window listener here would leak one per HUD render.
     }
     const ability = document.getElementById('touch-ability');
     if (ability) ability.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); this.client.activateAbility(); audio.playClick(); }, { passive: false });
@@ -1152,10 +1283,12 @@ class AnacondaPark {
   }
 
   private showTacticalMap() {
-    const state = (this.client as any).state || (this.renderer as any)?.lastState;
-    const me = state?.snakes?.find((s: any) => s.id === this.client.localUserId);
     const existing = document.getElementById('tactical-overlay');
     if (existing) { existing.remove(); return; }
+    // Neither GameClient nor Renderer exposes a `state` field — the live world snapshot is
+    // the one onTick() stores. Reading anything else drew an empty grid every time.
+    const state = this.lastState;
+    const me = state?.snakes?.find((s) => s.id === this.client.localUserId) || null;
 
     const overlay = document.createElement('div');
     overlay.id = 'tactical-overlay';
@@ -1183,8 +1316,8 @@ class AnacondaPark {
     canvas.height = rect.height || 600;
 
     let mapZoom = 1.0;
-    let panX = me ? me.head.x : 1500;
-    let panY = me ? me.head.y : 1500;
+    let panX = me ? me.head.x : WORLD / 2;
+    let panY = me ? me.head.y : WORLD / 2;
 
     const drawMap = () => {
       const ctx = canvas.getContext('2d');
@@ -1193,7 +1326,7 @@ class AnacondaPark {
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      const W = 3000;
+      const W = WORLD; // §8 world is 6000 — a hardcoded 3000 drew only a quarter of the map
       const scale = (canvas.width / W) * mapZoom;
       const cx = canvas.width / 2;
       const cy = canvas.height / 2;
@@ -1245,7 +1378,7 @@ class AnacondaPark {
       if (state?.portals) {
         for (const p of state.portals) {
           ctx.beginPath();
-          ctx.arc(p.x, p.y, p.radius || 40, 0, Math.PI * 2);
+          ctx.arc(p.x, p.y, 44, 0, Math.PI * 2); // wormhole entry radius used by the sim
           ctx.fillStyle = 'rgba(139, 92, 246, 0.45)';
           ctx.fill();
           ctx.font = '28px sans-serif';
@@ -1364,18 +1497,17 @@ class AnacondaPark {
       this.lastHp = hp;
     }
 
-    // Floating Kill Toast Notification
-    const kills = me.kills ?? 0;
-    if (this.lastKills !== undefined && kills > this.lastKills) {
-      this.showKillToast(`⚔️ +${kills - this.lastKills} Kill!`);
-    }
-    this.lastKills = kills;
+    const kills = me.kills ?? 0; // toast is fired by onTick(), which owns `lastKills`
 
     this.setT('hv-score', String(Math.round(me.score)));
     this.setT('hud-stage', `${me.evolution || me.stage} · Lv ${me.level}`);
+    // Ability (Coil Guard) readiness — the label lives inside the on-screen 🌀 button.
     const cd = me.abilityCooldown ?? 0;
-    const badge = document.getElementById('ability-badge'); const cdEl = document.getElementById('ability-cd');
-    if (badge && cdEl) { badge.classList.toggle('ready', cd <= 0); if (cdEl.innerText !== (cd <= 0 ? 'READY' : `${Math.ceil(cd)}s`)) cdEl.innerText = cd <= 0 ? 'READY' : `${Math.ceil(cd)}s`; }
+    const abilityBtn = document.getElementById('touch-ability');
+    const cdEl = document.getElementById('ability-cd');
+    const cdText = cd <= 0 ? 'READY' : `${Math.ceil(cd)}s`;
+    if (abilityBtn) abilityBtn.classList.toggle('ready', cd <= 0);
+    if (cdEl && cdEl.innerText !== cdText) cdEl.innerText = cdText;
 
     // Active power status (🍄 super / 🛡️ shield / ⚡ speed / ✨ ability)
     const powers: string[] = [];
@@ -1444,6 +1576,8 @@ class AnacondaPark {
   }
 
   private updateFreeRoamHUD(me: any, _state: any, _kills: number) {
+    // The template ships a placeholder name; fill it in from the live snake / profile.
+    this.setT('hv-name', me.displayName || this.profile?.displayName || 'Explorer');
     this.setT('hv-score', String(Math.round(me.score)));
     this.setT('hud-stage', `${me.evolution || me.stage} · Lv ${me.level}`);
   }
@@ -1544,8 +1678,9 @@ class AnacondaPark {
               <button class="icon-btn ${this.settings.music ? '' : 'off'}" id="music-toggle" title="${this.settings.music ? 'Music on' : 'Music off'}">
                 ${this.settings.music ? icons.music(20) : icons.musicMuted(20)}
               </button>
-              <button class="icon-btn" id="notif-btn" title="Notifications">
+              <button class="icon-btn notif-wrap" id="notif-btn" title="Notifications">
                 ${icons.bell(20)}
+                <span class="notif-badge" id="notif-badge" style="display:${this.invites.length ? 'grid' : 'none'};">${this.invites.length > 9 ? '9+' : this.invites.length}</span>
               </button>
               <button class="icon-btn" data-go="settings" title="Settings">
                 ${icons.settings(20)}
@@ -1624,6 +1759,8 @@ class AnacondaPark {
               <button class="home-action" data-go="social"><span class="ha-ico">${icons.social(36)}</span><span class="ha-label">Friends</span></button>
               <button class="home-action" data-go="rewards"><span class="ha-ico">${icons.shop(36)}</span><span class="ha-label">Shop</span></button>
               <button class="home-action" data-go="leaderboard"><span class="ha-ico">${icons.leaderboard(36)}</span><span class="ha-label">Leaderboard</span></button>
+              <button class="home-action" data-go="events"><span class="ha-ico">🎪</span><span class="ha-label">Events</span></button>
+              <button class="home-action" data-go="story"><span class="ha-ico">📜</span><span class="ha-label">Story</span></button>
             </div>
           </div>
         </div>
@@ -1643,8 +1780,9 @@ class AnacondaPark {
     try {
       const params = new URLSearchParams({ category: this.lbCategory, scope: this.lbScope });
       if (this.lbScope === 'local') params.set('region', this.localCountry || this.profile?.country || 'Global');
-      const headers: any = this.lbScope === 'friends' && this.token ? { Authorization: `Bearer ${this.token}` } : {};
-      const res = await fetch(`${API}/api/leaderboard?${params.toString()}`, { headers });
+      // Every scope needs auth now — the board no longer serves anonymous callers.
+      const headers: any = this.token ? { Authorization: `Bearer ${this.token}` } : {};
+      const res = await this.api(`/api/leaderboard?${params.toString()}`, { headers });
       const d = await res.json();
       this.lbEntries = d.entries || [];
       if (this.page === 'leaderboard') this.render();
@@ -1661,7 +1799,7 @@ class AnacondaPark {
       </div>
       <div class="lb-cats">${AnacondaPark.LB_CATS.map(([id, l]) => `<button class="lb-cat ${this.lbCategory === id ? 'active' : ''}" data-lbcat="${id}">${l}</button>`).join('')}</div>
       <div class="card"><div class="lb-page">
-        ${rows.length ? rows.map((e: any, i: number) => `<div class="lb-page-row ${e.userId === this.profile?.userId ? 'me' : ''}">
+        ${rows.length ? rows.map((e: any, i: number) => `<div class="lb-page-row ${e.isYou ? 'me' : ''}">
           <span class="lbp-rank ${i < 3 ? 'top' : ''}">${['🥇', '🥈', '🥉'][i] || (i + 1)}</span>
           <span class="lbp-name">${e.avatar || ''} ${e.displayName} <span class="muted" style="font-weight:600;font-size:0.7rem;">Lv${e.level}</span></span>
           <span class="lbp-score">${e.value}${unit}</span>
@@ -1694,7 +1832,9 @@ class AnacondaPark {
     for (let i = 0; i < 3; i++) {
       const t0 = performance.now();
       try {
-        const res = await fetch(`${url.replace(/\/$/, '')}/health`, { cache: 'no-store' });
+        // /api/health, not /health — a reverse proxy that only forwards /api/* would never
+        // route the latter, which is exactly how this probe used to 404 in production.
+        const res = await fetch(`${url.replace(/\/$/, '')}/api/health`, { cache: 'no-store' });
         if (!res.ok) return Infinity;
         samples.push(performance.now() - t0);
       } catch { return Infinity; }
@@ -1704,6 +1844,13 @@ class AnacondaPark {
   // Measure real round-trip to each candidate and keep the fastest reachable one.
   private async measureGlobalPing() {
     if (this.globalPingState === 'measuring') return;
+    // No backend configured for this build — don't probe an origin that has no API.
+    if (!this.online) {
+      this.globalPingState = 'offline';
+      this.globalServerLabel = 'Offline — local play';
+      if (this.page === 'play') this.render();
+      return;
+    }
     const candidates = this.serverCandidates();
     if (!candidates.length) { this.globalPingState = 'offline'; if (this.page === 'play') this.render(); return; }
     this.globalPingState = 'measuring';
@@ -1830,23 +1977,35 @@ class AnacondaPark {
     ];
     let content = '';
     if (this.invTab === 'skins') {
-      // Grouped by family with glossy 2D snake preview cards
-      content = SKIN_FAMILIES.map(fam => `
+      // Grouped by family with glossy 2D snake preview cards. Ownership, price and level gates
+      // all come from the server catalog — the card just renders whichever state applies.
+      const ownedCount = SKINS.filter(s => this.ownsSkin(s.id)).length;
+      content = `<div class="skins-summary muted">🐍 ${ownedCount} of ${SKINS.length} skins unlocked · ⭐ ${this.profile?.stars ?? 0} available</div>`
+        + SKIN_FAMILIES.map(fam => `
         <div class="skin-family">
           <div class="skin-family-title">${fam.icon} ${fam.family} FAMILY</div>
           <div class="skin-family-row">${fam.skins.map(s => {
             const isEq = this.selectedSkin === s.id;
+            const meta = this.skinMeta(s.id);
+            const owned = this.ownsSkin(s.id);
+            const locked = !owned;
+            const tag = isEq ? '✓ Equipped'
+              : owned ? 'Tap to Equip'
+              : meta && !meta.levelMet ? `🔒 Lv ${meta.minLevel}`
+              : meta ? `${meta.costStars} ⭐` : '🔒 Locked';
+            const tagClass = isEq ? 'equipped' : owned ? '' : meta?.affordable && meta?.levelMet ? 'buyable' : 'locked';
             return `
-            <div class="skin-card ${isEq ? 'equipped' : ''}" data-skin="${s.id}">
+            <div class="skin-card ${isEq ? 'equipped' : ''} ${locked ? 'locked' : ''}" data-skin="${s.id}">
               <div class="skin-swatch-wrap">
                 <div class="skin-swatch" style="background:${s.grad}">
                   <div class="skin-pattern"></div>
                   <div class="skin-eye eye-left"></div>
                   <div class="skin-eye eye-right"></div>
                 </div>
+                ${locked ? '<div class="skin-lock">🔒</div>' : ''}
               </div>
               <div class="skin-name">${s.name}</div>
-              <div class="skin-tag ${s.premium ? 'premium' : isEq ? 'equipped' : ''}">${s.premium ? '✨ Premium' : isEq ? '✓ Equipped' : 'Tap to Equip'}</div>
+              <div class="skin-tag ${tagClass}">${tag}</div>
             </div>`;
           }).join('')}
           </div>
@@ -1944,6 +2103,7 @@ class AnacondaPark {
                 <span class="rank-badge" style="background:#eef6f0;color:var(--ink)">Lvl ${p.level}${p.prestige ? ` ✨${p.prestige}` : ''}</span>
                 ${p.country ? `<span class="rank-badge" style="background:#eef6f0;color:var(--ink)">📍 ${p.country}</span>` : ''}
               </div>
+              ${p.friendCode ? `<div class="fc-inline">🆔 <code class="fc-code sm">${p.friendCode}</code><button class="btn btn-ghost copy-btn" data-code="${p.friendCode}" style="padding:3px 8px;font-size:0.68rem;">Copy</button></div>` : ''}
             </div>
             <button class="btn btn-ghost" id="edit-profile-btn" style="padding:7px 12px;font-size:0.78rem;">✏️ Edit</button>
           </div>
@@ -2058,7 +2218,7 @@ class AnacondaPark {
   private async loadMatchHistory() {
     if (!this.token) return;
     try {
-      const res = await fetch(API + '/api/player/history?limit=25', { headers: { Authorization: `Bearer ${this.token}` } });
+      const res = await this.api('/api/player/history?limit=25', { headers: { Authorization: `Bearer ${this.token}` } });
       if (res.ok) { const d = await res.json(); this.matchHistory = d.history || []; if (this.page === 'history') this.render(); }
     } catch { /* keep local fallback */ }
   }
@@ -2125,7 +2285,7 @@ class AnacondaPark {
     const region = (document.getElementById('ep-region') as HTMLSelectElement)?.value;
     const msg = document.getElementById('ep-msg');
     try {
-      const res = await fetch(`${API}/api/player/edit-profile`, {
+      const res = await this.api(`/api/player/edit-profile`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
         body: JSON.stringify({ displayName: name, title: title === 'None' ? '' : title, country, region }),
       });
@@ -2143,17 +2303,60 @@ class AnacondaPark {
     this.showToast('✅ Profile updated');
   }
 
-  // ---------- EVENTS ----------
+  // ---------- EVENTS (server-driven) ----------
+  // `live` = world events actually running inside a simulation right now; `scheduled` = the
+  // live-ops calendar from the server config. Both are content, so ops can add an event
+  // without a client release.
+  private events: { live: any[]; scheduled: any[]; season?: string } = { live: [], scheduled: [] };
+  private async loadEvents() {
+    try {
+      const res = await this.api('/api/events');
+      if (!res.ok) return;
+      const d = await res.json();
+      this.events = { live: d.live || [], scheduled: d.scheduled || [], season: d.season };
+      if (this.page === 'events') this.render();
+    } catch { /* offline — keep whatever we last saw */ }
+  }
+
+  private static MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  // "Live now", or when the event next comes round.
+  private eventWhen(e: any): string {
+    if (e.live) return 'Live now';
+    if (e.endsAt) return `Ends ${new Date(e.endsAt).toLocaleDateString()}`;
+    if (e.startsAt) return `Starts ${new Date(e.startsAt).toLocaleDateString()}`;
+    if (!e.months?.length) return 'Announced soon';
+    const now = new Date().getMonth() + 1;
+    const next = e.months.find((m: number) => m >= now) ?? e.months[0];
+    return `In ${AnacondaPark.MONTH_NAMES[next - 1]}`;
+  }
+
   private pageEvents() {
-    const events = [
-      { icon: '🐍', name: 'Jungle Festival', desc: 'Double stars all weekend', time: '2 days left', on: true },
-      { icon: '🌧️', name: 'Monsoon Rush', desc: 'Frog & star spawns tripled', time: 'Live now', on: true },
-      { icon: '🎃', name: 'Halloween Hunt', desc: 'Pumpkin skins & spooky map', time: 'In 3 weeks', on: false },
-      { icon: '🎄', name: 'Winter Wonderland', desc: 'Snow map + gift chests', time: 'Seasonal', on: false },
-    ];
-    return `<div class="page"><div class="section-title">🎪 Events</div>
-      <div class="list">${events.map(e => `<div class="row-card"><div class="r-ico">${e.icon}</div><div class="r-body"><div class="r-title">${e.name}</div><div class="r-desc">${e.desc}</div></div><span class="pill ${e.on ? 'gold' : 'done'}">${e.time}</span></div>`).join('')}</div>
-      <div class="muted" style="font-size:0.78rem;">Seasonal maps and live world events rotate automatically. More on the roadmap.</div></div>`;
+    const { live, scheduled } = this.events;
+    const row = (icon: string, name: string, desc: string, tag: string, on: boolean, extra = '') => `
+      <div class="row-card ${on ? 'event-live' : ''}"><div class="r-ico">${icon}</div>
+        <div class="r-body"><div class="r-title">${name}${on ? ' <span class="live-dot"></span>' : ''}</div>
+          <div class="r-desc">${desc}</div>${extra}</div>
+        <span class="pill ${on ? 'gold' : 'done'}">${tag}</span></div>`;
+
+    const liveHtml = live.length ? `
+      <div class="section-subtitle" style="font-weight:800;font-size:0.85rem;margin:2px 0 10px;">🔴 Happening in-game now</div>
+      <div class="list">${live.map(e => row(e.icon, e.name, e.description,
+        e.timerSeconds ? `${Math.max(0, Math.round(e.timerSeconds))}s` : 'Live', true,
+        `<div class="r-count">${this.statModeLabel(e.mode) || e.mode}</div>`)).join('')}</div>` : '';
+
+    const scheduledHtml = scheduled.length ? `
+      <div class="section-subtitle" style="font-weight:800;font-size:0.85rem;margin:14px 0 10px;">📅 Event calendar</div>
+      <div class="list">${scheduled.map(e => row(e.icon, e.name, e.description, this.eventWhen(e), !!e.live,
+        e.rewardHint ? `<div class="r-count">🎁 ${e.rewardHint}</div>` : '')).join('')}</div>` : '';
+
+    const empty = !live.length && !scheduled.length
+      ? '<div class="card muted" style="text-align:center;padding:24px;">No events available right now — check back soon!</div>' : '';
+
+    return `<div class="page">
+      <div class="section-title">🎪 Events${this.events.season ? ` <span class="pill">${this.events.season}</span>` : ''}</div>
+      ${empty}${liveHtml}${scheduledHtml}
+      <div class="muted" style="font-size:0.78rem;margin-top:10px;">World events rotate inside matches automatically; calendar events unlock seasonal maps, skins and bonus rewards.</div>
+    </div>`;
   }
 
   private pageSocial() {
@@ -2161,12 +2364,22 @@ class AnacondaPark {
     const req = s.incoming;
     const pending = s.outgoing;
     const blocked = s.blocked;
+    const myCode = s.myFriendCode || this.profile?.friendCode || '';
     return `<div class="page">
+      ${this.renderInvitesSection()}
       <!-- Add Friend & Pending Requests -->
       <div class="card">
         <div class="section-title">${icons.addFriend(20)} Add Friends</div>
+        ${myCode ? `
+        <div class="friend-code-card">
+          <div class="fc-label">Your Friend Code — share this to get invited</div>
+          <div class="fc-row">
+            <code class="fc-code" id="my-friend-code">${myCode}</code>
+            <button class="btn btn-ghost copy-btn" data-code="${myCode}" style="padding:7px 12px;font-size:0.76rem;">${icons.copy(16)} Copy</button>
+          </div>
+        </div>` : ''}
         <div class="friend-search-wrap">
-          <input type="text" id="friend-search-input" placeholder="Enter exact username..." class="friend-search-input" />
+          <input type="text" id="friend-search-input" placeholder="Username or friend code (AP-XXXX-XXXX)" class="friend-search-input" />
           <button class="btn btn-primary" id="friend-send-btn" style="padding:9px 14px;font-size:0.82rem;">Send Request</button>
         </div>
         ${req.length ? `
@@ -2230,7 +2443,7 @@ class AnacondaPark {
   // ---------- REWARDS MARKETPLACE (§15) ----------
   private async loadRewards() {
     try {
-      const res = await fetch(`${API}/api/rewards/catalog?region=${encodeURIComponent(this.rewardRegion)}`);
+      const res = await this.api(`/api/rewards/catalog?region=${encodeURIComponent(this.rewardRegion)}`);
       const data = await res.json();
       this.rewards = data.items || [];
     } catch { this.rewards = []; }
@@ -2240,7 +2453,7 @@ class AnacondaPark {
   private async redeemReward(itemId: string) {
     audio.playClick();
     try {
-      const res = await fetch(`${API}/api/rewards/redeem`, {
+      const res = await this.api(`/api/rewards/redeem`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
         body: JSON.stringify({ itemId, region: this.rewardRegion }),
@@ -2284,7 +2497,12 @@ class AnacondaPark {
   private presenceTimer: any = null;
   private startPresenceHeartbeat() {
     if (this.presenceTimer || !this.token || this.token === 'guest_local_token') return;
-    const ping = () => { fetch(API + '/api/presence/ping', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } }).catch(() => {}); };
+    // The socket only exists during a match, so the lobby learns about new invites on the
+    // same beat that keeps us visible to friends — one timer, not two.
+    const ping = () => {
+      this.api('/api/presence/ping', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } }).catch(() => {});
+      this.loadInvites();
+    };
     ping();
     this.presenceTimer = setInterval(ping, 45000);
   }
@@ -2293,10 +2511,10 @@ class AnacondaPark {
   private async loadSocial() {
     if (!this.token) return;
     try {
-      const res = await fetch(`${API}/api/social/overview`, { headers: { Authorization: `Bearer ${this.token}` } });
+      const res = await this.api(`/api/social/overview`, { headers: { Authorization: `Bearer ${this.token}` } });
       if (!res.ok) return;
       const d = await res.json();
-      this.social = { friends: d.friends || [], incoming: d.incoming || [], outgoing: d.outgoing || [], blocked: d.blocked || [] };
+      this.social = { friends: d.friends || [], incoming: d.incoming || [], outgoing: d.outgoing || [], blocked: d.blocked || [], myFriendCode: d.myFriendCode };
       if (this.page === 'social') this.render();
     } catch { /* offline — keep last known */ }
   }
@@ -2305,9 +2523,9 @@ class AnacondaPark {
   private async socialAction(path: string, body: any) {
     audio.playClick();
     try {
-      const res = await fetch(`${API}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify(body) });
+      const res = await this.api(`${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify(body) });
       const d = await res.json();
-      if (d.friends !== undefined) this.social = { friends: d.friends, incoming: d.incoming, outgoing: d.outgoing, blocked: d.blocked };
+      if (d.friends !== undefined) this.social = { friends: d.friends, incoming: d.incoming, outgoing: d.outgoing, blocked: d.blocked, myFriendCode: d.myFriendCode ?? this.social.myFriendCode };
       this.showToast(`${d.success ? '✅' : '⚠️'} ${d.message || (d.success ? 'Done' : 'Action failed')}`);
       this.render();
     } catch { this.showToast('⚠️ Network error'); }
@@ -2316,10 +2534,108 @@ class AnacondaPark {
   private async inviteFriend(userId: string) {
     audio.playClick();
     try {
-      const res = await fetch(`${API}/api/social/invite`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: JSON.stringify({ userId }) });
+      // Carry the mode we're set to play, so the invite says what it's inviting them TO.
+      const res = await this.api(`/api/social/invite`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
+        body: JSON.stringify({ userId, mode: this.selectedUIMode }),
+      });
       const d = await res.json();
-      this.showToast(`${d.success ? '🎮' : '⚠️'} ${d.message}`);
+      this.showToast(`${d.success ? (d.online ? '🎮' : '📬') : '⚠️'} ${d.message}`);
     } catch { this.showToast('⚠️ Could not send invite'); }
+  }
+
+  // ---------- §social Incoming match invites ----------
+  // Persisted server-side, so one sent while you were away is waiting when you return.
+  private invites: any[] = [];
+  private async loadInvites() {
+    if (!this.token) return;
+    try {
+      const res = await this.api('/api/social/invites', { headers: { Authorization: `Bearer ${this.token}` } });
+      if (!res.ok) return;
+      const d = await res.json();
+      const had = this.invites.length;
+      this.invites = d.invites || [];
+      // Refresh the bell badge wherever we are; re-render if the list is on screen.
+      this.updateInviteBadge();
+      if (this.page === 'social' && this.invites.length !== had) this.render();
+    } catch { /* offline — keep what we have */ }
+  }
+
+  private updateInviteBadge() {
+    const badge = document.getElementById('notif-badge');
+    if (!badge) return;
+    const n = this.invites.length;
+    badge.textContent = n > 9 ? '9+' : String(n);
+    badge.style.display = n ? 'grid' : 'none';
+  }
+
+  // Live push from the server (on arrival, and on connect for anything sent while away).
+  private onInvitePush(invites: any[]) {
+    const known = new Set(this.invites.map(i => i.id));
+    const fresh = invites.filter(i => !known.has(i.id));
+    this.invites = invites;
+    this.updateInviteBadge();
+    for (const inv of fresh) {
+      audio.playChime();
+      this.showToast(`🎮 ${inv.fromName} invited you to ${UI_MODES[inv.mode as UIMode]?.name || inv.mode}`);
+    }
+    if (this.page === 'social') this.render();
+  }
+
+  private async respondInvite(inviteId: string, action: 'accept' | 'decline') {
+    audio.playClick();
+    try {
+      const res = await this.api('/api/social/invites/respond', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
+        body: JSON.stringify({ inviteId, action }),
+      });
+      const d = await res.json();
+      this.invites = d.invites || [];
+      this.updateInviteBadge();
+      if (d.success && action === 'accept' && d.mode) {
+        // Drop straight into the mode they invited us to.
+        if (UI_MODES[d.mode as UIMode]) this.selectedUIMode = d.mode as UIMode;
+        this.showToast(`🎮 ${d.message}`);
+        this.startMatchmaking();
+        return;
+      }
+      this.showToast(d.success ? `✅ ${d.message}` : `⚠️ ${d.message}`);
+      this.render();
+    } catch { this.showToast('⚠️ Could not respond to that invite'); }
+  }
+
+  // Relative "how long ago" for an invite that may have been sitting for hours.
+  private inviteAge(t: number): string {
+    const m = Math.floor((Date.now() - t) / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return `${m}m ago`;
+    return `${Math.floor(m / 60)}h ago`;
+  }
+
+  private renderInvitesSection(): string {
+    if (!this.invites.length) return '';
+    return `
+      <div class="card">
+        <div class="section-title">🎮 Match Invites (${this.invites.length})</div>
+        <div class="list">
+          ${this.invites.map(i => {
+            const modeDef = UI_MODES[i.mode as UIMode];
+            return `
+            <div class="row-card invite-row">
+              <div class="r-ico">${i.fromAvatar || '🎮'}</div>
+              <div class="r-body">
+                <div class="r-title">${i.fromName} <span class="pill ${i.fromOnline ? 'gold' : 'done'}">${i.fromOnline ? '🟢 Online' : 'Offline'}</span></div>
+                <div class="r-desc">Invited you to ${modeDef?.icon || ''} <b>${modeDef?.name || i.mode}</b></div>
+                <div class="r-count">${this.inviteAge(i.createdAt)}</div>
+              </div>
+              <div style="display:flex;gap:6px;">
+                <button class="btn btn-primary inv-accept" data-inv="${i.id}" style="padding:6px 11px;font-size:0.74rem;">Play</button>
+                <button class="btn btn-ghost inv-decline" data-inv="${i.id}" style="padding:6px 11px;font-size:0.74rem;">Dismiss</button>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
   }
 
   // §7 Coupon Admin — only visible to admin users (detected by a 200 from the admin endpoint).
@@ -2328,14 +2644,14 @@ class AnacondaPark {
   private async loadAdminCoupons() {
     if (!this.token || (!this.profile?.isAdmin && this.page !== 'admin')) return;
     try {
-      const res = await fetch(API + '/api/admin/coupons', { headers: { Authorization: `Bearer ${this.token}` } });
+      const res = await this.api('/api/admin/coupons', { headers: { Authorization: `Bearer ${this.token}` } });
       if (res.status === 200) { this.isAdmin = true; this.adminCoupons = (await res.json()).coupons || []; if (this.page === 'admin' || this.page === 'settings') this.render(); }
       else this.isAdmin = false;
     } catch { /* */ }
   }
   private async adminCouponAction(path: string, method: string, body?: any) {
     try {
-      const res = await fetch(API + path, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: body ? JSON.stringify(body) : undefined });
+      const res = await this.api(path, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` }, body: body ? JSON.stringify(body) : undefined });
       const d = await res.json();
       this.showToast(res.ok ? '✅ Saved' : `⚠️ ${d.error || 'Failed'}`);
       await this.loadAdminCoupons();
@@ -2383,7 +2699,7 @@ class AnacondaPark {
   private async loadAvailableCoupons() {
     if (!this.token) return;
     try {
-      const res = await fetch(`${API}/api/coupons/available?region=${encodeURIComponent(this.rewardRegion)}`, { headers: { Authorization: `Bearer ${this.token}` } });
+      const res = await this.api(`/api/coupons/available?region=${encodeURIComponent(this.rewardRegion)}`, { headers: { Authorization: `Bearer ${this.token}` } });
       const data = await res.json();
       this.availableCoupons = data.coupons || [];
     } catch { this.availableCoupons = []; }
@@ -2393,7 +2709,7 @@ class AnacondaPark {
   private async claimCoupon(couponId: string) {
     audio.playClick();
     try {
-      const res = await fetch(`${API}/api/coupons/claim`, {
+      const res = await this.api(`/api/coupons/claim`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
         body: JSON.stringify({ couponId, region: this.rewardRegion }),
@@ -2556,8 +2872,6 @@ class AnacondaPark {
 
   private renderBattleRoyaleHUD() {
     const cpos = this.settings.controlPos || 'center';
-    const jsize = this.settings.joySize || 'medium';
-    const jop = this.settings.joyOpacity || 70;
     return `
       <div class="hud ctrl-${cpos} mode-battle-royale">
         <div class="tb-top-bar mode-br-grid">
@@ -2593,25 +2907,12 @@ class AnacondaPark {
         </div>
 
         <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
-
-        <div class="hud-bottom-controls">
-          <div class="touch-joystick joy-${jsize} joy-op-${jop}" id="touch-joystick">
-            <div class="touch-knob" id="touch-knob"></div>
-          </div>
-          <div class="touch-actions">
-            <div class="touch-row">
-              <div class="touch-btn mini" id="touch-mini" title="Fullscreen Tactical Map">🗺️</div>
-              <div class="touch-btn zoom" id="touch-zoom" title="Camera Zoom Preset">🔍<span class="tz-label" id="touch-zoom-label">Far</span></div>
-            </div>
-          </div>
-        </div>
+${this.renderBottomControls()}
       </div>`;
   }
 
   private renderTeamBattleHUD() {
     const cpos = this.settings.controlPos || 'center';
-    const jsize = this.settings.joySize || 'medium';
-    const jop = this.settings.joyOpacity || 70;
     return `
       <div class="hud ctrl-${cpos} mode-team-battle">
         <div class="tb-top-bar mode-tb-grid">
@@ -2662,25 +2963,12 @@ class AnacondaPark {
 
         <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
         <div class="team-scores" id="team-scores" style="display:none;"></div>
-
-        <div class="hud-bottom-controls">
-          <div class="touch-joystick joy-${jsize} joy-op-${jop}" id="touch-joystick">
-            <div class="touch-knob" id="touch-knob"></div>
-          </div>
-          <div class="touch-actions">
-            <div class="touch-row">
-              <div class="touch-btn mini" id="touch-mini" title="Fullscreen Tactical Map">🗺️</div>
-              <div class="touch-btn zoom" id="touch-zoom" title="Camera Zoom Preset">🔍<span class="tz-label" id="touch-zoom-label">Far</span></div>
-            </div>
-          </div>
-        </div>
+${this.renderBottomControls()}
       </div>`;
   }
 
   private renderFreeRoamHUD() {
     const cpos = this.settings.controlPos || 'center';
-    const jsize = this.settings.joySize || 'medium';
-    const jop = this.settings.joyOpacity || 70;
     const isClassic = (this.selectedUIMode as string) === 'nokia';
     const showMissions = !isClassic && this.settings.missionTracker !== false;
     const showLeaderboard = !isClassic;
@@ -2706,7 +2994,7 @@ class AnacondaPark {
             </div>
 
             <div class="fr-player-card hud-panel tb-a-player">
-              <div class="fr-pc-name" id="hv-name">Explorer_7740</div>
+              <div class="fr-pc-name" id="hv-name">${this.profile?.displayName || 'Explorer'}</div>
               <div class="fr-pc-scoreline">
                 <span class="fr-pc-lbl">Score:</span>
                 <b class="fr-pc-score-val" id="hv-score">0</b>
@@ -2728,20 +3016,32 @@ class AnacondaPark {
         </div>
 
         <div class="hud-event hud-panel" id="hud-event" style="display:none;"></div>
+${this.renderBottomControls()}
+      </div>`;
+  }
 
+  // Shared on-screen controls for every mode's HUD. Boost (⚡) and Ability (🌀) are the only
+  // way to dash / cast Coil Guard on touch devices — desktop has Shift and Space — so they
+  // must exist in every HUD variant. bindTouch() wires them after each render.
+  private renderBottomControls(): string {
+    const jsize = this.settings.joySize || 'medium';
+    const jop = this.settings.joyOpacity || 70;
+    return `
         <div class="hud-bottom-controls">
           <div class="touch-joystick joy-${jsize} joy-op-${jop}" id="touch-joystick">
             <div class="touch-knob" id="touch-knob"></div>
           </div>
-
           <div class="touch-actions">
             <div class="touch-row">
               <div class="touch-btn mini" id="touch-mini" title="Fullscreen Tactical Map">🗺️</div>
               <div class="touch-btn zoom" id="touch-zoom" title="Camera Zoom Preset">🔍<span class="tz-label" id="touch-zoom-label">Far</span></div>
             </div>
+            <div class="touch-row">
+              <div class="touch-btn ability" id="touch-ability" title="Coil Guard (Space)">🌀<span class="tz-label" id="ability-cd">READY</span></div>
+              <div class="touch-btn boost" id="touch-boost" title="Boost (Shift)">⚡</div>
+            </div>
           </div>
-        </div>
-      </div>`;
+        </div>`;
   }
 
   private renderHUD() {
@@ -2871,6 +3171,9 @@ class AnacondaPark {
   private renderRespawn() {
     const stars = this.profile?.stars ?? 0;
     const tickets = this.profile?.tickets ?? 0;
+    // Price the Stars option from the server config so the panel can never advertise a cost
+    // the server does not actually charge (respawn pricing is JSON-overridable).
+    const starCost = this.serverConfig?.economy?.respawn?.stars?.stars ?? 20;
     return `<div class="overlay">
       <div class="modal respawn-modal">
         <div class="respawn-header">
@@ -2879,11 +3182,11 @@ class AnacondaPark {
         </div>
 
         <div class="respawn-grid">
-          <button class="respawn-opt green" id="rs-stars" ${stars < 20 ? 'disabled' : ''}>
+          <button class="respawn-opt green" id="rs-stars" ${stars < starCost ? 'disabled' : ''}>
             <div class="ro-ico-wrap"><span class="ro-ico">🌱</span></div>
             <div class="ro-info">
-              <span class="ro-main">Respawn (20 ⭐)</span>
-              <span class="ro-sub">Use Stars${stars < 20 ? ' — not enough ⭐' : ''}</span>
+              <span class="ro-main">Respawn (${starCost} ⭐)</span>
+              <span class="ro-sub">Use Stars${stars < starCost ? ' — not enough ⭐' : ''}</span>
             </div>
           </button>
 
@@ -3005,7 +3308,14 @@ class AnacondaPark {
     document.querySelectorAll('[data-tpos]').forEach(b => b.addEventListener('click', () => { audio.playClick(); this.settings.trackerPos = (b as HTMLElement).dataset.tpos as any; this.saveSettings(); this.render(); }));
 
     on('music-toggle', () => this.toggleMusic());
-    on('notif-btn', () => this.showToast('🔔 No new notifications'));
+    // The bell is the invite inbox — jump to Social where they can be actioned.
+    on('notif-btn', () => {
+      if (this.invites.length) { this.go('social'); return; }
+      this.loadInvites();
+      this.showToast('🔔 No new notifications');
+    });
+    document.querySelectorAll('.inv-accept').forEach(b => b.addEventListener('click', (e) => this.respondInvite((e.currentTarget as HTMLElement).dataset.inv!, 'accept')));
+    document.querySelectorAll('.inv-decline').forEach(b => b.addEventListener('click', (e) => this.respondInvite((e.currentTarget as HTMLElement).dataset.inv!, 'decline')));
     on('home-play', () => this.go('play'));
     on('home-explorer', () => { this.selectedUIMode = 'explorer'; this.startMatchmaking(); });
     on('quick-match', () => this.startMatchmaking());
@@ -3017,10 +3327,11 @@ class AnacondaPark {
     // §8 Friends list & social handlers — all server-driven.
     on('friend-send-btn', () => {
       const input = (document.getElementById('friend-search-input') as HTMLInputElement)?.value?.trim();
-      if (!input) { this.showToast('⚠️ Please enter a username'); return; }
+      if (!input) { this.showToast('⚠️ Enter a username or friend code'); return; }
       audio.playClick();
       (document.getElementById('friend-search-input') as HTMLInputElement).value = '';
-      this.socialAction('/api/social/request', { username: input });
+      // One field, either form — the server resolves a friend code or an exact username.
+      this.socialAction('/api/social/request', { query: input });
     });
     document.querySelectorAll('.freq-accept').forEach(b => b.addEventListener('click', (e) => this.socialAction('/api/social/respond', { userId: (e.currentTarget as HTMLElement).dataset.id!, action: 'accept' })));
     document.querySelectorAll('.freq-decline').forEach(b => b.addEventListener('click', (e) => this.socialAction('/api/social/respond', { userId: (e.currentTarget as HTMLElement).dataset.id!, action: 'reject' })));
@@ -3037,7 +3348,7 @@ class AnacondaPark {
     document.querySelectorAll('[data-pset]').forEach(b => b.addEventListener('click', () => { const k = (b as HTMLElement).dataset.pset as keyof Settings; (this.settings as any)[k] = !(this.settings as any)[k]; this.saveSettings(); this.render(); }));
     on('rs-stars', () => this.doRespawn('stars')); on('rs-ad', () => this.doRespawn('ad')); on('respawn-wait-btn', () => this.doRespawn('wait')); on('rs-ticket', () => this.doRespawn('ticket'));
     on('rs-end', () => this.endMatch());
-    on('go-ad', () => this.triggerAd(async () => { try { const r = await fetch(API + '/api/ads/claim', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } }); const d = await r.json(); if (d.profile) this.profile = d.profile; this.showToast(`🎉 ${d.message}`); } catch { /* */ } this.setScreen('gameover'); }));
+    on('go-ad', () => this.triggerAd(async () => { try { const r = await this.api('/api/ads/claim', { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } }); const d = await r.json(); if (d.profile) this.profile = d.profile; this.showToast(`🎉 ${d.message}`); } catch { /* */ } this.setScreen('gameover'); }));
     on('go-again', () => this.startMatchmaking());
     on('go-home', () => { ads.showInterstitial(); /* §14 between-match interstitial */ this.refreshProfile(); this.page = 'home'; this.setScreen('app'); });
   }

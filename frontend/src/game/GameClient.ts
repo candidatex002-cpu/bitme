@@ -74,22 +74,61 @@ export interface GameStateTick {
   matchOver?: boolean;  // §2 match ended (timer/last-standing)
 }
 
+// §social A stored friend invite waiting for this player.
+export interface MatchInviteData {
+  id: string;
+  fromName: string;
+  fromAvatar: string;
+  mode: string;
+  createdAt: number;
+  expiresAt: number;
+  fromOnline: boolean;
+}
+
 export interface ModeConfig {
   mode: GameMode; label: string; tagline: string;
   shrinkingZone: boolean; teamsEnabled: boolean; worldEvents: boolean; botCount: number;
 }
 
+// Where the authoritative backend lives, in priority order.
+//
+// The game server is a long-lived 30 Hz Socket.IO process, so it CANNOT run on a serverless
+// static host (Vercel/Netlify/Pages) — it has to be deployed somewhere that keeps a process
+// alive, and the client is pointed at it. See DEPLOY.md.
 export function serverBase(): string {
+  // 1. ?server=… — ad-hoc override for testing against any backend.
   const override = new URLSearchParams(location.search).get('server');
   if (override) return override;
-  // Packaged (Capacitor/Play Store) build: point at a hosted backend via a meta tag.
-  // <meta name="anaconda-server" content="https://your-backend.example.com">
+
+  // 2. Build-time env (VITE_SERVER_URL) — how a Vercel/Netlify build targets its backend
+  //    without editing HTML. Set it in the host's environment variables.
+  const envUrl = (import.meta as any).env?.VITE_SERVER_URL as string | undefined;
+  if (envUrl) return envUrl.replace(/\/$/, '');
+
+  // 3. Packaged (Capacitor/Play Store) build: a meta tag baked into index.html.
   const meta = document.querySelector('meta[name="anaconda-server"]')?.getAttribute('content');
-  if (meta) return meta;
+  if (meta && !meta.includes('your-backend.example.com')) return meta.replace(/\/$/, '');
+
+  // 4. Local dev — Vite on :3000/:5173 proxies to the backend on :4000.
   if (location.port === '3000' || location.port === '5173') return `${location.protocol}//${location.hostname}:4000`;
-  // capacitor:// or file:// origins can't reach a server → the offline local engine takes over.
+
+  // 5. capacitor:// or file:// origins can't reach a server → the offline local engine takes over.
   if (location.protocol === 'capacitor:' || location.protocol === 'file:') return '';
+
+  // 6. Same-origin: only correct when a real backend is served from this origin. A static-only
+  //    deploy has none, so every /api call would 404/500 — detect that and go offline instead.
   return location.origin;
+}
+
+// True when we have no reason to believe a backend exists at serverBase(). A static-only
+// host (the default Vercel deploy) serves the SPA but no API, so the app should go straight
+// to offline/local play rather than firing doomed requests on every screen.
+export function hasConfiguredServer(): boolean {
+  if (new URLSearchParams(location.search).get('server')) return true;
+  if ((import.meta as any).env?.VITE_SERVER_URL) return true;
+  const meta = document.querySelector('meta[name="anaconda-server"]')?.getAttribute('content');
+  if (meta && !meta.includes('your-backend.example.com')) return true;
+  return location.port === '3000' || location.port === '5173';
 }
 
 // §8 World size — single source of truth shared with the Renderer. Larger map = wide
@@ -134,6 +173,11 @@ const OBSTACLE_TYPES: Array<{ type: string; icon: string; radius: number; blocki
 // §3 hp restored per food type (local engine health loop)
 const LOCAL_HEAL: Record<string, number> = { cherry: 5, apple: 8, mushroom: 4, frog: 3, egg: 25 };
 
+// Ceiling on the local world's collectibles. Eaten food is replaced 1-for-1, but corpse drops
+// are pure additions — with bots dying and respawning every few seconds the array would grow
+// without bound, and food collision is O(snakes × food) every tick.
+const MAX_LOCAL_FOOD = 420;
+
 const BOT_NAMES = ['AlphaViper', 'KobraX', 'Slinky', 'GigaPython', 'NeonSnake', 'ShadowSerpent', 'TitanApex'];
 const BOT_SKINS = ['Jungle', 'Ocean', 'Fire', 'Ice', 'Galaxy', 'Golden', 'Shadow'];
 
@@ -149,7 +193,9 @@ export class GameClient {
   public onAuthSuccess?: (userId: string, snake: SnakeData, config: ModeConfig) => void;
   public onRespawnResult?: (result: { success: boolean; message?: string; profile?: any; method?: string }) => void;
   public onAbilityResult?: (used: boolean) => void;
-  public onMatchInvite?: (r: { from: string; fromId: string; mode?: string }) => void; // §8 friend invite
+  // §social Pending "come play" invites pushed by the server — on arrival, and again the
+  // moment we authenticate (which is how invites sent while we were offline reach us).
+  public onMatchInvite?: (r: { invites: MatchInviteData[] }) => void;
   public onCollect?: (type: string, value: number) => void; // §V7 local-engine food/star pickup by the player
   public onPickupEvent?: (r: { foodId: string; foodType: string; updatedMissions: any[]; profile: any }) => void; // §P1 server-authoritative pickup event
   // §7 Matchmaking-chosen server URL for Global Adventure ('' = default origin from serverBase()).
@@ -185,6 +231,10 @@ export class GameClient {
   public connect(token: string, skinName: string = 'Forest', mode: GameMode = 'classic', region = 'Global', matchType: 'local' | 'global' = 'global') {
     // §2 Solo modes (Classic Snake / Nokia) never touch the multiplayer server.
     if (this.modeSolo) { this.startLocalEngine(skinName, mode, region); return; }
+    // No backend configured for this build (static-only deploy): go straight to the offline
+    // engine. Opening a socket at an origin with no game server just produced a reconnect
+    // storm of failed polling requests before the fallback fired anyway.
+    if (!this.preferredServer && !hasConfiguredServer()) { this.startLocalEngine(skinName, mode, region); return; }
     const authPayload = { token, skin: skinName, mode, region, matchType };
     this.lastServerTickTime = 0;
 
@@ -223,12 +273,12 @@ export class GameClient {
       this.socket.on('game_state_tick', (tick: GameStateTick) => {
         this.lastServerTickTime = Date.now();
         if (this.isLocalEngineRunning) this.stopLocalEngine();
-        this.onStateUpdate?.(tick);
+        this.onStateUpdate?.(this.decodeTick(tick));
       });
 
       this.socket.on('respawn_result', (r: any) => this.onRespawnResult?.(r));
       this.socket.on('ability_result', (r: { used: boolean }) => this.onAbilityResult?.(r.used));
-      this.socket.on('match_invite', (r: { from: string; fromId: string; mode?: string }) => this.onMatchInvite?.(r)); // §8
+      this.socket.on('match_invite', (r: { invites: MatchInviteData[] }) => this.onMatchInvite?.(r)); // §social
       this.socket.on('pickup_event', (r: any) => this.onPickupEvent?.(r));
       this.socket.on('disconnect', () => { this.isConnected = false; });
     } catch { /* ignored */ }
@@ -242,11 +292,47 @@ export class GameClient {
     }, 600);
   }
 
+  // §net The server sends the near-static world layout (obstacles + wormholes) only when its
+  // `worldVersion` changes, instead of re-transmitting it 30×/second. Ticks that omit it carry
+  // the last known layout forward so the Renderer always receives a complete world.
+  private cachedObstacles: ObstacleData[] = [];
+  private cachedPortals: PortalData[] = [];
+  private decodeTick(tick: GameStateTick): GameStateTick {
+    if (tick.obstacles) this.cachedObstacles = tick.obstacles;
+    else tick.obstacles = this.cachedObstacles;
+    if (tick.portals) this.cachedPortals = tick.portals;
+    else tick.portals = this.cachedPortals;
+    // Rehydrate the flat body encoding ([x0,y0,x1,y1,…] → [{x,y},…]) so the Renderer keeps
+    // working with plain segment objects and knows nothing about the wire format.
+    for (const s of tick.snakes) {
+      const flat = (s as any).b as number[] | undefined;
+      if (!flat) { if (!s.body) s.body = []; continue; } // never hand the Renderer an undefined body
+      const body: SnakeSegment[] = new Array(flat.length >> 1);
+      for (let i = 0, k = 0; i < flat.length; i += 2, k++) body[k] = { x: flat[i], y: flat[i + 1] };
+      s.body = body;
+      delete (s as any).b;
+    }
+    return tick;
+  }
+
   public disconnect() {
     if (this.socket) { this.socket.disconnect(); this.socket = null; }
     this.isConnected = false;
+    this.cachedObstacles = [];
+    this.cachedPortals = [];
     this.stopLocalEngine();
     if (this.fallbackTimer) clearTimeout(this.fallbackTimer);
+  }
+
+  // §net Tell the server how much world we can see, so it culls the tick to match. Only
+  // resent when it moves meaningfully (zoom step / rotation / resize) — not every frame.
+  private sentViewRadius = 0;
+  public setViewRadius(radius: number) {
+    if (!this.socket || !this.isConnected) return;
+    if (!Number.isFinite(radius) || radius <= 0) return;
+    if (Math.abs(radius - this.sentViewRadius) < this.sentViewRadius * 0.12) return;
+    this.sentViewRadius = radius;
+    this.socket.emit('view_radius', { radius: Math.round(radius) });
   }
 
   public sendInput(angle: number, boosting: boolean) {
@@ -772,7 +858,7 @@ export class GameClient {
             s.hp = Math.max(0, (s.hp ?? 100) - ob.damage);
             (s as any).hazardCd = 0.8;
           }
-          if (s.hp <= 0) { this.eliminateLocal(s, null); break; }
+          if ((s.hp ?? 100) <= 0) { this.eliminateLocal(s, null); break; }
         }
       }
     }
@@ -889,14 +975,27 @@ export class GameClient {
       if (this.localTeam && winner.team && this.localState?.teamScores) this.localState.teamScores[winner.team]++;
     }
     if (!this.localState) return;
+    const food = this.localState.food;
     for (let k = 0; k < loser.body.length; k += 4) {
       const seg = loser.body[k];
-      this.localState.food.push({
+      food.push({
         id: `drop_${Date.now()}_${k}_${Math.random().toString(36).slice(2, 5)}`,
         x: seg.x + (Math.random() - 0.5) * 20,
         y: seg.y + (Math.random() - 0.5) * 20,
         value: 15, type: 'apple', color: '#ff3333', icon: '🍎',
       });
+    }
+    this.trimLocalFood();
+  }
+
+  // Keep the collectible count bounded by retiring the oldest corpse drops first, so the base
+  // food/star population (and anything a player is chasing) is never the thing that vanishes.
+  private trimLocalFood() {
+    const food = this.localState?.food;
+    if (!food || food.length <= MAX_LOCAL_FOOD) return;
+    let excess = food.length - MAX_LOCAL_FOOD;
+    for (let i = 0; i < food.length && excess > 0; ) {
+      if (food[i].id.startsWith('drop_')) { food.splice(i, 1); excess--; } else i++;
     }
   }
 }

@@ -57,6 +57,40 @@ export interface GameConfig {
     // Seasonal overlays auto-apply by month, or on-demand for festivals. `months` drives auto-select.
     seasons: MapSeason[];
   };
+  cosmetics: {
+    // Purchasable snake skins. `id` matches the client's visual definition (gradient/palette);
+    // everything that costs the player something lives here, server-side, so pricing and
+    // ownership can never be decided by the client.
+    skins: SkinDef[];
+    // Granted to every new account (and back-filled onto pre-ownership profiles).
+    starterSkins: string[];
+  };
+  // Live-ops calendar. Scheduled events are pure data — add one here (or in game-config.json)
+  // and it appears in the client's Events page with no code change.
+  events: ScheduledEvent[];
+}
+
+export interface SkinDef {
+  id: string;            // must match the client's skin id
+  name: string;
+  family: string;
+  rarity: 'starter' | 'common' | 'rare' | 'epic' | 'legendary';
+  costStars: number;
+  costTickets: number;
+  minLevel: number;
+}
+
+export interface ScheduledEvent {
+  id: string;
+  icon: string;
+  name: string;
+  description: string;
+  // Month numbers (1-12) the event runs in; empty = always listed as upcoming.
+  months: number[];
+  // Optional ISO start/end for a precise window; takes precedence over `months`.
+  startsAt?: string;
+  endsAt?: string;
+  rewardHint?: string;
 }
 
 export interface MapTheme {
@@ -148,6 +182,34 @@ const DEFAULTS: GameConfig = {
       { id: 'diwali',    name: 'Diwali',    tint: 'rgba(255,170,40,0.07)',  months: [] },
     ],
   },
+  cosmetics: {
+    starterSkins: ['Forest', 'Jungle'],
+    skins: [
+      { id: 'Forest',    name: 'Forest',    family: 'Forest',   rarity: 'starter',   costStars: 0,    costTickets: 0, minLevel: 1 },
+      { id: 'Jungle',    name: 'Jungle',    family: 'Forest',   rarity: 'starter',   costStars: 0,    costTickets: 0, minLevel: 1 },
+      { id: 'Ocean',     name: 'Ocean',     family: 'Ocean',    rarity: 'common',    costStars: 400,  costTickets: 0, minLevel: 1 },
+      { id: 'Fire',      name: 'Fire',      family: 'Fire',     rarity: 'common',    costStars: 400,  costTickets: 0, minLevel: 1 },
+      { id: 'Sakura',    name: 'Sakura',    family: 'Nature',   rarity: 'common',    costStars: 600,  costTickets: 0, minLevel: 3 },
+      { id: 'Desert',    name: 'Desert',    family: 'Nature',   rarity: 'common',    costStars: 600,  costTickets: 0, minLevel: 3 },
+      { id: 'Ice',       name: 'Ice',       family: 'Ocean',    rarity: 'rare',      costStars: 900,  costTickets: 0, minLevel: 5 },
+      { id: 'Electric',  name: 'Electric',  family: 'Fire',     rarity: 'rare',      costStars: 900,  costTickets: 0, minLevel: 5 },
+      { id: 'Shadow',    name: 'Shadow',    family: 'Mystical', rarity: 'rare',      costStars: 1200, costTickets: 0, minLevel: 8 },
+      { id: 'Galaxy',    name: 'Galaxy',    family: 'Mystical', rarity: 'epic',      costStars: 1800, costTickets: 1, minLevel: 12 },
+      { id: 'Christmas', name: 'Christmas', family: 'Seasonal', rarity: 'epic',      costStars: 1800, costTickets: 1, minLevel: 12 },
+      { id: 'Halloween', name: 'Halloween', family: 'Seasonal', rarity: 'epic',      costStars: 1800, costTickets: 1, minLevel: 12 },
+      { id: 'Golden',    name: 'Golden',    family: 'Elegant',  rarity: 'legendary', costStars: 3500, costTickets: 5, minLevel: 20 },
+      { id: 'Royal',     name: 'Royal',     family: 'Elegant',  rarity: 'legendary', costStars: 3500, costTickets: 5, minLevel: 20 },
+      { id: 'Mythical',  name: 'Mythical',  family: 'Mystical', rarity: 'legendary', costStars: 5000, costTickets: 8, minLevel: 25 },
+    ],
+  },
+  events: [
+    { id: 'evt_jungle_festival', icon: '🐍', name: 'Jungle Festival',    description: 'Double stars from every collectible all weekend.', months: [], rewardHint: '2× Stars' },
+    { id: 'evt_monsoon',         icon: '🌧️', name: 'Monsoon Rush',        description: 'Frog & star spawns tripled across the reserve.',   months: [6, 7, 8], rewardHint: '3× Frogs & Stars' },
+    { id: 'evt_halloween',       icon: '🎃', name: 'Halloween Hunt',      description: 'Pumpkin skins, spooky map tint and night hazards.', months: [10], rewardHint: 'Halloween skin' },
+    { id: 'evt_winter',          icon: '🎄', name: 'Winter Wonderland',   description: 'Snow map, gift chests and festive accessories.',    months: [12], rewardHint: 'Christmas skin' },
+    { id: 'evt_newyear',         icon: '🎆', name: 'New Year Fireworks',  description: 'Bonus XP on every match to start the year strong.',  months: [1], rewardHint: '2× XP' },
+    { id: 'evt_spring_bloom',    icon: '🌸', name: 'Spring Bloom',        description: 'Sakura trails and flower-crown drops in the park.',  months: [3, 4], rewardHint: 'Flower Crown' },
+  ],
 };
 
 // Deep-merge plain objects (arrays replace wholesale — a config file that lists the ladder
@@ -185,6 +247,21 @@ export function activeSeasonId(now: Date = new Date()): string {
   return s?.id || 'summer';
 }
 
+export function skinById(id: string): SkinDef | undefined {
+  return gameConfig.cosmetics.skins.find(s => s.id === id);
+}
+
+// A scheduled event is "live" inside its explicit ISO window, or during one of its months.
+export function eventIsLive(e: ScheduledEvent, now: Date = new Date()): boolean {
+  if (e.startsAt || e.endsAt) {
+    const t = now.getTime();
+    if (e.startsAt && t < Date.parse(e.startsAt)) return false;
+    if (e.endsAt && t > Date.parse(e.endsAt)) return false;
+    return true;
+  }
+  return e.months.includes(now.getMonth() + 1);
+}
+
 // The subset the client is allowed to see (no server-only secrets — this is all balancing data).
 export function clientConfig() {
   return {
@@ -192,8 +269,13 @@ export function clientConfig() {
       maxLevel: gameConfig.progression.maxLevel,
       evolutionLadder: gameConfig.progression.evolutionLadder,
     },
-    economy: { match: gameConfig.economy.match },
+    // `respawn` is published so the RESPAWN OPTIONS panel prices itself from the same source
+    // the server charges from — a JSON override can't leave the UI advertising a stale cost.
+    economy: { match: gameConfig.economy.match, respawn: gameConfig.economy.respawn },
     world: gameConfig.world,
     maps: { themes: gameConfig.maps.themes, seasons: gameConfig.maps.seasons, activeSeason: activeSeasonId() },
+    // Skin pricing is published so the shop UI renders one source of truth — but ownership
+    // and the actual charge are always decided server-side.
+    cosmetics: { skins: gameConfig.cosmetics.skins, starterSkins: gameConfig.cosmetics.starterSkins },
   };
 }

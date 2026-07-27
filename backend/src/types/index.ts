@@ -42,7 +42,12 @@ export interface PlayerProfile {
   rating: number;        // Elo / MMR rating
   stars: number;         // Primary soft currency
   tickets: number;       // Premium battle pass tickets
+  // §social Public, shareable player identifier ("AP-XXXX-XXXX"). Safe to print, screenshot
+  // and send to anyone — unlike `userId`, which is an internal account key and never leaves
+  // the server. Friend requests can be addressed by this or by exact username.
+  friendCode: string;
   equippedSkin: string;
+  unlockedSkins: string[];       // owned skin ids — the server refuses to equip anything else
   equippedEvolution: Evolution;
   unlockedEvolutions: Evolution[];
   equippedTrail: string;
@@ -314,6 +319,23 @@ export interface SocialGraph {
   incoming: string[];   // requests awaiting THIS user's accept/reject
   outgoing: string[];   // requests THIS user has sent
   blocked: string[];
+}
+
+// §social A stored "come play" invite. Delivery used to be a live socket emit and nothing
+// else, so inviting an offline friend simply failed. Invites are now persisted per recipient
+// and handed over the moment they next connect. The original match is long gone by then, so
+// what carries is the MODE — the invite reads "Alpha invited you to Battle Royale" and the
+// accept button drops you into that mode.
+export interface MatchInvite {
+  id: string;
+  fromUserId: string;
+  fromName: string;
+  fromAvatar: string;
+  toUserId: string;
+  mode: string;        // UI mode id (free_roam | explorer | battle_royale | team | nokia | event)
+  createdAt: number;   // epoch ms
+  expiresAt: number;   // epoch ms — pruned on read and on save
+  deliveredAt?: number; // set when it has been pushed to a live socket
 }
 
 export type ProgressMetric =

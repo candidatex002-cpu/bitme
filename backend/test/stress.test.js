@@ -22,8 +22,9 @@ test.after(() => {
   try { fs.rmSync(process.env.DATA_FILE, { force: true }); } catch { /* */ }
 });
 
-test('Stress Test: 25+ simultaneous players in 1 room with 30 Hz tick rate stability', async () => {
+test('Stress Test: 25+ simultaneous players in 1 room with 30 Hz tick rate stability', async (t) => {
   const session = new GameSessionService('stress_room_1', 'classic');
+  t.after(() => session.stop()); // a live 30 Hz loop would otherwise outlive the test
   const playerCount = 30;
 
   const users = [];
@@ -54,8 +55,9 @@ test('Stress Test: 25+ simultaneous players in 1 room with 30 Hz tick rate stabi
   console.log(`[STRESS] Completed 100 ticks for 30 players in ${duration}ms`);
 });
 
-test('Stress Test: 100+ concurrent matches simulation with zero memory leaks', () => {
+test('Stress Test: 100+ concurrent matches simulation with zero memory leaks', (t) => {
   const manager = new GameSessionManager();
+  t.after(() => manager.stopAll()); // release every simulation loop the manager spun up
   const matchCount = 100;
 
   const initialMemory = process.memoryUsage().heapUsed;

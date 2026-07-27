@@ -107,15 +107,297 @@ test('Progression: rank + evolution unlocks', () => {
   assert.ok(ProgressionService.unlockedEvolutions(1000, 80000, 2).includes('Legend'), 'Legend also unlocked at prestige 2');
 });
 
-// ---------------------------------------------------------------- EconomyService
-test('Economy: purchase succeeds / fails on funds', () => {
+// ---------------------------------------------------------------- EconomyService (skin ownership)
+test('Economy: new accounts own only the starter skins', () => {
+  const { user, profile } = db.createUser('Starter', 'starter@x.io', 'hash', false);
+  assert.deepEqual(profile.unlockedSkins, ['Forest', 'Jungle']);
+  assert.equal(EconomyService.ownsSkin(user.id, 'Forest'), true);
+  assert.equal(EconomyService.ownsSkin(user.id, 'Golden'), false, 'legendary skin is not free');
+});
+
+test('Economy: purchase debits the config price and grants ownership', () => {
   const { user } = db.createUser('Shopper', 'sh@x.io', 'hash', false);
-  db.updateProfile(user.id, { stars: 2000, tickets: 20 });
-  const ok = EconomyService.purchaseItem(user.id, 'skin_golden'); // 1000 stars / 10 tickets
+  db.updateProfile(user.id, { stars: 2000, tickets: 20, level: 10 });
+  const ok = EconomyService.purchaseSkin(user.id, 'Ocean'); // 400 stars, level 1
   assert.equal(ok.success, true);
-  db.updateProfile(user.id, { stars: 0, tickets: 0 });
-  const broke = EconomyService.purchaseItem(user.id, 'skin_shadow');
-  assert.equal(broke.success, false);
+  const p = db.getProfile(user.id);
+  assert.equal(p.stars, 1600, 'exactly the catalog price was charged');
+  assert.ok(p.unlockedSkins.includes('Ocean'));
+  // Buying the same skin twice must not charge again.
+  const dupe = EconomyService.purchaseSkin(user.id, 'Ocean');
+  assert.equal(dupe.success, false);
+  assert.equal(db.getProfile(user.id).stars, 1600, 'no double charge');
+});
+
+test('Economy: purchase blocked on funds, level and unknown ids', () => {
+  const { user } = db.createUser('Broke', 'broke@x.io', 'hash', false);
+  db.updateProfile(user.id, { stars: 10, tickets: 0, level: 1 });
+  assert.equal(EconomyService.purchaseSkin(user.id, 'Ice').success, false, 'not enough stars');
+  db.updateProfile(user.id, { stars: 99999, tickets: 99, level: 1 });
+  assert.equal(EconomyService.purchaseSkin(user.id, 'Golden').success, false, 'level 20 gate holds even when rich');
+  assert.equal(EconomyService.purchaseSkin(user.id, 'NotARealSkin').success, false, 'unknown skin rejected');
+  assert.equal(db.getProfile(user.id).stars, 99999, 'nothing was charged for a blocked purchase');
+});
+
+test('Economy: equipping an unowned skin is refused (§sec)', () => {
+  const { user } = db.createUser('Equipper', 'eq@x.io', 'hash', false);
+  db.updateProfile(user.id, { stars: 99999, tickets: 99, level: 99 });
+  const denied = EconomyService.equipSkin(user.id, 'Mythical');
+  assert.equal(denied.success, false, 'cannot equip a skin that was never bought');
+  assert.equal(db.getProfile(user.id).equippedSkin, 'Forest', 'equipped skin unchanged');
+  // Buy it, then the same call succeeds.
+  assert.equal(EconomyService.purchaseSkin(user.id, 'Mythical').success, true);
+  assert.equal(EconomyService.equipSkin(user.id, 'Mythical').success, true);
+  assert.equal(db.getProfile(user.id).equippedSkin, 'Mythical');
+});
+
+test('Economy: catalog reports per-player ownership without leaking other accounts', () => {
+  const { user } = db.createUser('Browser', 'br@x.io', 'hash', false);
+  db.updateProfile(user.id, { stars: 500, tickets: 0, level: 1 });
+  const { skins } = EconomyService.getCatalog(user.id);
+  const forest = skins.find(s => s.id === 'Forest');
+  const ocean = skins.find(s => s.id === 'Ocean');
+  const golden = skins.find(s => s.id === 'Golden');
+  assert.equal(forest.owned, true);
+  assert.equal(ocean.owned, false);
+  assert.equal(ocean.purchasable, true, '400 stars affordable with 500');
+  assert.equal(golden.levelMet, false, 'level gate reported to the UI');
+  assert.equal(golden.purchasable, false);
+  // The anonymous view carries prices but no ownership from anyone else's account.
+  const anon = EconomyService.getCatalog();
+  assert.equal(anon.skins.find(s => s.id === 'Ocean').owned, false);
+});
+
+// ---------------------------------------------------------------- AntiCheat (§sec)
+test('AntiCheat: match results cannot be replayed to farm rewards', () => {
+  const { AntiCheatService } = require(dist('services/AntiCheatService.js'));
+  const ac = new AntiCheatService();
+  const uid = 'usr_farmer';
+  // First submission of a 180s match is always accepted.
+  assert.equal(ac.validateMatchSubmission(uid, 180).ok, true);
+  // Immediately replaying it is rejected — no real match could have elapsed.
+  const replay = ac.validateMatchSubmission(uid, 180);
+  assert.equal(replay.ok, false, 'burst replay rejected');
+  assert.ok(replay.retryAfterMs > 0, 'client is told when it may retry');
+});
+
+test('AntiCheat: an honest short match right after a long one is accepted', () => {
+  const { AntiCheatService } = require(dist('services/AntiCheatService.js'));
+  const ac = new AntiCheatService();
+  const uid = 'usr_honest';
+  assert.equal(ac.validateMatchSubmission(uid, 600).ok, true, 'a long match submits fine');
+  // Pretend the burst window has passed, then submit a genuinely quick death. The rule must
+  // grade THIS match's duration against the gap, not the previous (long) match's.
+  ac.lastMatchSubmit.set(uid, { at: Date.now() - 4000, claimedSeconds: 600 });
+  assert.equal(ac.validateMatchSubmission(uid, 8).ok, true, 'short honest match must not be flagged');
+  // …but claiming a 10-minute match in that same window is still impossible.
+  ac.lastMatchSubmit.set(uid, { at: Date.now() - 4000, claimedSeconds: 8 });
+  assert.equal(ac.validateMatchSubmission(uid, 600).ok, false, 'impossible playtime still rejected');
+});
+
+test('AntiCheat: input flooding is rejected past the per-second cap', () => {
+  const { AntiCheatService } = require(dist('services/AntiCheatService.js'));
+  const ac = new AntiCheatService();
+  let accepted = 0;
+  for (let i = 0; i < 200; i++) if (ac.validatePacketFrequency('usr_flood')) accepted++;
+  assert.ok(accepted <= 60, `only the first 60 frames/sec are accepted, got ${accepted}`);
+});
+
+// ---------------------------------------------------------------- Friend codes (§social)
+test('Social: every profile gets a unique, shareable friend code', () => {
+  const a = db.createUser('CodeA', 'ca@x.io', 'hash', false);
+  const b = db.createUser('CodeB', 'cb@x.io', 'hash', false);
+  assert.match(a.profile.friendCode, /^AP-[A-Z0-9]{4}-[A-Z0-9]{4}$/, 'readable AP-XXXX-XXXX shape');
+  assert.notEqual(a.profile.friendCode, b.profile.friendCode, 'codes are unique');
+  // Ambiguous glyphs are excluded so a code read off a screen can't be mistyped.
+  assert.ok(!/[OI]/.test(a.profile.friendCode.replace('AP-', '')), 'no O/I in the code body');
+  assert.equal(db.getProfileByFriendCode(a.profile.friendCode).userId, a.user.id);
+});
+
+test('Social: friend codes are case/format insensitive and never expose userId', () => {
+  const { user, profile } = db.createUser('CodeC', 'cc@x.io', 'hash', false);
+  const messy = profile.friendCode.toLowerCase().replace(/-/g, ' ');
+  assert.equal(db.getProfileByFriendCode(messy).userId, user.id, 'lenient lookup');
+  assert.equal(db.getProfileByFriendCode('AP-ZZZZ-ZZZZ'), undefined, 'unknown code returns nothing');
+  // The code is derived independently of the account id — it leaks nothing about it.
+  assert.ok(!profile.friendCode.includes(user.id));
+});
+
+test('Social: a friend request can be addressed by friend code OR username', () => {
+  const me = db.createUser('Requester', 'rq@x.io', 'hash', false);
+  const them = db.createUser('Target', 'tg@x.io', 'hash', false);
+
+  const byCode = SocialService.sendRequest(me.user.id, them.profile.friendCode);
+  assert.equal(byCode.success, true, 'friend code resolves');
+  assert.ok(db.getSocial(them.user.id).incoming.includes(me.user.id));
+
+  // Same by username, from a third account.
+  const other = db.createUser('Requester2', 'rq2@x.io', 'hash', false);
+  assert.equal(SocialService.sendRequest(other.user.id, 'Target').success, true, 'username resolves');
+
+  // Guard rails still hold.
+  assert.equal(SocialService.sendRequest(me.user.id, them.profile.friendCode).success, false, 'no duplicate request');
+  assert.equal(SocialService.sendRequest(me.user.id, me.profile.friendCode).success, false, 'cannot add yourself');
+  assert.equal(SocialService.sendRequest(me.user.id, 'AP-ZZZZ-ZZZZ').success, false, 'unknown code rejected');
+  assert.equal(SocialService.sendRequest(me.user.id, '').success, false, 'empty query rejected');
+});
+
+test('Social: overview returns only YOUR friend code', () => {
+  const me = db.createUser('OverviewMe', 'om@x.io', 'hash', false);
+  const other = db.createUser('OverviewOther', 'oo@x.io', 'hash', false);
+  SocialService.sendRequest(other.user.id, me.profile.friendCode);
+  SocialService.respond(me.user.id, other.user.id, 'accept');
+  const ov = SocialService.overview(me.user.id);
+  assert.equal(ov.myFriendCode, me.profile.friendCode);
+  assert.equal(ov.friends.length, 1);
+  // A friend card exposes name/avatar/level/online — never their code or any private field.
+  assert.deepEqual(Object.keys(ov.friends[0]).sort(), ['avatar', 'id', 'level', 'name', 'online']);
+  assert.ok(!JSON.stringify(ov.friends).includes(other.profile.friendCode));
+});
+
+// ---------------------------------------------------------------- Match invites (§social)
+const befriend = (a, b) => {
+  SocialService.sendRequest(a.user.id, b.profile.friendCode);
+  SocialService.respond(b.user.id, a.user.id, 'accept');
+};
+
+test('Invites: sending to an OFFLINE friend stores it instead of failing', () => {
+  const a = db.createUser('InvA', 'ia@x.io', 'hash', false);
+  const b = db.createUser('InvB', 'ib@x.io', 'hash', false);
+  befriend(a, b);
+
+  // Neither is connected — this used to be rejected outright.
+  const r = SocialService.invite(a.user.id, b.user.id, 'battle_royale');
+  assert.equal(r.success, true, 'offline invite is accepted');
+  assert.equal(r.online, false);
+  assert.match(r.message, /offline/i, 'the sender is told they will see it later');
+
+  // It is waiting for the recipient — and carries the mode.
+  const pending = SocialService.pendingInvites(b.user.id);
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].mode, 'battle_royale');
+  assert.equal(pending[0].fromName, a.profile.displayName);
+  // …and only for the recipient. The sender's own inbox is untouched.
+  assert.equal(SocialService.pendingInvites(a.user.id).length, 0);
+});
+
+test('Invites: only friends can invite, and never yourself', () => {
+  const a = db.createUser('InvC', 'ic@x.io', 'hash', false);
+  const stranger = db.createUser('InvD', 'id@x.io', 'hash', false);
+  assert.equal(SocialService.invite(a.user.id, stranger.user.id, 'free_roam').success, false, 'strangers cannot be invited');
+  assert.equal(SocialService.invite(a.user.id, a.user.id, 'free_roam').success, false, 'cannot invite yourself');
+  assert.equal(SocialService.invite(a.user.id, 'usr_nope', 'free_roam').success, false, 'unknown target rejected');
+  assert.equal(SocialService.pendingInvites(stranger.user.id).length, 0, 'nothing was stored');
+});
+
+test('Invites: a blocked sender cannot reach you, without revealing the block', () => {
+  const a = db.createUser('InvE', 'ie@x.io', 'hash', false);
+  const b = db.createUser('InvF', 'if@x.io', 'hash', false);
+  befriend(a, b);
+  SocialService.block(b.user.id, a.user.id); // b blocks a (this also unfriends)
+  const r = SocialService.invite(a.user.id, b.user.id, 'free_roam');
+  assert.equal(r.success, false);
+  assert.ok(!/block/i.test(r.message), 'the message must not confirm a block exists');
+  assert.equal(SocialService.pendingInvites(b.user.id).length, 0);
+});
+
+test('Invites: re-inviting refreshes rather than stacking duplicates', () => {
+  const a = db.createUser('InvG', 'ig@x.io', 'hash', false);
+  const b = db.createUser('InvH', 'ih@x.io', 'hash', false);
+  befriend(a, b);
+  SocialService.invite(a.user.id, b.user.id, 'free_roam');
+  SocialService.invite(a.user.id, b.user.id, 'team');
+  const pending = SocialService.pendingInvites(b.user.id);
+  assert.equal(pending.length, 1, 'one invite per sender');
+  assert.equal(pending[0].mode, 'team', 'the newest mode wins');
+});
+
+test('Invites: accepting returns the mode and consumes the invite', () => {
+  const a = db.createUser('InvI', 'ii@x.io', 'hash', false);
+  const b = db.createUser('InvJ', 'ij@x.io', 'hash', false);
+  befriend(a, b);
+  SocialService.invite(a.user.id, b.user.id, 'battle_royale');
+  const id = SocialService.pendingInvites(b.user.id)[0].id;
+
+  const accepted = SocialService.respondToInvite(b.user.id, id, 'accept');
+  assert.equal(accepted.success, true);
+  assert.equal(accepted.mode, 'battle_royale', 'client is told which mode to launch');
+  assert.equal(SocialService.pendingInvites(b.user.id).length, 0, 'invite consumed');
+  // It cannot be actioned twice.
+  assert.equal(SocialService.respondToInvite(b.user.id, id, 'accept').success, false);
+});
+
+test('Invites: declining consumes it without launching anything', () => {
+  const a = db.createUser('InvK', 'ik@x.io', 'hash', false);
+  const b = db.createUser('InvL', 'il@x.io', 'hash', false);
+  befriend(a, b);
+  SocialService.invite(a.user.id, b.user.id, 'free_roam');
+  const id = SocialService.pendingInvites(b.user.id)[0].id;
+  const declined = SocialService.respondToInvite(b.user.id, id, 'decline');
+  assert.equal(declined.success, true);
+  assert.equal(declined.mode, undefined, 'declining launches nothing');
+  assert.equal(SocialService.pendingInvites(b.user.id).length, 0);
+});
+
+test("Invites: you cannot action someone else's invite", () => {
+  const a = db.createUser('InvM', 'im@x.io', 'hash', false);
+  const b = db.createUser('InvN', 'in@x.io', 'hash', false);
+  const c = db.createUser('InvO', 'io@x.io', 'hash', false);
+  befriend(a, b);
+  SocialService.invite(a.user.id, b.user.id, 'free_roam');
+  const id = SocialService.pendingInvites(b.user.id)[0].id;
+  // C guesses the id — invites are looked up within the caller's own inbox, so it misses.
+  assert.equal(SocialService.respondToInvite(c.user.id, id, 'accept').success, false);
+  assert.equal(SocialService.pendingInvites(b.user.id).length, 1, "the real recipient's invite is untouched");
+});
+
+test('Invites: expired invites are pruned and an unknown mode is normalised', () => {
+  const a = db.createUser('InvP', 'ip@x.io', 'hash', false);
+  const b = db.createUser('InvQ', 'iq@x.io', 'hash', false);
+  befriend(a, b);
+  // A client-supplied garbage mode must not end up stored.
+  SocialService.invite(a.user.id, b.user.id, 'not_a_real_mode');
+  assert.equal(SocialService.pendingInvites(b.user.id)[0].mode, 'free_roam');
+
+  // Age it past its TTL — reads prune, so no sweeper is needed.
+  const stored = db.getMatchInvites(b.user.id);
+  stored[0].expiresAt = Date.now() - 1;
+  assert.equal(SocialService.pendingInvites(b.user.id).length, 0, 'expired invite disappears');
+});
+
+test('Invites: an inbox cannot grow without bound', () => {
+  const target = db.createUser('InvTarget', 'it@x.io', 'hash', false);
+  for (let i = 0; i < 26; i++) {
+    const sender = db.createUser(`InvSender${i}`, `is${i}@x.io`, 'hash', false);
+    befriend(sender, target);
+    SocialService.invite(sender.user.id, target.user.id, 'free_roam');
+  }
+  assert.ok(SocialService.pendingInvites(target.user.id).length <= 20, 'capped at 20 pending invites');
+});
+
+test('Invites: survive a restart (persisted with the snapshot)', () => {
+  const a = db.createUser('InvPersistA', 'ipa@x.io', 'hash', false);
+  const b = db.createUser('InvPersistB', 'ipb@x.io', 'hash', false);
+  befriend(a, b);
+  SocialService.invite(a.user.id, b.user.id, 'team');
+  db.flush();
+
+  delete require.cache[require.resolve(dist('db/Database.js'))];
+  const { db: db2 } = require(dist('db/Database.js'));
+  const reloaded = db2.getMatchInvites(b.user.id);
+  assert.equal(reloaded.length, 1, 'invite survived the reload');
+  assert.equal(reloaded[0].mode, 'team');
+  assert.equal(reloaded[0].fromUserId, a.user.id);
+});
+
+// ---------------------------------------------------------------- SocialService (§sec)
+test('Social: mutations reject unknown users and self-targeting', () => {
+  const { user } = db.createUser('SocialSec', 'ss@x.io', 'hash', false);
+  assert.equal(SocialService.block(user.id, 'usr_does_not_exist').success, false, 'unknown target rejected');
+  assert.equal(SocialService.block(user.id, user.id).success, false, 'self-targeting rejected');
+  assert.equal(SocialService.unfriend(user.id, 'usr_does_not_exist').success, false);
+  assert.equal(SocialService.respond(user.id, 'usr_does_not_exist', 'accept').success, false);
+  assert.equal(SocialService.unblock(user.id, '').success, false, 'empty id rejected');
 });
 
 // ---------------------------------------------------------------- RewardsService (§15)

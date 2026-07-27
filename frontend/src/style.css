@@ -1444,6 +1444,9 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 }
 .touch-btn:active { transform: scale(0.90); }
 .touch-btn.cooling { opacity: 0.5; }
+/* Coil Guard off cooldown — a soft ring so the player can see it is castable at a glance. */
+.touch-btn.ability.ready { box-shadow: var(--shadow-lg), 0 0 0 3px rgba(167, 139, 250, 0.55); }
+.touch-btn.boost.active { box-shadow: var(--shadow-lg), 0 0 0 3px rgba(111, 224, 141, 0.6); }
 
 /* ---- Minimap toggle ---- */
 .hud.mini-hidden .hud-leaderboard,
@@ -1607,6 +1610,69 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .skin-tag { font-size: 0.72rem; font-weight: 700; color: var(--muted); margin-top: 2px; }
 .skin-tag.equipped { color: var(--green-deep); font-weight: 800; }
 .skin-tag.premium { color: #D97706; font-weight: 800; }
+
+/* ---- Skin ownership: locked / buyable states ---- */
+.skins-summary { font-size: 0.8rem; margin-bottom: 12px; font-weight: 600; }
+.skin-card.locked .skin-swatch { filter: grayscale(0.72) brightness(0.86); }
+.skin-card.locked:hover { border-color: var(--gold-deep); }
+.skin-swatch-wrap { position: relative; }
+.skin-lock {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 1.25rem; background: rgba(15,23,42,0.28); border-radius: inherit;
+}
+.skin-tag.buyable { color: var(--gold-deep); font-weight: 800; }
+.skin-tag.locked { color: var(--muted); font-weight: 700; }
+
+/* ---- Buy confirmation dialog ---- */
+.buy-card { text-align: center; }
+.buy-preview { height: 72px; border-radius: var(--r-md); margin-bottom: 12px; box-shadow: var(--shadow); }
+.buy-price { font-family: var(--font-title); font-weight: 900; font-size: 1.35rem; margin: 10px 0; }
+.buy-blocked { color: var(--danger); font-size: 0.82rem; font-weight: 700; margin-bottom: 8px; }
+.rarity-tag { text-transform: uppercase; font-weight: 800; font-size: 0.68rem; letter-spacing: 0.4px; }
+.rarity-tag.starter   { color: var(--muted); }
+.rarity-tag.common    { color: #3B82F6; }
+.rarity-tag.rare      { color: #8B5CF6; }
+.rarity-tag.epic      { color: #EC4899; }
+.rarity-tag.legendary { color: #D97706; }
+
+/* ---- Match invites + notification badge ---- */
+.notif-wrap { position: relative; }
+.notif-badge {
+  position: absolute; top: -3px; right: -3px;
+  min-width: 17px; height: 17px; padding: 0 4px;
+  border-radius: 9px; background: var(--danger); color: #fff;
+  font-size: 0.62rem; font-weight: 900; line-height: 1;
+  display: grid; place-items: center; border: 2px solid var(--card);
+}
+.row-card.invite-row {
+  border-color: var(--green); background: linear-gradient(90deg, rgba(47,191,91,0.10), transparent);
+}
+
+/* ---- Friend code (shareable public player id) ---- */
+.friend-code-card {
+  background: var(--card-2); border: 1px dashed var(--line);
+  border-radius: var(--r-md); padding: 10px 12px; margin-bottom: 12px;
+}
+.fc-label { font-size: 0.72rem; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
+.fc-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fc-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 800; font-size: 1.02rem; letter-spacing: 1.2px;
+  color: var(--green-deep); background: #fff; border: 1px solid var(--line);
+  border-radius: 8px; padding: 5px 10px;
+  -webkit-user-select: all; user-select: all; /* tap-to-select the whole code on iOS */
+}
+.fc-code.sm { font-size: 0.76rem; letter-spacing: 0.8px; padding: 2px 6px; }
+.fc-inline { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 0.74rem; color: var(--muted); }
+
+/* ---- Live event highlight ---- */
+.row-card.event-live { border-color: var(--gold); background: linear-gradient(90deg, rgba(255,210,63,0.10), transparent); }
+.live-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: #EF4444; margin-left: 6px; vertical-align: middle;
+  animation: live-pulse 1.4s ease-in-out infinite;
+}
+@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 
 /* ---------------------------------------------------------------- accessories */
 .accessories-grid {

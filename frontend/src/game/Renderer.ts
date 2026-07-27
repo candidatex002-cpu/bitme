@@ -111,6 +111,14 @@ export class Renderer {
     });
   }
 
+  // §net How much world this device can actually see right now (half the viewport diagonal,
+  // in world units). The client reports this so the server culls the broadcast to what is
+  // genuinely visible — a phone needs a fraction of what a 4K desktop does.
+  public getViewRadius(): number {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    return Math.hypot(vw, vh) / 2 / Math.max(0.2, this.zoom);
+  }
+
   public setCameraPreset(preset: 'near' | 'medium' | 'far' | 'ultra_wide') {
     const scale = preset === 'near' ? 0.85 : preset === 'medium' ? 0.65 : preset === 'ultra_wide' ? 0.32 : 0.45;
     this.userZoom = scale;

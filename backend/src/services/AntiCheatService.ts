@@ -1,41 +1,32 @@
-import { AntiCheatViolation, SnakeState, Vector2D } from '../types';
+import { AntiCheatViolation } from '../types';
 import { db } from '../db/Database';
 
+// Server-side abuse detection.
+//
+// This is an authoritative-server design: clients send an *angle and a boost flag*, nothing
+// else. The server computes every position itself, so there is no such thing as a client
+// "position" to validate — a speed/teleport check over server-owned coordinates would only
+// ever flag the simulation's own wormhole teleports. What a client CAN forge is the shape of
+// its input stream and the numbers it reports when a match ends, so those are what we police:
+//
+//   1. Input flooding      — more input frames per second than any real client produces.
+//   2. Match-result pacing — claiming more match time than has actually elapsed in wall clock,
+//                            which is how a scripted client would farm rewards by replaying
+//                            /api/match/summary in a loop.
 export class AntiCheatService {
-  private lastPos: Map<string, { pos: Vector2D; time: number }> = new Map();
   private packetCounts: Map<string, { count: number; windowStart: number }> = new Map();
+  // Last accepted match submission per user: when it landed and how much play it claimed.
+  private lastMatchSubmit: Map<string, { at: number; claimedSeconds: number }> = new Map();
 
-  private readonly MAX_SPEED_UNITS_PER_SEC = 450; // Maximum allowed velocity including boost
   private readonly MAX_PACKETS_PER_SEC = 60; // Max WebSocket input frames per second
-
-  public validateMovementInput(userId: string, currentHead: Vector2D, timestamp: number, isBoosting: boolean): boolean {
-    const last = this.lastPos.get(userId);
-    const now = Date.now();
-
-    if (last) {
-      const dt = Math.max(0.001, (now - last.time) / 1000);
-      const dx = currentHead.x - last.pos.x;
-      const dy = currentHead.y - last.pos.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      const calculatedSpeed = distance / dt;
-
-      const allowedSpeed = isBoosting ? this.MAX_SPEED_UNITS_PER_SEC * 1.5 : this.MAX_SPEED_UNITS_PER_SEC;
-
-      if (calculatedSpeed > allowedSpeed + 100 && distance > 50) {
-        this.flagViolation({
-          userId,
-          timestamp: now,
-          rule: distance > 300 ? 'teleport' : 'speed_hack',
-          details: `Calculated speed ${Math.round(calculatedSpeed)} units/s exceeds max ${allowedSpeed} (Delta: ${Math.round(distance)}px in ${Math.round(dt * 1000)}ms)`,
-          severity: distance > 500 ? 'banned' : 'flagged',
-        });
-        return false;
-      }
-    }
-
-    this.lastPos.set(userId, { pos: { x: currentHead.x, y: currentHead.y }, time: now });
-    return true;
-  }
+  // A submission must be separated from the previous one by at least this much real time,
+  // regardless of what it claims — stops a tight replay loop. Kept well under the fastest
+  // legitimate cycle (a match-again is gated by ~2.3s of matchmaking plus actual play), since
+  // the claimed-vs-elapsed rule below is what does the real work.
+  private readonly MIN_SUBMIT_GAP_MS = 2_000;
+  // Tolerance on the claimed-vs-elapsed check: menus, the summary screen and clock skew all
+  // mean real elapsed time is normally *longer* than claimed, never meaningfully shorter.
+  private readonly SUBMIT_GRACE_MS = 30_000;
 
   public validatePacketFrequency(userId: string): boolean {
     const now = Date.now();
@@ -63,19 +54,49 @@ export class AntiCheatService {
     return true;
   }
 
-  public validateGrowthDiminishingReturns(snake: SnakeState, foodCollectedValue: number): boolean {
-    // Level 1-20: 100% growth
-    // Level 20-40: 50% growth
-    // Level 40-60: 20% growth
-    // Level 60+: 5% growth
-    let multiplier = 1.0;
-    if (snake.level > 60) multiplier = 0.05;
-    else if (snake.level > 40) multiplier = 0.20;
-    else if (snake.level > 20) multiplier = 0.50;
+  // Gate on /api/match/summary. `consumePlayerPeak` clears a player's server-observed peak
+  // after the first submission, so a second call for the same life would be graded purely on
+  // client-reported numbers — a scripted client could otherwise replay the endpoint and mint
+  // the maximum clamped reward on every call. Time is the thing it cannot fake: you cannot
+  // finish two 3-minute matches inside ten seconds.
+  public validateMatchSubmission(userId: string, claimedSurvivalSeconds: number): { ok: boolean; reason?: string; retryAfterMs?: number } {
+    const now = Date.now();
+    const prev = this.lastMatchSubmit.get(userId);
 
-    const expectedLengthIncrease = foodCollectedValue * multiplier;
-    // Server computes actual growth strictly using this multiplier.
-    return true;
+    if (prev) {
+      const sinceMs = now - prev.at;
+      if (sinceMs < this.MIN_SUBMIT_GAP_MS) {
+        this.flagViolation({
+          userId, timestamp: now, rule: 'match_spam',
+          details: `Submitted two match results ${sinceMs}ms apart (minimum ${this.MIN_SUBMIT_GAP_MS}ms)`,
+          severity: 'warning',
+        });
+        return { ok: false, reason: 'Match results submitted too quickly', retryAfterMs: this.MIN_SUBMIT_GAP_MS - sinceMs };
+      }
+      // THIS match was necessarily played after the previous one was submitted, so its claimed
+      // duration has to fit inside the real gap between the two submissions. (Checking the
+      // *previous* match's duration here would be wrong — that time elapsed before its own
+      // submission, and doing so rejected an honest short match after a long one.)
+      const requiredMs = claimedSurvivalSeconds * 1000;
+      if (requiredMs > sinceMs + this.SUBMIT_GRACE_MS) {
+        this.flagViolation({
+          userId, timestamp: now, rule: 'impossible_playtime',
+          details: `Claimed a ${claimedSurvivalSeconds}s match but only ${Math.round(sinceMs / 1000)}s elapsed since the previous result`,
+          severity: 'flagged',
+        });
+        this.lastMatchSubmit.set(userId, { at: now, claimedSeconds: claimedSurvivalSeconds });
+        return { ok: false, reason: 'Reported match duration exceeds elapsed time' };
+      }
+    }
+
+    this.lastMatchSubmit.set(userId, { at: now, claimedSeconds: claimedSurvivalSeconds });
+    return { ok: true };
+  }
+
+  // Drop tracking for a user (disconnect / test teardown) so the maps stay bounded.
+  public forget(userId: string) {
+    this.packetCounts.delete(userId);
+    this.lastMatchSubmit.delete(userId);
   }
 
   private flagViolation(violation: AntiCheatViolation) {

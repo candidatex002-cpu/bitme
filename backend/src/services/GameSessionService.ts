@@ -82,6 +82,11 @@ export class GameSessionService {
   private state: GameWorldState;
   private config: GameModeConfig;
   private simulationInterval: NodeJS.Timeout | null = null;
+  private botRespawnTimers: Set<NodeJS.Timeout> = new Set();
+  // Bumped whenever the near-static world layout (obstacles / wormholes) changes. The
+  // broadcast sends that layout only when this differs from what a client already has,
+  // instead of re-sending ~46 obstacles and 4 portals 30 times a second forever.
+  private worldVersion = 1;
   private readonly TICK_RATE = 30;
   // §12 World/spawn/timer tunables sourced from the central config (JSON-overridable).
   private readonly WORLD_SIZE = gameConfig.world.size; // §8 large map — room for ~25 players
@@ -177,6 +182,10 @@ export class GameSessionService {
   private startLoop() {
     const tickIntervalMs = 1000 / this.TICK_RATE;
     this.simulationInterval = setInterval(() => this.updateTick(1 / this.TICK_RATE), tickIntervalMs);
+    // The HTTP server keeps the process alive in production, so the sim loop never needs to.
+    // Unref'ing it means a session that is created but never stopped (tests, tooling) can't
+    // pin the event loop open forever.
+    this.simulationInterval.unref?.();
   }
 
   public getState(): GameWorldState {
@@ -187,9 +196,16 @@ export class GameSessionService {
     return this.config;
   }
 
-  // Stop the simulation loop (used on teardown / tests).
+  // Layout revision — clients cache obstacles/portals and only re-fetch when this changes.
+  public getWorldVersion(): number {
+    return this.worldVersion;
+  }
+
+  // Stop the simulation loop and every pending timer it owns (used on teardown / tests).
   public stop() {
     if (this.simulationInterval) { clearInterval(this.simulationInterval); this.simulationInterval = null; }
+    for (const t of this.botRespawnTimers) clearTimeout(t);
+    this.botRespawnTimers.clear();
     this.state.status = 'ended';
   }
 
@@ -799,10 +815,15 @@ export class GameSessionService {
     if (!snake.userId.startsWith('bot_') && !snake.isBoss) {
       db.updateLeaderboard(snake.userId, snake.displayName, Math.round(snake.score), false);
     } else if (!snake.isBoss) {
-      // Respawn bots to keep the world alive
-      setTimeout(() => {
+      // Respawn bots to keep the world alive. Skipped once the session has been stopped, so a
+      // torn-down simulation can't keep resurrecting snakes into a dead world.
+      const t = setTimeout(() => {
+        this.botRespawnTimers.delete(t);
+        if (this.state.status === 'ended') return;
         if (this.state.snakes[snake.id]) this.registerPlayer(snake.id, snake.displayName, snake.skin, true);
       }, 4000);
+      t.unref?.();
+      this.botRespawnTimers.add(t);
     }
   }
 
@@ -810,7 +831,7 @@ export class GameSessionService {
   private updateWorldEvent(dt: number) {
     this.eventTimer -= dt;
     if (this.eventTimer <= 0) {
-      this.eventTimer = 180;
+      this.eventTimer = gameConfig.world.eventDurationSeconds; // §12 config-driven, not a literal
       this.currentEventIndex = (this.currentEventIndex + 1) % this.availableEvents.length;
       this.state.currentEvent = this.availableEvents[this.currentEventIndex];
       if (this.state.currentEvent.type === 'boss_anaconda_raid') this.spawnBossAnaconda();
@@ -1025,6 +1046,7 @@ export class GameSessionService {
       id: `wh_${i}`, targetId: `wh_${(i + 1) % 4}`, x: p.x, y: p.y,
       label: '🌀 Wormhole', color: colors[i], wormhole: true,
     }));
+    this.worldVersion++;
   }
 
   // ---------------------------------------------------------------- §8 dynamic sanctuary
@@ -1095,6 +1117,7 @@ export class GameSessionService {
 
   private addObstaclesUpTo(target: number) {
     const obstacles = this.state.obstacles ?? (this.state.obstacles = []);
+    const before = obstacles.length;
     let guard = 0;
     while (obstacles.length < target && guard++ < 80) {
       const t = OBSTACLE_TEMPLATES[Math.floor(Math.random() * OBSTACLE_TEMPLATES.length)];
@@ -1102,6 +1125,7 @@ export class GameSessionService {
       if (!pos) continue;
       obstacles.push({ id: `ob_${obstacles.length}_${Math.random().toString(36).slice(2, 6)}`, type: t.type, icon: t.icon, x: pos.x, y: pos.y, radius: t.radius, blocking: t.blocking, damage: t.damage });
     }
+    if (obstacles.length !== before) this.worldVersion++;
   }
 
   // Find an open spot that guarantees a navigable path — props keep wide lanes between them.
@@ -1128,6 +1152,108 @@ export class GameSessionService {
     if (!snake) return;
     snake.isPaused = inactive;
     if (inactive) snake.boosting = false;
+  }
+
+  // ---------------------------------------------------------------- broadcast shaping
+  //
+  // The naive broadcast sent the entire world (every snake body, ~180 food, ~46 obstacles,
+  // full float precision) to every client 30×/second. Three things fix that without the
+  // client noticing anything except lower bandwidth:
+  //
+  //   1. Precision — coordinates are rounded to 0.1 units. Sub-pixel precision is invisible
+  //      at every zoom level but roughly halves the JSON.
+  //   2. Static layout — obstacles and wormholes only ship when `worldVersion` changes.
+  //   3. Interest management — food is culled to a radius around the viewer, since the client
+  //      cannot draw what is off-screen anyway.
+  //
+  // Snakes are deliberately NOT culled: the minimap and the Top-10 board need every player.
+  // They are, however, stripped of `userId` — the account identifier is nobody else's
+  // business, and the client only ever matches on `id`.
+  private static r1(n: number): number { return Math.round(n * 10) / 10; }
+
+  // The part of a tick that is identical for every viewer — built once per mode per tick.
+  public buildSharedSnapshot() {
+    const r1 = GameSessionService.r1;
+    const snakes = Object.values(this.state.snakes).map((s) => {
+      const { userId, body, ...rest } = s; // never broadcast another player's account id
+      // Bodies go over the wire flat ([x0,y0,x1,y1,…]) rather than as {x,y} objects: same
+      // numbers, roughly half the JSON, and the client rehydrates them in one place.
+      const flat: number[] = [];
+      for (const seg of s.body) { flat.push(r1(seg.x), r1(seg.y)); }
+      return {
+        ...rest,
+        head: { x: r1(s.head.x), y: r1(s.head.y) },
+        b: flat,
+        angle: Math.round(s.angle * 1000) / 1000,
+        score: Math.round(s.score),
+        hp: r1(s.hp),
+        shieldTimer: r1(s.shieldTimer),
+        speedBoostTimer: r1(s.speedBoostTimer),
+        superTimer: s.superTimer === undefined ? undefined : r1(s.superTimer),
+        abilityCooldown: r1(s.abilityCooldown),
+        abilityActiveTimer: r1(s.abilityActiveTimer),
+      };
+    });
+
+    return {
+      tick: this.state.tick,
+      mode: this.state.mode,
+      snakes,
+      safeZone: this.state.safeZone,
+      sanctuaryZone: this.state.sanctuaryZone,
+      leaderboard: this.state.leaderboard,
+      teamScores: this.state.teamScores,
+      currentEvent: this.state.currentEvent,
+      matchTimer: this.state.matchTimer,
+      matchOver: this.state.matchOver,
+      round: this.state.round,
+      worldVersion: this.worldVersion,
+    };
+  }
+
+  // Per-viewer snake list. Snakes are never dropped — the minimap and the Top-10 board need
+  // every player — but a snake the viewer cannot possibly see ships as head-only. Bodies are
+  // by far the largest part of a tick (up to 90 segments each), and the renderer already
+  // tolerates an empty body: it draws nothing in the world and still plots the minimap dot.
+  public viewSnakes(sharedSnakes: any[], viewer: Vector2D | null, radius: number) {
+    if (!viewer) return sharedSnakes;
+    // Pad by a snake's own length so a body scrolling into view is already present.
+    const cut = radius + 400;
+    const cut2 = cut * cut;
+    return sharedSnakes.map((s) => {
+      const dx = this.wrapDelta(s.head.x - viewer.x);
+      const dy = this.wrapDelta(s.head.y - viewer.y);
+      if (dx * dx + dy * dy <= cut2) return s;
+      return { ...s, b: [] };
+    });
+  }
+
+  // Food within `radius` of the viewer (toroidal). No viewer position (spectator / just
+  // joined) falls back to the whole set so nothing is ever missing on the first frame.
+  public foodNear(viewer: Vector2D | null, radius: number) {
+    const r1 = GameSessionService.r1;
+    const out: any[] = [];
+    const r2 = radius * radius;
+    for (const id in this.state.food) {
+      const f = this.state.food[id];
+      if (viewer) {
+        const dx = this.wrapDelta(f.x - viewer.x);
+        const dy = this.wrapDelta(f.y - viewer.y);
+        if (dx * dx + dy * dy > r2) continue;
+      }
+      out.push({ ...f, x: r1(f.x), y: r1(f.y), vx: undefined, vy: undefined, wanderTimer: undefined });
+    }
+    return out;
+  }
+
+  // The near-static layout — sent only when the client's cached version is stale.
+  public getWorldLayout() {
+    return { obstacles: this.state.obstacles || [], portals: this.state.portals || [] };
+  }
+
+  public getHeadPosition(userId: string): Vector2D | null {
+    const s = this.state.snakes[userId];
+    return s ? { x: s.head.x, y: s.head.y } : null;
   }
 
   private updateLeaderboard() {

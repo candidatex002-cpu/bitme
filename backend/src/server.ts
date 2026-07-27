@@ -14,7 +14,8 @@ import { presence } from './services/Presence';
 import { sessionManager } from './services/GameSessionManager';
 import { getModeConfig } from './services/GameSessionService';
 import { ProgressionService } from './services/ProgressionService';
-import { gameConfig, clientConfig } from './config/GameConfig';
+import { gameConfig, clientConfig, eventIsLive, activeSeasonId } from './config/GameConfig';
+import { antiCheat } from './services/AntiCheatService';
 import { GameMode, Evolution } from './types';
 import { db } from './db/Database';
 
@@ -62,7 +63,7 @@ function rateLimit(bucket: string, windowMs: number, max: number) {
 const authLimiter = rateLimit('auth', 60_000, 20);
 const writeLimiter = rateLimit('write', 60_000, 90);
 
-interface SocketUser { userId: string; username: string; mode: GameMode; skin: string; evolution: string; region?: string; lastSeq: number; }
+interface SocketUser { userId: string; username: string; mode: GameMode; skin: string; evolution: string; region?: string; lastSeq: number; worldVersion: number; viewRadius: number; }
 const connectedSockets: Map<string, SocketUser> = new Map();
 
 const VALID_MODES: GameMode[] = ['classic', 'battle_royale', 'team', 'event'];
@@ -106,8 +107,10 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 
 app.post('/api/auth/guest', authLimiter, (req, res) => res.json(AuthService.createGuestAccount()));
 
-// §5 Username availability + first-time onboarding
-app.get('/api/auth/username-check', (req, res) => res.json(AuthService.checkUsername(String(req.query.name || ''))));
+// §5 Username availability + first-time onboarding.
+// §sec Rate-limited: this endpoint answers "does this account exist?", so leaving it open
+// lets anyone enumerate the whole user base one guess at a time.
+app.get('/api/auth/username-check', authLimiter, (req, res) => res.json(AuthService.checkUsername(String(req.query.name || ''))));
 
 app.post('/api/auth/onboard', authLimiter, (req, res) => {
   const { name, country, language } = req.body || {};
@@ -155,7 +158,36 @@ app.get('/api/world/events', (_req, res) => {
   res.json({ events });
 });
 
-app.get('/api/shop/catalog', (_req, res) => res.json(EconomyService.getCatalog()));
+// Live-ops events feed for the Events screen: in-match world events currently running in a
+// simulation, plus the scheduled calendar from config. Both are pure content — no user data —
+// so a new event is a config edit, never a client release.
+app.get('/api/events', (_req, res) => {
+  const now = new Date();
+  const live = sessionManager.getActiveSessions()
+    .map(s => ({ session: s.getState().mode, event: s.getState().currentEvent }))
+    .filter(e => !!e.event)
+    .map(e => ({
+      id: e.event!.id, icon: e.event!.icon, name: e.event!.title,
+      description: e.event!.description, mode: e.session,
+      timerSeconds: e.event!.timerSeconds, live: true,
+    }));
+
+  const scheduled = gameConfig.events.map(e => ({
+    id: e.id, icon: e.icon, name: e.name, description: e.description,
+    rewardHint: e.rewardHint, live: eventIsLive(e, now),
+    months: e.months, startsAt: e.startsAt, endsAt: e.endsAt,
+  }));
+
+  res.json({ live, scheduled, season: activeSeasonId(now), serverTime: now.toISOString() });
+});
+
+// Cosmetics catalog. With a valid token it is annotated with THIS player's ownership,
+// affordability and level gates; anonymously it is just the price list.
+app.get('/api/shop/catalog', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const a = token ? AuthService.verifyToken(token) : null;
+  res.json(EconomyService.getCatalog(a?.userId));
+});
 
 // §15 Rewards marketplace — region-aware catalog + Star redemption for digital rewards.
 app.get('/api/rewards/catalog', (req, res) => {
@@ -171,17 +203,24 @@ app.post('/api/rewards/redeem', writeLimiter, (req, res) => {
   res.json({ ...result, profile: result.profile ? withRank(result.profile) : undefined });
 });
 
+// Buy a skin. The price and every gate are resolved server-side from the config — the body
+// carries only which skin, never what it costs.
 app.post('/api/shop/purchase', writeLimiter, (req, res) => {
   const a = auth(req, res); if (!a) return;
-  if (!req.body?.itemId || typeof req.body.itemId !== 'string') return res.status(400).json({ error: 'itemId is required' });
-  res.json(EconomyService.purchaseItem(a.userId, req.body.itemId));
+  const skinId = req.body?.skinId ?? req.body?.itemId;
+  if (!skinId || typeof skinId !== 'string') return res.status(400).json({ error: 'skinId is required' });
+  const result = EconomyService.purchaseSkin(a.userId, skinId);
+  res.status(result.success ? 200 : 400).json({ ...result, profile: result.profile ? withRank(result.profile) : undefined });
 });
 
+// §sec Equipping is gated on ownership. Previously this wrote `equippedSkin` unchecked, so
+// any client could equip a legendary skin it had never bought.
 app.post('/api/player/equip', (req, res) => {
   const a = auth(req, res); if (!a) return;
-  const { skin } = req.body;
-  const profile = db.updateProfile(a.userId, { equippedSkin: skin });
-  res.json({ success: true, profile });
+  const { skin } = req.body || {};
+  if (!skin || typeof skin !== 'string') return res.status(400).json({ error: 'skin is required' });
+  const result = EconomyService.equipSkin(a.userId, skin);
+  res.status(result.success ? 200 : 403).json({ ...result, profile: result.profile ? withRank(result.profile) : undefined });
 });
 
 // §6 Edit profile — avatar/title/country/region freely; display name with a cooldown + rules.
@@ -279,22 +318,34 @@ app.get('/api/achievements', (req, res) => {
 // §V7 Leaderboards. No `category` → legacy global score board (back-compat). With a
 // category → the redesigned typed board. `scope=friends` (auth) or `scope=local` filters.
 const LEADERBOARD_CATEGORIES = ['level', 'score', 'kills', 'wins', 'survival', 'stars', 'explorer'];
+
+// §sec A leaderboard is a public-facing view of OTHER people's accounts, so it publishes the
+// bare minimum: rank, display name, avatar, level and the one metric being ranked. The raw
+// `userId` is stripped — it was letting any caller harvest every account identifier in the
+// database — and replaced with an `isYou` flag, which is all the UI ever needed it for.
+const publicBoard = (entries: Array<{ rank: number; userId: string; displayName: string; avatar: string; level: number; value: number }>, viewerId?: string) =>
+  entries.map(({ userId, ...e }) => ({ ...e, isYou: !!viewerId && userId === viewerId }));
+
 app.get('/api/leaderboard', (req, res) => {
+  const a = auth(req, res); if (!a) return; // §sec authenticated players only — no anonymous scraping
   const category = String(req.query.category || '');
-  if (!category) return res.json({ leaderboard: db.getLeaderboard() }); // legacy shape
+  if (!category) {
+    // Legacy global board — same treatment: no account ids on the wire.
+    const legacy = db.getLeaderboard().map(({ userId, ...e }) => ({ ...e, isYou: userId === a.userId }));
+    return res.json({ leaderboard: legacy });
+  }
 
   if (!LEADERBOARD_CATEGORIES.includes(category)) return res.status(400).json({ error: 'Unknown category' });
   const scope = String(req.query.scope || 'global');
   if (scope === 'friends') {
-    const a = auth(req, res); if (!a) return;
     const ids = [a.userId, ...db.getSocial(a.userId).friends];
-    return res.json({ category, scope, entries: db.getCategoryLeaderboard(category, 100, { userIds: ids }) });
+    return res.json({ category, scope, entries: publicBoard(db.getCategoryLeaderboard(category, 100, { userIds: ids }), a.userId) });
   }
   if (scope === 'local') {
     const region = String(req.query.region || 'Global');
-    return res.json({ category, scope, region, entries: db.getCategoryLeaderboard(category, 100, { region }) });
+    return res.json({ category, scope, region, entries: publicBoard(db.getCategoryLeaderboard(category, 100, { region }), a.userId) });
   }
-  res.json({ category, scope: 'global', entries: db.getCategoryLeaderboard(category, 100) });
+  res.json({ category, scope: 'global', entries: publicBoard(db.getCategoryLeaderboard(category, 100), a.userId) });
 });
 
 app.get('/api/leaderboard/categories', (_req, res) => res.json({ categories: LEADERBOARD_CATEGORIES }));
@@ -314,6 +365,14 @@ app.post('/api/ads/claim', writeLimiter, (req, res) => {
 
 app.post('/api/match/summary', writeLimiter, (req, res) => {
   const a = auth(req, res); if (!a) return;
+  // §sec Reward-farming guard. The server-observed peak is consumed on the first submission,
+  // so a replayed call would be graded on client numbers alone and could mint the maximum
+  // clamped payout every time. Wall-clock pacing is the thing a script cannot fake.
+  const paced = antiCheat.validateMatchSubmission(a.userId, Number(req.body?.survivalSeconds) || 0);
+  if (!paced.ok) {
+    if (paced.retryAfterMs) res.setHeader('Retry-After', String(Math.ceil(paced.retryAfterMs / 1000)));
+    return res.status(429).json({ error: paced.reason || 'Match result rejected' });
+  }
   // §V7/§11 Server is the source of truth: bound the client report by what the simulation
   // actually observed for this player (null for offline / local-engine play).
   const serverPeak = sessionManager.consumePlayerPeak(a.userId);
@@ -345,6 +404,7 @@ app.post('/api/match/abandon', (req, res) => {
 });
 
 app.get('/api/screens/:screenId', (req, res) => {
+  if (!auth(req, res)) return; // §sec no reason for this to answer anonymous callers
   const valid = ['menu', 'matchmaking', 'play', 'pause', 'gameover', 'respawn', 'ad-reward', 'spectate'];
   if (!valid.includes(req.params.screenId)) return res.status(404).json({ error: `Screen not found` });
   res.json({ screenId: req.params.screenId, status: 'active', config: { adInventoryReady: true, region: 'North America East 30Hz' } });
@@ -419,9 +479,12 @@ app.get('/api/social/overview', (req, res) => {
   const a = auth(req, res); if (!a) return;
   res.json(SocialService.overview(a.userId));
 });
+// Accepts an exact username OR a shareable friend code — both arrive in the same field so
+// the UI can offer a single "username or friend code" box.
 app.post('/api/social/request', writeLimiter, (req, res) => {
   const a = auth(req, res); if (!a) return;
-  const r = SocialService.sendRequest(a.userId, req.body?.username);
+  const query = req.body?.query ?? req.body?.friendCode ?? req.body?.username;
+  const r = SocialService.sendRequest(a.userId, query);
   res.status(r.success ? 200 : 400).json({ ...r, ...SocialService.overview(a.userId) });
 });
 app.post('/api/social/respond', (req, res) => {
@@ -445,20 +508,44 @@ app.post('/api/social/unblock', (req, res) => {
   const r = SocialService.unblock(a.userId, String(req.body?.userId || ''));
   res.json({ ...r, ...SocialService.overview(a.userId) });
 });
-// Invite a friend to your current match — delivered live to their sockets if online.
+// Invite a friend to play. The invite is PERSISTED, then also pushed live if they happen to
+// be connected — so inviting someone who is away no longer just fails, it waits for them.
 app.post('/api/social/invite', writeLimiter, (req, res) => {
   const a = auth(req, res); if (!a) return;
   const otherId = String(req.body?.userId || '');
-  if (!SocialService.canInvite(a.userId, otherId)) return res.status(400).json({ success: false, message: 'Friend is offline or not on your list' });
-  const mode = connectedSockets.get([...connectedSockets].find(([, u]) => u.userId === a.userId)?.[0] || '')?.mode;
-  for (const [sid, u] of connectedSockets) {
-    if (u.userId === otherId) io.to(sid).emit('match_invite', { from: a.username, fromId: a.userId, mode });
-  }
-  res.json({ success: true, message: 'Invite sent' });
+  // Prefer the mode the sender is actually playing; fall back to what the client asked for.
+  const liveMode = connectedSockets.get([...connectedSockets].find(([, u]) => u.userId === a.userId)?.[0] || '')?.mode;
+  const mode = String(req.body?.mode || liveMode || 'free_roam');
+
+  const result = SocialService.invite(a.userId, otherId, mode);
+  if (!result.success) return res.status(400).json({ success: false, message: result.message });
+
+  if (result.online) deliverInvites(otherId);
+  res.json({ success: true, message: result.message, online: result.online });
+});
+
+// A recipient's pending invites.
+app.get('/api/social/invites', (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  res.json({ invites: SocialService.pendingInvites(a.userId) });
+});
+
+// Accept (returns the mode to launch) or decline. Consumes the invite either way.
+app.post('/api/social/invites/respond', writeLimiter, (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const action = req.body?.action === 'accept' ? 'accept' : 'decline';
+  const r = SocialService.respondToInvite(a.userId, String(req.body?.inviteId || ''), action);
+  res.status(r.success ? 200 : 400).json({ ...r, invites: SocialService.pendingInvites(a.userId) });
 });
 
 // Liveness/readiness probe for hosting platforms + uptime checks.
-app.get('/health', (_req, res) => res.json({ status: 'ok', uptime: process.uptime(), modes: sessionManager.getActiveModeCount() }));
+// Exposed under BOTH paths on purpose: `/health` is what platform health checks hit, while
+// `/api/health` is the one that survives a reverse proxy that only forwards `/api/*` — the
+// client's latency probe uses that one so it works in every deployment shape.
+const health = (_req: express.Request, res: express.Response) =>
+  res.json({ status: 'ok', uptime: process.uptime(), modes: sessionManager.getActiveModeCount() });
+app.get('/health', health);
+app.get('/api/health', health);
 
 // Unknown API route → clean JSON 404 (never an HTML error page the client can't parse).
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
@@ -468,6 +555,20 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   console.error('[api-error]', err?.message || err);
   res.status(500).json({ error: 'Internal server error' });
 });
+
+// §social Push a user's pending invites to every socket they have open. Called when an
+// invite arrives for someone already online, and again as soon as they authenticate — which
+// is what makes an invite sent while they were away actually reach them.
+function deliverInvites(userId: string) {
+  const invites = db.getMatchInvites(userId);
+  if (!invites.length) return;
+  const payload = { invites: SocialService.pendingInvites(userId) };
+  let delivered = false;
+  for (const [sid, u] of connectedSockets) {
+    if (u.userId === userId) { io.to(sid).emit('match_invite', payload); delivered = true; }
+  }
+  if (delivered) db.markInvitesDelivered(userId);
+}
 
 // --------------------------------------------------------------- realtime
 io.on('connection', (socket) => {
@@ -488,7 +589,8 @@ io.on('connection', (socket) => {
       sessionManager.findPlayerSession(a.userId)?.removePlayer(a.userId);
     }
 
-    connectedSockets.set(socket.id, { userId: a.userId, username: a.username, mode, skin, evolution, region, lastSeq: 0 });
+    // worldVersion 0 forces the first tick to carry the full obstacle/wormhole layout.
+    connectedSockets.set(socket.id, { userId: a.userId, username: a.username, mode, skin, evolution, region, lastSeq: 0, worldVersion: 0, viewRadius: DEFAULT_VIEW_RADIUS });
     presence.add(a.userId); // §8 mark online for friends' status
     socket.join(mode);
 
@@ -508,6 +610,8 @@ io.on('connection', (socket) => {
     });
     const snake = session.registerPlayer(a.userId, a.username, skin, false, evolution, region);
     socket.emit('authenticated', { userId: a.userId, snake, mode, region, config: session.getConfig() });
+    // Anything a friend sent while this player was away lands now.
+    deliverInvites(a.userId);
   });
 
   socket.on('client_input', (data: { seq: number; angle: number; boosting: boolean }) => {
@@ -519,6 +623,16 @@ io.on('connection', (socket) => {
     if (!Number.isFinite(seq) || seq <= user.lastSeq) return;
     user.lastSeq = seq;
     sessionManager.getSession(user.mode).handlePlayerInput(user.userId, data.angle, !!data.boosting, seq);
+  });
+
+  // §net The client reports how much world it can actually see (viewport ÷ zoom). Clamped
+  // here so it is only ever a bandwidth hint, never a way to demand extra world data.
+  socket.on('view_radius', (data: { radius?: number }) => {
+    const user = connectedSockets.get(socket.id);
+    if (!user) return;
+    const r = Number(data?.radius);
+    if (!Number.isFinite(r)) return;
+    user.viewRadius = Math.min(MAX_VIEW_RADIUS, Math.max(MIN_VIEW_RADIUS, r));
   });
 
   socket.on('activate_ability', () => {
@@ -567,28 +681,51 @@ io.on('connection', (socket) => {
   });
 });
 
-// Broadcast each active mode's world to its room @ 30 Hz
+// §net Interest-managed broadcast @ 30 Hz.
+//
+// Each mode's shared snapshot is built ONCE per tick, then every connected socket gets a view
+// tailored to it: food culled to what it could actually draw, and the near-static world layout
+// (obstacles/wormholes) only when its cached copy is stale. Emitting per-socket costs a little
+// more CPU than a room broadcast but cuts per-client bandwidth by roughly an order of
+// magnitude, which is the resource that actually runs out first.
+// A phone at full zoom-out sees ~900 world units; a 4K desktop sees ~4000. The client reports
+// its own view radius (see the `view_radius` handler) so neither gets shortchanged: nothing
+// ever pops into view, and small screens — the ones most likely on metered data — send far
+// less. Clamped server-side so the value is never a lever a client can abuse.
+const DEFAULT_VIEW_RADIUS = 2200;
+const MIN_VIEW_RADIUS = 700;
+const MAX_VIEW_RADIUS = 4400; // beyond half the world diagonal → effectively "send it all"
 setInterval(() => {
+  const shared = new Map<GameMode, ReturnType<typeof buildShared>>();
+  function buildShared(session: ReturnType<typeof sessionManager.getSession>) {
+    return session.buildSharedSnapshot();
+  }
   for (const session of sessionManager.getActiveSessions()) {
-    const state = session.getState();
-    io.to(state.mode).emit('game_state_tick', {
-      tick: state.tick,
-      timestamp: Date.now(),
-      mode: state.mode,
-      snakes: Object.values(state.snakes),
-      food: Object.values(state.food),
-      safeZone: state.safeZone,
-      sanctuaryZone: state.sanctuaryZone,
-      portals: state.portals,
-      obstacles: state.obstacles,
-      leaderboard: state.leaderboard,
-      teamScores: state.teamScores,
-      currentEvent: state.currentEvent,
-      // §2 Round clock — the HUD countdown must come from the same clock that drives the zone.
-      matchTimer: state.matchTimer,
-      matchOver: state.matchOver,
-      round: state.round,
-    });
+    shared.set(session.getState().mode, buildShared(session));
+  }
+
+  const now = Date.now();
+  for (const [sid, user] of connectedSockets) {
+    const base = shared.get(user.mode);
+    if (!base) continue;
+    const session = sessionManager.getSession(user.mode);
+    const head = session.getHeadPosition(user.userId);
+
+    const radius = user.viewRadius || DEFAULT_VIEW_RADIUS;
+    const payload: any = {
+      ...base,
+      timestamp: now,
+      snakes: session.viewSnakes(base.snakes, head, radius),
+      food: session.foodNear(head, radius),
+    };
+    // Ship the layout only when this client's cached version is behind.
+    if (user.worldVersion !== base.worldVersion) {
+      const layout = session.getWorldLayout();
+      payload.obstacles = layout.obstacles;
+      payload.portals = layout.portals;
+      user.worldVersion = base.worldVersion;
+    }
+    io.to(sid).emit('game_state_tick', payload);
   }
 }, 1000 / 30);
 

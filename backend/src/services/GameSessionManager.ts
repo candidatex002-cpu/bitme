@@ -30,6 +30,12 @@ export class GameSessionManager {
     return this.sessions.size;
   }
 
+  // Tear down every simulation this manager owns (shutdown / tests).
+  public stopAll(): void {
+    for (const session of this.sessions.values()) session.stop();
+    this.sessions.clear();
+  }
+
   // §V7/P1 Read + clear a player's server-observed peak stats from whichever session holds them.
   public consumePlayerPeak(userId: string): { score: number; kills: number; killStreak: number; survivalSeconds: number } | null {
     for (const session of this.sessions.values()) {
