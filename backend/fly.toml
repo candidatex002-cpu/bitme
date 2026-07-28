@@ -1,0 +1,49 @@
+# Fly.io — best latency-per-dollar of the three, and WebSocket-native.
+#
+#   fly launch --no-deploy --copy-config   (from backend/)
+#   fly volumes create game_data --size 1
+#   fly secrets set JWT_SECRET="$(openssl rand -hex 32)" ALLOWED_ORIGINS="https://your-app.vercel.app"
+#   fly deploy
+#
+# Rename `app` to something unique before launching.
+app = "snake-clash-server"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "4000"
+  DATA_FILE = "/data/anaconda-db.json"
+
+# Player profiles survive redeploys. Skip this and use Supabase if you ever run >1 machine —
+# a volume is attached to a single machine and is not shared.
+[mounts]
+  source = "game_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 4000
+  force_https = true
+  # A 30 Hz simulation must not be suspended between requests: auto-stop would kill live
+  # matches, and a cold start would drop every connected player.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 200
+    hard_limit = 250
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

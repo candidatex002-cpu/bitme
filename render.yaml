@@ -1,0 +1,50 @@
+# Render Blueprint — one-click deploy of the authoritative game server.
+#
+# The backend is a long-lived 30 Hz Socket.IO process, so it needs a host that keeps a
+# process alive. Render does; Vercel (where the frontend lives) does not.
+#
+# To use: Render Dashboard → New → Blueprint → connect this repo. Render reads this file and
+# creates the service. Then set ALLOWED_ORIGINS to your frontend URL and deploy.
+services:
+  - type: web
+    name: snake-clash-server
+    runtime: node
+    plan: starter          # `free` also works but sleeps after 15 min idle — see DEPLOY.md
+    region: oregon         # move closer to your players if you know where they are
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+
+    # A persistent disk so player profiles survive a redeploy. Without one the file-backed
+    # store lives on ephemeral disk and every deploy wipes it. (Disks need a paid plan; on
+    # `free`, configure Supabase instead — see SUPABASE.md.)
+    disk:
+      name: game-data
+      mountPath: /var/data
+      sizeGB: 1
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Generated once by Render and kept stable across deploys. A changing secret would
+      # invalidate every player's token on each release.
+      - key: JWT_SECRET
+        generateValue: true
+      # Points the file-backed store at the persistent disk above.
+      - key: DATA_FILE
+        value: /var/data/anaconda-db.json
+      # REQUIRED. Your frontend's exact origin, comma-separated for more than one.
+      # Left unset, CORS falls open to '*' — fine for local dev, not for production.
+      - key: ALLOWED_ORIGINS
+        sync: false
+      # Optional: who may reach /api/admin/*.
+      - key: ADMIN_USER_IDS
+        sync: false
+      # Optional cloud persistence (works on any plan, survives redeploys, multi-instance
+      # safe). See SUPABASE.md. Leave unset to use the disk above.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false

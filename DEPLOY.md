@@ -27,30 +27,63 @@ the backend allows cross-origin calls via `ALLOWED_ORIGINS`.
 
 ## 1. Deploy the backend
 
-Any host that runs a Node process. Example — **Render**:
+Pick one. All three are configured and verified — the repo already contains what each needs.
 
-- **Root directory:** `backend`
-- **Build command:** `npm install && npm run build`
-- **Start command:** `npm start`
-- **Health check path:** `/health`
+### Option A — Render (fastest: one click) ⭐ recommended to start
 
-Environment variables:
+The repo ships a **Blueprint** (`render.yaml`), so Render configures itself.
+
+1. [dashboard.render.com](https://dashboard.render.com) → **New** → **Blueprint**
+2. Connect this repo. Render reads `render.yaml` and proposes the service.
+3. Set the one variable it must ask you for:
+   `ALLOWED_ORIGINS = https://bitme-jade.vercel.app`
+4. **Apply**.
+
+`JWT_SECRET` is generated automatically and kept stable across deploys. A 1 GB disk is
+mounted at `/var/data` so player profiles survive redeploys.
+
+> **Plans.** `starter` (~$7/mo) stays awake. The `free` plan sleeps after 15 minutes idle —
+> the first player then waits ~50 s for a cold start and any live match is dropped, which is
+> rough for a realtime game. Free also has no disk, so switch `plan: free` **and** configure
+> Supabase (below) if you want zero cost.
+
+### Option B — Railway (no sleep, cheap)
+
+1. [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo**
+2. Set **Root Directory** to `backend` (Settings → Source).
+3. Variables: `ALLOWED_ORIGINS`, and a `JWT_SECRET` you generate:
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+   ```
+4. Railway detects the Dockerfile and deploys. Add a volume at `/data` for persistence.
+
+### Option C — Fly.io (best latency per dollar)
+
+`backend/fly.toml` and `backend/Dockerfile` are ready. From `backend/`:
 
 ```bash
-PORT=4000                                  # most hosts inject this automatically
-ALLOWED_ORIGINS=https://your-frontend.vercel.app   # comma-separated; REQUIRED in production
-ADMIN_USER_IDS=usr_your_admin_id           # who may reach /api/admin/*
-JWT_SECRET=<a long random string>          # set this — do not ship the default
+fly launch --no-deploy --copy-config     # rename `app` in fly.toml first
+fly volumes create game_data --size 1
+fly secrets set JWT_SECRET="$(openssl rand -hex 32)" \
+                ALLOWED_ORIGINS="https://bitme-jade.vercel.app"
+fly deploy
 ```
 
-> **`ALLOWED_ORIGINS` matters.** Left unset, CORS falls open to `*` for local dev
-> convenience. Always set it in production.
+`auto_stop_machines` is off on purpose — suspending a 30 Hz simulation between requests would
+kill live matches.
 
-For data that survives redeploys and works across multiple instances, also set the Supabase
-variables — see **[SUPABASE.md](SUPABASE.md)**. Without them the backend uses a local file
-store, which most PaaS hosts wipe on every deploy.
+### Environment variables
 
-Verify it's up:
+| Variable | Required | Notes |
+|---|---|---|
+| `ALLOWED_ORIGINS` | **Yes** | Your frontend origin, exact, no trailing slash. Unset = CORS open to `*` |
+| `JWT_SECRET` | **Yes** | The server *refuses to boot* in production without it — deliberate. Keep it stable or every token is invalidated |
+| `NODE_ENV=production` | Yes | Enables the guard above |
+| `DATA_FILE` | Recommended | Point at a mounted disk, else progress dies on redeploy |
+| `ADMIN_USER_IDS` | Optional | Who may reach `/api/admin/*` |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` | Optional | Cloud persistence — see [SUPABASE.md](SUPABASE.md) |
+
+### Verify
 
 ```bash
 curl https://your-backend.onrender.com/health

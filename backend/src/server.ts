@@ -793,8 +793,11 @@ setInterval(() => {
   }
 }, 1000 / 30);
 
-const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => {
+const PORT = Number(process.env.PORT) || 4000;
+// Bind all interfaces explicitly. Containerised hosts (Render/Railway/Fly) route to the
+// container's external address, and a server bound only to loopback fails their health check
+// with no useful error — it just never becomes reachable.
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`=======================================================`);
   console.log(` ANACONDA PARK — AUTHORITATIVE SERVER RUNNING ON :${PORT}`);
   console.log(` Modes: Classic · Battle Royale · Team · Event  @ 30 Hz`);
