@@ -542,6 +542,7 @@ class AnacondaPark {
   private async initGuest() {
     // Restore any cached session first so the player sees their progress instantly, even offline.
     const cached = this.loadCachedSession();
+    this.loadAuxCache(); // §13 missions/achievements survive an offline close
     if (cached) { this.token = cached.token; this.profile = cached.profile; this.selectedSkin = cached.profile?.equippedSkin || this.selectedSkin; this.render(); }
     try {
       // Validate the cached token; if the server rejects it (expired / backend restarted),
@@ -606,6 +607,10 @@ class AnacondaPark {
       this.serverConfig = await cfg.json().catch(() => null);
       applyPowerConfig(this.serverConfig?.powers); // §power keep the offline engine on the server's curve
       this.shopSkins = (await shop.json().catch(() => ({}))).skins || [];
+      // §13 Hand over anything collected while offline. Its response carries the reconciled
+      // missions/achievements/profile, so it lands after (and overrides) the reads above.
+      await this.flushPendingProgress();
+      this.persistAuxCache();
     } catch { /* */ }
   }
 
@@ -860,6 +865,7 @@ class AnacondaPark {
         this.matchStats.kills += gained;
         this.lastKills = k;
         this.showKillToast(`⚔️ +${gained} Kill${gained > 1 ? 's' : ''}!`);
+        this.recordProgress('kill', gained); // §13 counts toward missions/achievements live
         this.updateMissionTracker();
       }
     }
@@ -956,32 +962,174 @@ class AnacondaPark {
     }
   }
 
-  // A story beat, not a score popup — the narration is the point.
-  private celebrateMilestone(m: any) {
-    audio.playFanfare?.();
-    document.getElementById('milestone-pop')?.remove();
+  // §12 Compact, non-blocking gameplay notification.
+  //
+  // Anything worth telling the player mid-match goes through here: it never pauses the game,
+  // never covers the play area, and never needs dismissing. Notices queue so a burst (a
+  // checkpoint that also levels you up) plays in sequence instead of stomping on itself.
+  private noticeQueue: Array<{ icon: string; kicker: string; title: string; sub?: string; tone?: string }> = [];
+  private noticeShowing = false;
+
+  public notify(n: { icon: string; kicker: string; title: string; sub?: string; tone?: string }) {
+    this.noticeQueue.push(n);
+    if (!this.noticeShowing) this.drainNotices();
+  }
+
+  private drainNotices() {
+    const n = this.noticeQueue.shift();
+    if (!n) { this.noticeShowing = false; return; }
+    this.noticeShowing = true;
+
+    let host = document.getElementById('notice-host');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'notice-host';
+      host.className = 'notice-host';
+      document.body.appendChild(host);
+    }
     const el = document.createElement('div');
-    el.id = 'milestone-pop';
-    el.className = 'milestone-pop';
+    el.className = `game-notice ${n.tone || ''}`;
     el.innerHTML = `
-      <div class="ms-card">
-        <div class="ms-kicker">📜 Chapter ${m.chapter} · Checkpoint reached</div>
-        <div class="ms-icon">${m.icon}</div>
-        <div class="ms-title">${m.title}</div>
-        <div class="ms-story">${m.story}</div>
-        <div class="ms-rewards"><span>⭐ +${m.rewardStars}</span><span>XP +${m.rewardXp}</span><span>🧬 +${m.rewardEvoXp}</span></div>
-        <div class="ms-saved">✓ Progress saved</div>
-      </div>`;
-    document.body.appendChild(el);
+      <span class="gn-spark"></span>
+      <span class="gn-icon">${n.icon}</span>
+      <span class="gn-text">
+        <span class="gn-kicker">${n.kicker}</span>
+        <span class="gn-title">${n.title}</span>
+        ${n.sub ? `<span class="gn-sub">${n.sub}</span>` : ''}
+      </span>`;
+    host.appendChild(el);
     requestAnimationFrame(() => el.classList.add('show'));
-    setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 400); }, 4200);
+
+    // Auto-dismiss; the next notice starts as this one leaves so a burst reads as a sequence.
+    setTimeout(() => {
+      el.classList.remove('show');
+      el.classList.add('out');
+      setTimeout(() => el.remove(), 320);
+      this.drainNotices();
+    }, 2600);
+  }
+
+  // A story beat — now a compact banner rather than a full-screen card that stopped play.
+  private celebrateMilestone(m: any) {
+    audio.playChime?.();
+    this.notify({
+      icon: m.icon,
+      kicker: `Chapter ${m.chapter} · Checkpoint`,
+      title: m.title,
+      sub: `⭐ +${m.rewardStars} · XP +${m.rewardXp} · ✓ Saved`,
+      tone: 'gold',
+    });
   }
 
   // §V7 A collectible was picked up (local engine) — update counters + live mission tracker.
+  //
+  // Offline this is the ONLY place progress is recorded, so it must do real work: previously
+  // it only bumped `matchStats`, which resets every match, so mission progress evaporated the
+  // moment a run ended. Now it advances the actual mission/achievement counters, persists
+  // them, and queues the increment for the server.
   private onCollect(type: string) {
     if (type in this.matchStats) (this.matchStats as any)[type]++;
     if (type === 'shield' || type === 'speed' || type === 'mushroom') this.matchStats.powerup++;
+    this.recordProgress(this.collectibleMetric(type), 1);
     this.updateMissionTracker();
+  }
+
+  // Collectible id → the progress metric the server tracks it under.
+  private collectibleMetric(type: string): string {
+    return ({ mushroom: 'powerup', shield: 'shield', speed: 'powerup', egg: 'egg',
+              coupon_box: 'treasure', gift: 'treasure' } as Record<string, string>)[type] || type;
+  }
+
+  // ---------- §13 Progress ledger (live update + durable offline sync) ----------
+  //
+  // One entry point for every gameplay event that should count toward something. It:
+  //   1. advances the local mission/achievement state so the UI is correct immediately,
+  //   2. persists that state so closing the app cannot lose it,
+  //   3. queues the increment so the server can be told once it is reachable.
+  // Online the server is still the source of truth — its pickup_event overwrites our optimistic
+  // copy — so this never double-counts, it just stops offline play from being a black hole.
+  private pendingProgress: Record<string, number> = this.loadPendingProgress();
+
+  private loadPendingProgress(): Record<string, number> {
+    try { return JSON.parse(localStorage.getItem('ap_pending_progress') || '{}'); } catch { return {}; }
+  }
+  private savePendingProgress() {
+    try { localStorage.setItem('ap_pending_progress', JSON.stringify(this.pendingProgress)); } catch { /* */ }
+  }
+
+  public recordProgress(metric: string, amount = 1) {
+    if (!metric || amount <= 0) return;
+    let changed = false;
+
+    // Missions
+    for (const m of this.missions || []) {
+      if (m.metric !== metric || m.isCompleted) continue;
+      m.currentCount = Math.min(m.targetCount, (m.currentCount || 0) + amount);
+      if (m.currentCount >= m.targetCount) {
+        m.isCompleted = true;
+        this.notify({ icon: m.icon || '🎯', kicker: 'Mission complete', title: m.title?.replace(/^[^ ]+ /, '') || 'Objective', tone: 'green' });
+      }
+      changed = true;
+    }
+    // Achievements
+    for (const a of this.achievements || []) {
+      if (a.metric !== metric || a.isUnlocked) continue;
+      a.progress = Math.min(a.target, (a.progress || 0) + amount);
+      if (a.progress >= a.target) {
+        a.isUnlocked = true;
+        this.notify({ icon: a.icon || '🏆', kicker: 'Achievement earned', title: a.title, tone: 'gold' });
+      }
+      changed = true;
+    }
+
+    this.pendingProgress[metric] = (this.pendingProgress[metric] || 0) + amount;
+    this.savePendingProgress();
+    if (changed) this.persistAuxCache();
+  }
+
+  // Missions/achievements are server-owned but must survive an offline close.
+  private persistAuxCache() {
+    try {
+      localStorage.setItem('ap_aux_cache', JSON.stringify({ missions: this.missions, achievements: this.achievements }));
+    } catch { /* */ }
+  }
+  private loadAuxCache() {
+    try {
+      const d = JSON.parse(localStorage.getItem('ap_aux_cache') || 'null');
+      if (d?.missions?.length) this.missions = d.missions;
+      if (d?.achievements?.length) this.achievements = d.achievements;
+    } catch { /* */ }
+  }
+
+  // Hand the queued increments to the server once it is reachable. The server clamps and
+  // applies them; we only clear the queue on a confirmed 200, so a failed flush is retried
+  // rather than silently dropped.
+  private flushingProgress = false;
+  private async flushPendingProgress() {
+    if (this.flushingProgress || !this.online || !this.token) return;
+    const entries = Object.entries(this.pendingProgress).filter(([, n]) => n > 0);
+    if (!entries.length) return;
+    this.flushingProgress = true;
+    const batch = Object.fromEntries(entries);
+    try {
+      const res = await this.api('/api/progress/sync', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
+        body: JSON.stringify({ progress: batch }),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        // Subtract exactly what we sent — anything collected during the round-trip survives.
+        for (const [k, n] of entries) {
+          this.pendingProgress[k] = Math.max(0, (this.pendingProgress[k] || 0) - n);
+          if (!this.pendingProgress[k]) delete this.pendingProgress[k];
+        }
+        this.savePendingProgress();
+        if (d.missions) this.missions = d.missions;
+        if (d.achievements) this.achievements = d.achievements;
+        if (d.profile) { this.profile = d.profile; this.persistSession(); }
+        this.persistAuxCache();
+      }
+    } catch { /* stays queued for the next attempt */ } finally { this.flushingProgress = false; }
   }
 
   // §V7 Missions whose progress can be tracked live during a match (collectible metrics).
@@ -3561,7 +3709,13 @@ ${this.renderBottomControls()}
     const t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; t.innerText = msg;
     document.body.appendChild(t); setTimeout(() => t.remove(), 2200);
   }
+  // §12 In a match this must not block play, so it uses the compact notice; on menu screens
+  // the fuller banner is fine because nothing is happening behind it.
   private showLevelUp(level: number) {
+    if (this.screen === 'play' || this.screen === 'respawn') {
+      this.notify({ icon: '🎉', kicker: 'Level up', title: `Level ${level}`, tone: 'gold' });
+      return;
+    }
     const el = document.createElement('div'); el.className = 'levelup'; el.innerHTML = `🎉 LEVEL UP!<br><span style="font-size:1.6rem;">Level ${level}</span>`;
     document.body.appendChild(el); setTimeout(() => el.remove(), 2600);
   }

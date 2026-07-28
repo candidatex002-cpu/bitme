@@ -342,6 +342,38 @@ app.post('/api/match/checkpoint-all', writeLimiter, (req, res) => {
   });
 });
 
+// §13 Offline progress sync. A client that played without a connection queues its gameplay
+// increments and hands them over here. Clamped hard per metric per batch: an offline session
+// is bounded by how much a human can physically collect, so anything beyond that is either a
+// bug or a forgery and is trimmed rather than trusted.
+const PROGRESS_SYNC_CAPS: Record<string, number> = {
+  cherry: 2000, apple: 2000, frog: 1000, star: 1000, egg: 200, mushroom: 500,
+  shield: 500, powerup: 1000, treasure: 200, kill: 200, boost: 2000, heal: 1000,
+};
+app.post('/api/progress/sync', writeLimiter, (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const progress = req.body?.progress;
+  if (!progress || typeof progress !== 'object') return res.status(400).json({ error: 'progress object is required' });
+
+  const applied: Record<string, number> = {};
+  for (const [metric, raw] of Object.entries(progress)) {
+    const cap = PROGRESS_SYNC_CAPS[metric];
+    if (!cap) continue; // unknown metric — ignore rather than let a client invent one
+    const n = Math.floor(Number(raw));
+    if (!Number.isFinite(n) || n <= 0) continue;
+    const amount = Math.min(n, cap);
+    db.incrementCollectible(a.userId, metric as any, amount);
+    applied[metric] = amount;
+  }
+
+  res.json({
+    success: true, applied,
+    missions: db.getMissions(a.userId),
+    achievements: db.getAchievements(a.userId),
+    profile: withRank(db.getProfile(a.userId)),
+  });
+});
+
 app.get('/api/achievements', (req, res) => {
   const a = auth(req, res); if (!a) return;
   res.json({ achievements: db.getAchievements(a.userId) });

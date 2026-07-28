@@ -1688,28 +1688,53 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
 .jn-story.locked { opacity: 0.5; font-style: normal; }
 .jn-reward { font-size: 0.7rem; font-weight: 700; color: var(--muted); margin-top: 4px; }
 
-/* ---- Checkpoint celebration ---- */
-.milestone-pop {
-  position: fixed; inset: 0; z-index: 90;
-  display: grid; place-items: center; padding: 20px;
-  background: rgba(15, 23, 42, 0.55);
-  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
-  opacity: 0; transition: opacity 0.35s ease; pointer-events: none;
+/* ---- §12 Compact in-game notices ----
+   Deliberately small and pinned high: the play area, the joystick and the action buttons all
+   stay clear and interactive. Nothing here ever pauses the game or needs dismissing. */
+.notice-host {
+  position: fixed; z-index: 60;
+  top: clamp(96px, 15vh, 150px); left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  pointer-events: none; width: max-content; max-width: min(92vw, 400px);
 }
-.milestone-pop.show { opacity: 1; }
-.ms-card {
-  max-width: 380px; width: 100%; text-align: center;
-  background: var(--card); border: 2px solid var(--gold); border-radius: var(--r-lg);
-  padding: 22px 20px; box-shadow: var(--shadow-lg);
-  transform: translateY(14px) scale(0.96); transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+.game-notice {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 14px 7px 11px; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1.5px solid var(--line); box-shadow: var(--shadow-lg);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  opacity: 0; transform: translateY(-10px) scale(0.96);
+  transition: opacity 0.28s ease, transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.25);
 }
-.milestone-pop.show .ms-card { transform: translateY(0) scale(1); }
-.ms-kicker { font-size: 0.66rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; }
-.ms-icon { font-size: 2.8rem; margin: 8px 0 4px; }
-.ms-title { font-family: var(--font-title); font-weight: 900; font-size: 1.25rem; color: var(--gold-deep); }
-.ms-story { font-size: 0.86rem; line-height: 1.5; color: var(--ink); opacity: 0.9; margin-top: 8px; font-style: italic; }
-.ms-rewards { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; font-weight: 800; font-size: 0.8rem; }
-.ms-saved { margin-top: 10px; font-size: 0.72rem; font-weight: 700; color: var(--green-deep); }
+.game-notice.show { opacity: 1; transform: translateY(0) scale(1); }
+.game-notice.out  { opacity: 0; transform: translateY(-8px) scale(0.97); }
+.game-notice.gold { border-color: var(--gold); background: linear-gradient(100deg, #FFFBEB, rgba(255,255,255,0.97)); }
+.game-notice.green { border-color: var(--green); background: linear-gradient(100deg, #ECFDF5, rgba(255,255,255,0.97)); }
+
+.gn-icon { font-size: 1.3rem; line-height: 1; flex: 0 0 auto; }
+.gn-text { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.gn-kicker { font-size: 0.56rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+.gn-title { font-family: var(--font-title); font-weight: 900; font-size: 0.86rem; color: var(--ink); white-space: nowrap; }
+.gn-sub { font-size: 0.62rem; font-weight: 700; color: var(--green-deep); }
+
+/* A brief sparkle sweep instead of a modal — enough to catch the eye, gone in a moment. */
+.gn-spark {
+  position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none;
+}
+.gn-spark::after {
+  content: ''; position: absolute; top: 0; bottom: 0; width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,0.85), transparent);
+  transform: translateX(-160%);
+}
+.game-notice.show .gn-spark::after { animation: gn-sweep 0.9s ease-out 0.1s 1; }
+@keyframes gn-sweep { to { transform: translateX(320%); } }
+.game-notice { position: relative; }
+
+@media (prefers-reduced-motion: reduce) {
+  .game-notice { transition: opacity 0.2s ease; transform: none; }
+  .game-notice.show { transform: none; }
+  .game-notice.show .gn-spark::after { animation: none; }
+}
 
 /* ---- Match invites + notification badge ---- */
 .notif-wrap { position: relative; }
