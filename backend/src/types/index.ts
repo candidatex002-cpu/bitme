@@ -67,6 +67,16 @@ export interface PlayerProfile {
   // §milestone Story checkpoints reached, ever. One-time and permanent: the reward is banked
   // the moment it is earned mid-match, so a crash or a quit can't undo the journey.
   milestones?: string[];
+  // §explorer Campaign save: current kingdom, accepted/claimed quests, kingdoms completed,
+  // bosses defeated, and the metric baselines that make quest targets mean "this many more".
+  explorer?: {
+    kingdom: number;
+    accepted: string[];
+    claimed: string[];
+    kingdomsDone: number[];
+    bossesDefeated: string[];
+    baseline: Record<string, number>;
+  };
   inventory?: Record<string, number>; // §V7 owned consumable/collectible items (eggs, event items) → count
   lastDailyBonus?: string;       // §V7 YYYY-MM-DD of the last daily-all-complete bonus (once/day gate)
 }
@@ -162,6 +172,20 @@ export interface MatchRecord {
   rewards?: string;        // short human-readable reward summary
   map?: string;
   result: 'win' | 'loss';
+}
+
+// §explorer A villager standing in the world. Static: they never move, so they ride the
+// cached world layout rather than the 30 Hz tick. What they SAY comes from the campaign API.
+export interface WorldNpc {
+  id: string;
+  name: string;
+  role: string;
+  icon: string;
+  accessory?: string;
+  kingdom: number;
+  x: number;
+  y: number;
+  radius: number;
 }
 
 export interface Vector2D {
@@ -432,6 +456,7 @@ export interface GameWorldState {
   sanctuaryZone?: SanctuaryZone;
   portals?: PortalShortcut[];
   obstacles?: Obstacle[];
+  npcs?: WorldNpc[];       // §explorer villagers/elders/guards standing in the world
   snakes: Record<string, SnakeState>;
   food: Record<string, FoodItem>;
   leaderboard: Array<{ id: string; name: string; score: number; kills: number; team?: 'red' | 'blue' }>;

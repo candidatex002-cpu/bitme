@@ -813,6 +813,9 @@ class AnacondaPark {
     // §milestone Load this mode's checkpoints so the run can bank them as they're reached.
     this.checkpointing.clear();
     if (this.milestoneMode !== this.selectedUIMode) this.loadMilestones(this.selectedUIMode);
+    // §explorer Load the campaign so villagers have something to say from the first second.
+    this.npcTalkedTo = ''; this.npcDialogOpen = false;
+    if (this.selectedUIMode === 'explorer') this.loadExplorer();
     this.setScreen('play'); // render() creates/attaches the renderer to the live canvas
     this.showMatchObjectiveBanner();
     ads.hideBanner(); // §14 never show ads during active gameplay
@@ -869,7 +872,7 @@ class AnacondaPark {
         this.updateMissionTracker();
       }
     }
-    if (this.screen === 'play') { this.updateHUD(state, me); this.checkMilestones(me); }
+    if (this.screen === 'play') { this.updateHUD(state, me); this.checkMilestones(me); this.checkNpcProximity(me); }
   }
 
   // ---------- §milestone Story checkpoints ----------
@@ -1019,6 +1022,127 @@ class AnacondaPark {
       sub: `⭐ +${m.rewardStars} · XP +${m.rewardXp} · ✓ Saved`,
       tone: 'gold',
     });
+  }
+
+  // ---------- §explorer Campaign: NPCs, dialogue, quests ----------
+  private explorer: any = null;
+  private npcTalkedTo = '';        // who we're currently in range of
+  private npcDialogOpen = false;
+
+  private async loadExplorer() {
+    if (!this.token) return;
+    try {
+      const res = await this.api('/api/explorer/state', { headers: { Authorization: `Bearer ${this.token}` } });
+      if (!res.ok) return;
+      this.explorer = await res.json();
+      this.updateQuestTracker();
+      if (this.page === 'story') this.render();
+    } catch { /* offline — Explorer needs the campaign server */ }
+  }
+
+  // Walking up to a villager starts the conversation; walking away ends it. No button to
+  // hunt for, and nothing that stops the game.
+  private checkNpcProximity(me?: SnakeData | null) {
+    if (!me?.isAlive || this.selectedUIMode !== 'explorer') return;
+    const npcs = this.lastState?.npcs || [];
+    if (!npcs.length || !this.explorer) return;
+
+    let near: any = null;
+    for (const n of npcs) {
+      const dx = me.head.x - n.x, dy = me.head.y - n.y;
+      if (dx * dx + dy * dy < (n.radius + 90) ** 2) { near = n; break; }
+    }
+    if (!near) {
+      if (this.npcTalkedTo && !this.npcDialogOpen) this.npcTalkedTo = '';
+      return;
+    }
+    if (near.id === this.npcTalkedTo) return;
+    this.npcTalkedTo = near.id;
+    const view = this.explorer.npcs?.find((n: any) => n.id === near.id);
+    if (view) this.openNpcDialog(view);
+  }
+
+  private openNpcDialog(npc: any) {
+    if (this.npcDialogOpen) return;
+    this.npcDialogOpen = true;
+    audio.playChime?.();
+    document.getElementById('npc-dialog')?.remove();
+
+    const q = npc.quest;
+    const action =
+      npc.questState === 'offer' ? `<button class="btn btn-primary" id="npc-accept">Accept — ${q.title}</button>`
+      : npc.questState === 'ready' ? `<button class="btn btn-gold" id="npc-claim">Claim — ⭐${q.rewardStars}</button>`
+      : npc.questState === 'active' ? `<div class="npc-prog"><div class="progress" style="height:7px;"><div style="width:${q.pct}%"></div></div><span>${q.progress} / ${q.target}</span></div>`
+      : '';
+
+    const el = document.createElement('div');
+    el.id = 'npc-dialog';
+    el.className = 'npc-dialog';
+    el.innerHTML = `
+      <div class="npc-card">
+        <div class="npc-head">
+          <span class="npc-face">${npc.accessory || npc.icon}</span>
+          <div>
+            <div class="npc-name">${npc.name}</div>
+            <div class="npc-role">${npc.role}</div>
+          </div>
+          <button class="npc-close" id="npc-close">✖</button>
+        </div>
+        <div class="npc-line">${npc.line}</div>
+        ${action ? `<div class="npc-actions">${action}</div>` : ''}
+      </div>`;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+
+    const close = () => { this.npcDialogOpen = false; el.classList.remove('show'); setTimeout(() => el.remove(), 250); };
+    document.getElementById('npc-close')?.addEventListener('click', () => { audio.playClick(); close(); });
+    document.getElementById('npc-accept')?.addEventListener('click', async () => { close(); await this.questAction('accept', q.id); });
+    document.getElementById('npc-claim')?.addEventListener('click', async () => { close(); await this.questAction('claim', q.id); });
+    // Conversations end on their own — never leave a panel over the play area.
+    setTimeout(() => { if (this.npcDialogOpen) close(); }, 9000);
+  }
+
+  private async questAction(action: 'accept' | 'claim', questId: string) {
+    try {
+      const res = await this.api(`/api/explorer/quest/${action}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
+        body: JSON.stringify({ questId }),
+      });
+      const d = await res.json();
+      if (d.state) { this.explorer = d.state; this.updateQuestTracker(); }
+      if (d.profile) { this.profile = d.profile; this.persistSession(); }
+
+      if (action === 'accept' && d.success) {
+        this.notify({ icon: '📜', kicker: 'Quest accepted', title: d.quest?.title || 'New quest', tone: 'green' });
+      } else if (action === 'claim' && d.success) {
+        this.notify({ icon: '🎉', kicker: 'Quest complete', title: d.message, sub: `⭐ +${d.rewards.stars} · XP +${d.rewards.xp}`, tone: 'gold' });
+        if (d.kingdomCompleted) {
+          setTimeout(() => this.notify({ icon: '👑', kicker: 'Kingdom unlocked', title: d.unlockedKingdom || 'A new kingdom', tone: 'gold' }), 900);
+        } else if (d.nextQuest) {
+          setTimeout(() => this.notify({ icon: '➡️', kicker: 'Next', title: d.nextQuest, tone: 'green' }), 900);
+        }
+      } else if (!d.success) {
+        this.showToast(`⚠️ ${d.message}`);
+      }
+    } catch { this.showToast('⚠️ The kingdom is unreachable right now'); }
+  }
+
+  // Compact "what am I doing" line in the Explorer HUD.
+  private updateQuestTracker() {
+    const box = document.getElementById('quest-tracker');
+    if (!box) return;
+    const q = this.explorer?.activeQuest;
+    if (!q) {
+      box.innerHTML = this.explorer?.kingdom
+        ? `<div class="qt-kingdom">${this.explorer.kingdom.icon} ${this.explorer.kingdom.name}</div><div class="qt-hint">Find a villager to begin</div>`
+        : '';
+      return;
+    }
+    box.innerHTML = `
+      <div class="qt-kingdom">${this.explorer.kingdom.icon} ${this.explorer.kingdom.name}</div>
+      <div class="qt-title">📜 ${q.title}</div>
+      <div class="progress" style="height:5px;margin-top:3px;"><div style="width:${q.pct}%"></div></div>
+      <div class="qt-count">${q.progress} / ${q.target}</div>`;
   }
 
   // §V7 A collectible was picked up (local engine) — update counters + live mission tracker.
@@ -1927,6 +2051,7 @@ class AnacondaPark {
       if (canvas) { if (this.renderer) this.renderer.attach(canvas); else this.renderer = new Renderer(canvas); }
       this.applyMapTheme(); // §8 data-driven map theme + seasonal tint
       this.updateMissionTracker(); // §V7 populate the in-game mission tracker
+      this.updateQuestTracker();   // §explorer populate the campaign tracker
       this.bindTouch();
     }
   }
@@ -3317,6 +3442,7 @@ ${this.renderBottomControls()}
           <!-- Left Panel: Pause Top, Daily Missions Below -->
           <div class="hud-left-panel">
             <button id="nav-pause" class="hud-pause tb-a-pause">⏸</button>
+            ${this.selectedUIMode === 'explorer' ? '<div class="quest-tracker" id="quest-tracker"></div>' : ''}
             ${showMissions ? `
             <!-- No hud-panel class: the daily tracker is deliberately chrome-free, so it
                  must not pick up the shared panel's white plate and blur. -->

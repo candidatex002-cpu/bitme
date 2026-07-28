@@ -868,3 +868,122 @@ test('Supabase: disabled without env keys, no-ops safely', async () => {
   assert.equal(await SupabaseSync.loadSnapshot(), null);
   await SupabaseSync.saveSnapshot({ v: 1 }); // must not throw
 });
+
+// ---------------------------------------------------------------- Explorer campaign (§explorer)
+const { ExplorerService } = require(dist('services/ExplorerService.js'));
+
+test('Explorer: Kingdom 1 is populated and later kingdoms are declared', () => {
+  const { user } = db.createUser('ExA', 'exa@x.io', 'hash', false);
+  const ov = ExplorerService.overview(user.id);
+  assert.equal(ov.kingdom.n, 1);
+  assert.equal(ov.kingdom.name, 'Emerald Hollow');
+  assert.ok(ov.npcs.length >= 5, `village has people, got ${ov.npcs.length}`);
+  assert.equal(ov.quests.length, 3, 'Kingdom 1 has a quest chain');
+  assert.equal(ov.kingdoms.length, 7, 'all seven kingdoms exist for the map');
+  // Every NPC must actually say something, and roles must be distinguishable.
+  for (const n of ov.npcs) assert.ok(n.line && n.line.length > 20, `${n.id} has dialogue`);
+  assert.ok(new Set(ov.npcs.map(n => n.role)).size >= 4, 'roles are varied');
+});
+
+test('Explorer: an NPC offers, tracks, then closes out their quest', () => {
+  const { user } = db.createUser('ExB', 'exb@x.io', 'hash', false);
+  const elder = () => ExplorerService.overview(user.id).npcs.find(n => n.id === 'npc_elder_moss');
+  assert.equal(elder().questState, 'offer', 'starts as an offer');
+
+  assert.equal(ExplorerService.acceptQuest(user.id, 'q1_forage').success, true);
+  assert.equal(elder().questState, 'active', 'now being tracked');
+
+  // Collect what was asked for — through the SAME live counter the rest of the game uses.
+  db.incrementCollectible(user.id, 'cherry', 25);
+  const ready = elder();
+  assert.equal(ready.questState, 'ready');
+  assert.equal(ready.quest.progress, 25);
+  assert.equal(ready.quest.pct, 100);
+
+  const claim = ExplorerService.claimQuest(user.id, 'q1_forage');
+  assert.equal(claim.success, true);
+  assert.equal(claim.rewards.stars, 150);
+  assert.equal(claim.nextQuest, 'Drive Back the Scouts', 'the chain points onward');
+  assert.equal(elder().questState, 'done');
+  assert.match(elder().line, /Crown was not lost/, 'their after-quest line changes');
+});
+
+test('Explorer: quest targets mean "this many MORE", not lifetime total', () => {
+  const { user } = db.createUser('ExC', 'exc@x.io', 'hash', false);
+  // A returning player who already has plenty of cherries must still play the quest.
+  db.incrementCollectible(user.id, 'cherry', 500);
+  ExplorerService.acceptQuest(user.id, 'q1_forage');
+  const q = () => ExplorerService.overview(user.id).quests.find(x => x.id === 'q1_forage');
+  assert.equal(q().progress, 0, 'baseline frozen at accept — not already complete');
+  assert.equal(ExplorerService.claimQuest(user.id, 'q1_forage').success, false, 'cannot claim yet');
+  db.incrementCollectible(user.id, 'cherry', 25);
+  assert.equal(q().progress, 25);
+  assert.equal(ExplorerService.claimQuest(user.id, 'q1_forage').success, true);
+});
+
+test('Explorer: claiming is server-decided and never pays twice', () => {
+  const { user } = db.createUser('ExD', 'exd@x.io', 'hash', false);
+  assert.equal(ExplorerService.claimQuest(user.id, 'q1_forage').success, false, 'must accept first');
+  ExplorerService.acceptQuest(user.id, 'q1_forage');
+  assert.equal(ExplorerService.claimQuest(user.id, 'q1_forage').success, false, 'must actually finish it');
+
+  db.incrementCollectible(user.id, 'cherry', 25);
+  const stars0 = db.getProfile(user.id).stars;
+  assert.equal(ExplorerService.claimQuest(user.id, 'q1_forage').success, true);
+  const stars1 = db.getProfile(user.id).stars;
+  assert.equal(stars1, stars0 + 150);
+
+  const dup = ExplorerService.claimQuest(user.id, 'q1_forage');
+  assert.equal(dup.success, false);
+  assert.equal(dup.alreadyClaimed, true);
+  assert.equal(db.getProfile(user.id).stars, stars1, 'no double payout');
+  assert.equal(ExplorerService.acceptQuest(user.id, 'q1_forage').success, false, 'cannot re-accept a finished quest');
+  assert.equal(ExplorerService.claimQuest(user.id, 'nope').success, false, 'unknown quest rejected');
+});
+
+test('Explorer: finishing the chain completes the kingdom and opens the next', () => {
+  const { user } = db.createUser('ExE', 'exe@x.io', 'hash', false);
+  const finish = (id, metric, n) => {
+    ExplorerService.acceptQuest(user.id, id);
+    db.incrementCollectible(user.id, metric, n);
+    return ExplorerService.claimQuest(user.id, id);
+  };
+  finish('q1_forage', 'cherry', 25);
+  finish('q1_scouts', 'kill', 3);
+  const last = finish('q1_fragments', 'star', 8);
+
+  assert.equal(last.success, true);
+  assert.equal(last.kingdomCompleted, true);
+  assert.equal(last.unlockedKingdom, 'Sunken Reach');
+
+  const ov = ExplorerService.overview(user.id);
+  assert.ok(ov.kingdoms[0].completed, 'Kingdom 1 marked done');
+  assert.equal(ov.kingdom.n, 2, 'moved on to Kingdom 2');
+  assert.equal(ov.kingdoms[0].questsDone, 3);
+});
+
+test('Explorer: progression gates hold — level and the previous kingdom', () => {
+  const { user } = db.createUser('ExF', 'exf@x.io', 'hash', false);
+  const ov = ExplorerService.overview(user.id);
+  assert.equal(ov.kingdoms[0].unlocked, true, 'Kingdom 1 always open');
+  assert.equal(ov.kingdoms[1].unlocked, false, 'Kingdom 2 needs Kingdom 1 finished');
+  // Even at a high level, the story cannot be entered halfway through.
+  db.updateProfile(user.id, { level: 999 });
+  assert.equal(ExplorerService.overview(user.id).kingdoms[2].unlocked, false, 'level alone is not enough');
+  // The boss is the kingdom's closing beat, so it waits for the quests.
+  assert.equal(ExplorerService.overview(user.id).kingdoms[0].boss.unlocked, false, 'boss locked until quests are done');
+});
+
+test('Explorer: campaign progress survives a restart', () => {
+  const { user } = db.createUser('ExPersist', 'exp@x.io', 'hash', false);
+  ExplorerService.acceptQuest(user.id, 'q1_forage');
+  db.incrementCollectible(user.id, 'cherry', 25);
+  ExplorerService.claimQuest(user.id, 'q1_forage');
+  db.flush();
+
+  delete require.cache[require.resolve(dist('db/Database.js'))];
+  const { db: db2 } = require(dist('db/Database.js'));
+  const saved = db2.getProfile(user.id).explorer;
+  assert.ok(saved.claimed.includes('q1_forage'), 'claimed quest survived');
+  assert.ok(saved.accepted.includes('q1_forage'));
+});

@@ -11,6 +11,7 @@ import { CouponService } from './services/CouponService';
 import { SocialService } from './services/SocialService';
 import { StatsService } from './services/StatsService';
 import { MilestoneService } from './services/MilestoneService';
+import { ExplorerService } from './services/ExplorerService';
 import { presence } from './services/Presence';
 import { sessionManager } from './services/GameSessionManager';
 import { getModeConfig } from './services/GameSessionService';
@@ -372,6 +373,33 @@ app.post('/api/progress/sync', writeLimiter, (req, res) => {
     missions: db.getMissions(a.userId),
     achievements: db.getAchievements(a.userId),
     profile: withRank(db.getProfile(a.userId)),
+  });
+});
+
+// --------------------------------------------------------------- §explorer campaign
+// Current kingdom, its NPCs and what each is saying right now, quest progress, and the
+// kingdom map. One call powers both the Explorer screen and the in-world HUD tracker.
+app.get('/api/explorer/state', (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const ov = ExplorerService.overview(a.userId);
+  if (!ov) return res.status(404).json({ error: 'Profile not found' });
+  res.json(ov);
+});
+
+app.post('/api/explorer/quest/accept', writeLimiter, (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const r = ExplorerService.acceptQuest(a.userId, String(req.body?.questId || ''));
+  res.status(r.success ? 200 : 400).json({ ...r, state: ExplorerService.overview(a.userId) });
+});
+
+// Whether the quest is actually finished is decided here, from counters the server credited.
+app.post('/api/explorer/quest/claim', writeLimiter, (req, res) => {
+  const a = auth(req, res); if (!a) return;
+  const r: any = ExplorerService.claimQuest(a.userId, String(req.body?.questId || ''));
+  res.status(r.success || r.alreadyClaimed ? 200 : 400).json({
+    ...r,
+    profile: r.profile ? withRank(r.profile) : undefined,
+    state: ExplorerService.overview(a.userId),
   });
 });
 
@@ -788,6 +816,7 @@ setInterval(() => {
       const layout = session.getWorldLayout();
       payload.obstacles = layout.obstacles;
       payload.portals = layout.portals;
+      payload.npcs = layout.npcs; // §explorer villagers ride the cached layout — they never move
       user.worldVersion = base.worldVersion;
     }
     io.to(sid).emit('game_state_tick', payload);

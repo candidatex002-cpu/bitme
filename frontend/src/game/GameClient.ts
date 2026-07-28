@@ -53,6 +53,13 @@ export interface SanctuaryZoneData { centerX: number; centerY: number; radius: n
 export interface PortalData { id: string; targetId: string; x: number; y: number; label: string; color: string; timerSeconds?: number; wormhole?: boolean; }
 export interface ObstacleData { id: string; type: string; x: number; y: number; radius: number; icon: string; blocking: boolean; damage?: number; }
 
+// §explorer A villager standing in the world. Static, so it arrives with the cached world
+// layout rather than every tick — only what they SAY changes, and that comes from the API.
+export interface NpcData {
+  id: string; name: string; role: string; icon: string; accessory?: string;
+  kingdom: number; x: number; y: number; radius: number;
+}
+
 export interface WorldEventData {
   id: string; type: string; title: string; description: string; active: boolean; timerSeconds: number; icon: string;
 }
@@ -67,6 +74,7 @@ export interface GameStateTick {
   sanctuaryZone?: SanctuaryZoneData;
   portals?: PortalData[];
   obstacles?: ObstacleData[];
+  npcs?: NpcData[];
   leaderboard: Array<{ id: string; name: string; score: number; kills: number; team?: 'red' | 'blue' }>;
   teamScores?: { red: number; blue: number };
   currentEvent?: WorldEventData;
@@ -307,11 +315,14 @@ export class GameClient {
   // the last known layout forward so the Renderer always receives a complete world.
   private cachedObstacles: ObstacleData[] = [];
   private cachedPortals: PortalData[] = [];
+  private cachedNpcs: NpcData[] = [];
   private decodeTick(tick: GameStateTick): GameStateTick {
     if (tick.obstacles) this.cachedObstacles = tick.obstacles;
     else tick.obstacles = this.cachedObstacles;
     if (tick.portals) this.cachedPortals = tick.portals;
     else tick.portals = this.cachedPortals;
+    if (tick.npcs) this.cachedNpcs = tick.npcs;
+    else tick.npcs = this.cachedNpcs;
     // Rehydrate the flat body encoding ([x0,y0,x1,y1,…] → [{x,y},…]) so the Renderer keeps
     // working with plain segment objects and knows nothing about the wire format.
     for (const s of tick.snakes) {

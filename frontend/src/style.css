@@ -2799,3 +2799,39 @@ h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); }
   }
 }
 
+
+/* ---------------------------------------------------------------- §explorer campaign */
+/* Quest tracker — sits under the pause button with the daily tasks, same chrome-free style. */
+.quest-tracker { max-width: 150px; font-size: 0.68rem; }
+.quest-tracker:empty { display: none; }
+.qt-kingdom { font-weight: 900; font-size: 0.7rem; color: var(--green-deep); }
+.qt-title { font-weight: 800; color: #334155; margin-top: 2px; }
+.qt-count { font-weight: 900; font-size: 0.62rem; color: var(--muted); }
+.qt-hint { font-size: 0.62rem; color: var(--muted); font-style: italic; }
+.quest-tracker > * { text-shadow: 0 1px 2px rgba(255,255,255,0.95), 0 0 6px rgba(255,255,255,0.85); }
+
+/* NPC conversation — anchored low so it never covers the play area, and it closes itself. */
+.npc-dialog {
+  position: fixed; z-index: 55; left: 50%; bottom: clamp(150px, 24vh, 230px);
+  transform: translateX(-50%) translateY(12px); width: min(94vw, 430px);
+  opacity: 0; transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.2,0.9,0.3,1.2);
+  pointer-events: none;
+}
+.npc-dialog.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.npc-card {
+  background: rgba(255,255,255,0.97); border: 2px solid var(--green);
+  border-radius: var(--r-md); padding: 12px 14px; box-shadow: var(--shadow-lg);
+  pointer-events: auto;
+}
+.npc-head { display: flex; align-items: center; gap: 10px; }
+.npc-face { font-size: 1.7rem; }
+.npc-name { font-family: var(--font-title); font-weight: 900; font-size: 0.98rem; color: var(--ink); }
+.npc-role { font-size: 0.62rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.npc-close {
+  margin-left: auto; background: none; border: 0; cursor: pointer;
+  font-size: 0.9rem; color: var(--muted); padding: 4px 6px;
+}
+.npc-line { font-size: 0.85rem; line-height: 1.5; color: var(--ink); margin-top: 8px; font-style: italic; }
+.npc-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
+.npc-prog { display: flex; align-items: center; gap: 8px; width: 100%; font-weight: 800; font-size: 0.72rem; color: var(--muted); }
+.npc-prog .progress { flex: 1; }

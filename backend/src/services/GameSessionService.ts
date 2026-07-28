@@ -13,6 +13,7 @@ import {
 } from '../types';
 import { db } from '../db/Database';
 import { antiCheat } from './AntiCheatService';
+import { ExplorerService } from './ExplorerService';
 import { gameConfig } from '../config/GameConfig';
 
 interface CollectibleTemplate {
@@ -175,6 +176,7 @@ export class GameSessionService {
     this.spawnMovingStars(this.STAR_TARGET); // §3
     this.spawnObstacles(); // §2
     this.spawnWormholes(); // §7 four linked wormholes
+    this.spawnNpcs();      // §explorer villagers, elders, guards
     this.spawnBotSnakes(this.config.botCount);
     this.startLoop();
   }
@@ -1283,7 +1285,20 @@ export class GameSessionService {
 
   // The near-static layout — sent only when the client's cached version is stale.
   public getWorldLayout() {
-    return { obstacles: this.state.obstacles || [], portals: this.state.portals || [] };
+    return { obstacles: this.state.obstacles || [], portals: this.state.portals || [], npcs: this.state.npcs || [] };
+  }
+
+  // §explorer Villagers stand in fixed places so the world has somewhere to BE rather than
+  // just space to wander. They ship with the near-static layout (sent once, cached by the
+  // client) since they never move — only what they SAY changes, and that comes from the
+  // campaign API, not the 30 Hz tick.
+  private spawnNpcs() {
+    if (this.state.mode !== 'classic') return; // Explorer runs on the classic session
+    this.state.npcs = ExplorerService.npcPlacements(this.WORLD_SIZE).map(n => ({
+      id: n.id, name: n.name, role: n.role, icon: n.icon, accessory: n.accessory,
+      kingdom: n.kingdom, x: n.wx, y: n.wy, radius: 46,
+    }));
+    this.worldVersion++;
   }
 
   public getHeadPosition(userId: string): Vector2D | null {

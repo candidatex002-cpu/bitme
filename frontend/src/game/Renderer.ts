@@ -254,6 +254,7 @@ export class Renderer {
     if (state.sanctuaryZone) this.renderSanctuaryZone(state.sanctuaryZone);
     if (state.obstacles) this.renderObstacles(state.obstacles);
     if (state.portals) this.renderPortals(state.portals);
+    if (state.npcs?.length) this.renderNpcs(state.npcs, target);
 
     // Render Food (Crystal Clear Discs)
     for (let i = 0; i < state.food.length; i++) {
@@ -846,6 +847,67 @@ export class Renderer {
       if (isT) { ctx.lineWidth = 1.5; ctx.strokeStyle = '#fff'; ctx.stroke(); }
     }
     ctx.restore();
+  }
+
+  // §explorer Villagers. Each is a small coiled snake with a role accessory (staff, shield,
+  // pack…) so an elder reads differently from a guard at a glance, standing on a patch of
+  // trodden ground. A ❗ floats above whoever is close enough to talk to.
+  private renderNpcs(npcs: NonNullable<GameStateTick['npcs']>, target?: SnakeData) {
+    const ctx = this.ctx;
+    for (const n of npcs) {
+      const x = this.wrapNear(n.x, this.cameraPos.x);
+      const y = this.wrapNear(n.y, this.cameraPos.y);
+      // Skip anything comfortably off-screen — a village is a lot of draw calls otherwise.
+      if (Math.abs(x - this.cameraPos.x) > 2600 || Math.abs(y - this.cameraPos.y) > 2600) continue;
+
+      ctx.save();
+      // Trodden ground under their feet, so they read as standing somewhere.
+      ctx.beginPath();
+      ctx.ellipse(x, y + n.radius * 0.55, n.radius * 0.95, n.radius * 0.42, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(120, 100, 70, 0.16)';
+      ctx.fill();
+
+      // Body — a coil, not a full snake, so villagers never read as rivals to eat.
+      const bob = Math.sin(this.animFrame * 0.045 + n.x * 0.01) * 2;
+      ctx.beginPath();
+      ctx.arc(x, y + bob, n.radius * 0.52, 0, Math.PI * 2);
+      ctx.fillStyle = '#CFEAD8';
+      ctx.strokeStyle = '#2F6B4F';
+      ctx.lineWidth = 2.5;
+      ctx.fill(); ctx.stroke();
+
+      // Eyes, so they feel looked-at rather than decorative.
+      ctx.fillStyle = '#1B243B';
+      ctx.beginPath(); ctx.arc(x - 5, y + bob - 3, 2.4, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + 5, y + bob - 3, 2.4, 0, Math.PI * 2); ctx.fill();
+
+      // Role accessory above the head — the visual difference between elder/guard/merchant.
+      if (n.accessory) {
+        ctx.font = `${Math.round(n.radius * 0.66)}px serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(n.accessory, x, y + bob - n.radius * 0.72);
+      }
+
+      // Name plate.
+      ctx.font = '800 12px Outfit, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.strokeText(n.name, x, y + n.radius * 1.15);
+      ctx.fillStyle = '#234';
+      ctx.fillText(n.name, x, y + n.radius * 1.15);
+
+      // In-range marker — the cue that walking closer will start a conversation.
+      if (target) {
+        const dx = this.wrapDeltaRaw(target.head.x - n.x);
+        const dy = this.wrapDeltaRaw(target.head.y - n.y);
+        if (dx * dx + dy * dy < (n.radius + 90) ** 2) {
+          const pulse = 3 + Math.sin(this.animFrame * 0.16) * 2;
+          ctx.font = `${18 + pulse}px serif`;
+          ctx.fillText('❗', x, y - n.radius * 1.5);
+        }
+      }
+      ctx.restore();
+    }
   }
 
   public triggerHappyAnim(snakeId: string) {
