@@ -1293,6 +1293,7 @@ class AnacondaPark {
         score, kills, placement, survivalSeconds: survival, distanceKm, areasVisited: this.visitedAreas.size,
         // §V7 richer, mode-tagged payload so per-mode stats + missions populate correctly
         mode: this.selectedUIMode, map: this.activeMapTheme, deaths: 1, killStreak: kills,
+        assists: (snake as any)?.assists || 0, // §stats server-credited, Team Battle only
         cherriesEaten: ms.cherry, applesEaten: ms.apple, frogsEaten: ms.frog, powerupsEaten: ms.powerup, starsCollected,
       }) });
       const data = await res.json();
@@ -1876,7 +1877,9 @@ class AnacondaPark {
     const bs = state.teamScores?.blue ?? 0;
     const mm = Math.floor((matchTimer || 0) / 60), ss = Math.floor((matchTimer || 0) % 60);
     const timerStr = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
-    const assists = (me as any).assists ?? Math.floor(kills * 0.5);
+    // Real, server-credited assists — this used to invent `kills * 0.5`, which meant the HUD
+    // showed a number that existed nowhere in the game's actual state.
+    const assists = (me as any).assists ?? 0;
 
     this.setT('tb-player-name', me.displayName || 'Explorer');
     this.setT('tb-player-score', String(Math.round(me.score)));

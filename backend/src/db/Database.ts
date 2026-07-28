@@ -332,7 +332,43 @@ export class Database {
         if (profile) this.updateProfile(userId, { stars: profile.stars + a.rewardStars });
       }
     }
+    this.applyLifetimeStat(userId, metric, amount, isPeak);
     this.markDirty();
+  }
+
+  // Lifetime statistics update the MOMENT an event happens, not at match end. Previously a
+  // collectible only advanced missions live and its permanent tally waited for the match
+  // summary — so a disconnect mid-match lost every apple, frog and star of that run.
+  //
+  // The generic `collectibles` map means a new power-up starts persisting as soon as the
+  // simulation emits it; the named legacy fields are kept in step for the existing UI.
+  private static readonly NAMED_COLLECTIBLE_STAT: Partial<Record<ProgressMetric, keyof PlayerStats>> = {
+    cherry: 'cherriesCollected', apple: 'applesCollected', frog: 'frogsCollected',
+    star: 'totalStars', kill: 'totalKills', assist: 'totalAssists', death: 'totalDeaths',
+  };
+  private static readonly POWERUP_METRICS = new Set<ProgressMetric>(['shield', 'speed', 'mushroom', 'powerup', 'magnet', 'fire']);
+  private static readonly FOOD_METRICS = new Set<ProgressMetric>(['cherry', 'apple', 'frog', 'egg', 'mushroom']);
+
+  private applyLifetimeStat(userId: string, metric: ProgressMetric, amount: number, isPeak: boolean) {
+    const profile = this.profiles.get(userId);
+    if (!profile || amount <= 0) return;
+    const s: PlayerStats = { ...profile.stats };
+
+    // Generic tally — every collectible, known or newly added.
+    const collectibles = { ...(s.collectibles || {}) };
+    collectibles[metric] = (collectibles[metric] || 0) + amount;
+    s.collectibles = collectibles;
+
+    const named = Database.NAMED_COLLECTIBLE_STAT[metric];
+    if (named) {
+      const cur = (s[named] as number) || 0;
+      (s[named] as number) = isPeak ? Math.max(cur, amount) : cur + amount;
+    }
+    if (Database.POWERUP_METRICS.has(metric)) s.powerupsCollected = (s.powerupsCollected || 0) + amount;
+    if (Database.FOOD_METRICS.has(metric)) s.totalFoodEaten = (s.totalFoodEaten || 0) + amount;
+    if (metric === 'score') s.highestScore = Math.max(s.highestScore || 0, amount);
+
+    this.profiles.set(userId, { ...profile, stats: s });
   }
 
   public claimMissionReward(userId: string, missionId: string): { success: boolean; stars: number; xp: number; evoXp: number; updatedMissions: MissionObjective[]; profile?: PlayerProfile } {

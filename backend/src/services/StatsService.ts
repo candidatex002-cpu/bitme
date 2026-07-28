@@ -97,6 +97,9 @@ export class StatsService {
     const damageDealt = clamp(raw.damageDealt, 0, 1_000_000);
     const damageReceived = clamp(raw.damageReceived, 0, 1_000_000);
     const areasVisited = Math.round(clamp(raw.areasVisited, 0, 50));
+    // Assists are only meaningful in Team Battle (combat elsewhere is a 1v1 head clash with a
+    // single winner), so they are bounded by the kills that actually happened around you.
+    const assists = Math.round(clamp((raw as any).assists, 0, cl.maxKills));
     const statMode = toStatMode(raw.mode);
     const won = placement === 1;
 
@@ -107,22 +110,17 @@ export class StatsService {
     const earnedEvoXP = Math.floor(score / m.evoXpPerScore) + kills * m.evoXpPerKill + (won ? m.evoXpWinBonus : 0);
 
     // ---- General stats (additive + peaks) ----
+    // Only MATCH-level aggregates here. Per-event tallies (kills, cherries, apples, frogs,
+    // stars, power-ups, food) are already applied live by db.incrementCollectible the moment
+    // they happen — re-adding the match totals doubled every one of them.
     const s = { ...profile.stats } as PlayerStats;
     s.matchesPlayed += 1;
     s.matchesWon += won ? 1 : 0;
     s.matchesLost += won ? 0 : 1;
-    s.totalKills += kills;
-    s.totalDeaths += deaths;
-    s.totalFoodEaten += cherries + apples + frogs;
     s.highestScore = Math.max(s.highestScore, score);
     s.survivalTimeSeconds += survivalSeconds;
     s.longestSurvivalSeconds = Math.max(s.longestSurvivalSeconds, survivalSeconds);
     s.totalDistanceKm = +(s.totalDistanceKm + distanceKm).toFixed(3);
-    s.totalStars += stars;
-    s.cherriesCollected += cherries;
-    s.applesCollected += apples;
-    s.frogsCollected += frogs;
-    s.powerupsCollected += powerups;
     s.longestKillStreak = Math.max(s.longestKillStreak, killStreak);
     s.mostKillsInMatch = Math.max(s.mostKillsInMatch, kills);
     s.totalDamageDealt += damageDealt;
@@ -147,7 +145,7 @@ export class StatsService {
       ms.highestRank = Math.min(ms.highestRank ?? 999, placement);
     }
     if (statMode === 'team') {
-      ms.assists = (ms.assists || 0) + Math.round(clamp((raw as any).assists, 0, 50));
+      ms.assists = (ms.assists || 0) + assists;
       if (won) ms.mvp = (ms.mvp || 0) + (Math.round(clamp((raw as any).mvp, 0, 1)));
       ms.highestTeamScore = Math.max(ms.highestTeamScore || 0, Math.round(clamp((raw as any).teamScore, 0, cl.maxScore)));
     }
@@ -161,12 +159,15 @@ export class StatsService {
     db.updateProfile(userId, { stats: s, modeStats });
 
     // ---- Mission + achievement telemetry (server-authoritative) ----
-    if (cherries) db.incrementCollectible(userId, 'cherry', cherries);
-    if (apples) db.incrementCollectible(userId, 'apple', apples);
-    if (frogs) db.incrementCollectible(userId, 'frog', frogs);
-    if (kills) db.incrementCollectible(userId, 'kill', kills);
-    if (stars) db.incrementCollectible(userId, 'star', stars);
+    //
+    // Per-EVENT metrics (cherry/apple/frog/star/kill/…) are deliberately NOT re-counted here.
+    // The simulation already credits each one the instant it happens, and offline play hands
+    // its ledger to /api/progress/sync — so adding the match totals again double-counted every
+    // pickup and every kill, making a "collect 30 cherries" daily complete at 15.
+    //
+    // Only MATCH-level facts belong here: they have no per-event moment to be counted at.
     db.incrementCollectible(userId, 'match', 1);
+    if (deaths) db.incrementCollectible(userId, 'death', deaths);
     db.incrementCollectible(userId, 'survive', survivalSeconds);
     db.incrementCollectible(userId, 'distance', distanceKm);
     if (won) db.incrementCollectible(userId, 'win', 1);
@@ -192,6 +193,7 @@ export class StatsService {
       mode: statMode,
       durationSeconds: survivalSeconds,
       score, kills, deaths,
+      assists, highestCombo: killStreak, foodCollected: cherries + apples + frogs + powerups,
       stars, xp: earnedXP, evoXp: earnedEvoXP,
       rank: placement,
       rewards: rewardsText,

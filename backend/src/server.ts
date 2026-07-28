@@ -348,7 +348,8 @@ app.post('/api/match/checkpoint-all', writeLimiter, (req, res) => {
 // bug or a forgery and is trimmed rather than trusted.
 const PROGRESS_SYNC_CAPS: Record<string, number> = {
   cherry: 2000, apple: 2000, frog: 1000, star: 1000, egg: 200, mushroom: 500,
-  shield: 500, powerup: 1000, treasure: 200, kill: 200, boost: 2000, heal: 1000,
+  shield: 500, speed: 500, powerup: 1000, magnet: 500, fire: 500, gift: 200,
+  treasure: 200, kill: 200, assist: 200, boost: 2000, heal: 1000,
 };
 app.post('/api/progress/sync', writeLimiter, (req, res) => {
   const a = auth(req, res); if (!a) return;

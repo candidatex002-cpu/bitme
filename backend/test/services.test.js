@@ -671,6 +671,14 @@ test('Items + daily bonus: grantItem accumulates; once-per-day gate', () => {
 // ---------------------------------------------------------------- StatsService (§V7)
 test('Stats: recordMatch updates general + mode stats + history + derived', () => {
   const { user } = db.createUser('StatPlayer', 'st@x.io', 'hash', false);
+  // Per-event tallies are credited live by the simulation as they happen — recordMatch no
+  // longer re-adds them (that was double-counting). Reproduce the live credit first so this
+  // reflects how a real match actually accrues.
+  db.incrementCollectible(user.id, 'kill', 4);
+  db.incrementCollectible(user.id, 'cherry', 20);
+  db.incrementCollectible(user.id, 'frog', 3);
+  db.incrementCollectible(user.id, 'star', 50);
+
   const r = StatsService.recordMatch(user.id, {
     score: 1200, kills: 4, deaths: 1, placement: 1, survivalSeconds: 90,
     cherriesEaten: 20, frogsEaten: 3, starsCollected: 50, mode: 'battle_royale', map: 'volcano',
@@ -679,7 +687,7 @@ test('Stats: recordMatch updates general + mode stats + history + derived', () =
   const st = db.getProfile(user.id).stats;
   assert.equal(st.matchesPlayed, 1);
   assert.equal(st.matchesWon, 1);      // placement 1 = win
-  assert.equal(st.totalKills, 4);
+  assert.equal(st.totalKills, 4);      // credited once, live — not again here
   assert.equal(st.highestScore, 1200);
   assert.equal(st.cherriesCollected, 20);
   assert.equal(st.totalStars, 50);
@@ -698,6 +706,65 @@ test('Stats: recordMatch updates general + mode stats + history + derived', () =
   assert.equal(hist.length, 1);
   assert.equal(hist[0].result, 'win');
   assert.equal(hist[0].mode, 'battle_royale');
+});
+
+test('Stats: per-event metrics are counted ONCE, not again at match end', () => {
+  // Collectibles and kills are credited live by the simulation. recordMatch used to re-add the
+  // match totals, so a "collect 30 cherries" daily completed at 15 and every lifetime tally
+  // was doubled. Match-level facts (matches, wins, distance) must still accrue exactly once.
+  const { user } = db.createUser('NoDouble', 'nd@x.io', 'hash', false);
+
+  // 10 cherries and 2 kills happen DURING play.
+  for (let i = 0; i < 10; i++) db.incrementCollectible(user.id, 'cherry');
+  for (let i = 0; i < 2; i++) db.incrementCollectible(user.id, 'kill');
+  const cherryMission = db.getMissions(user.id).find(m => m.metric === 'cherry' && m.category === 'daily');
+  assert.equal(cherryMission.currentCount, 10, 'live counting works');
+  assert.equal(db.getProfile(user.id).stats.cherriesCollected, 10, 'lifetime stat is live too');
+
+  // The summary then reports the same match totals.
+  StatsService.recordMatch(user.id, {
+    score: 500, kills: 2, deaths: 1, placement: 3, survivalSeconds: 60,
+    cherriesEaten: 10, mode: 'free_roam',
+  }, null);
+
+  const after = db.getProfile(user.id).stats;
+  assert.equal(db.getMissions(user.id).find(m => m.metric === 'cherry' && m.category === 'daily').currentCount, 10,
+    'mission still 10 — the match summary must not re-count what was already credited');
+  assert.equal(after.cherriesCollected, 10, 'lifetime cherries not doubled');
+  assert.equal(after.totalKills, 2, 'lifetime kills not doubled');
+  // …while match-level aggregates DO advance.
+  assert.equal(after.matchesPlayed, 1);
+  assert.equal(after.highestScore, 500);
+});
+
+test('Stats: any collectible counts, including ones never named in code', () => {
+  const { user } = db.createUser('GenericCollect', 'gc@x.io', 'hash', false);
+  // A power-up that no if/else branch mentions — the old chain silently dropped these.
+  db.incrementCollectible(user.id, 'mushroom', 3);
+  db.incrementCollectible(user.id, 'magnet', 2);
+  const s = db.getProfile(user.id).stats;
+  assert.equal(s.collectibles.mushroom, 3, 'generic tally records it');
+  assert.equal(s.collectibles.magnet, 2);
+  assert.equal(s.powerupsCollected, 5, 'and it rolls into the power-up total');
+  assert.equal(s.totalFoodEaten, 3, 'mushrooms are food; magnets are not');
+});
+
+test('Stats: match history records assists, combo and food collected', () => {
+  const { user } = db.createUser('HistFull', 'hf@x.io', 'hash', false);
+  StatsService.recordMatch(user.id, {
+    score: 2400, kills: 5, deaths: 1, assists: 3, killStreak: 4, placement: 1,
+    survivalSeconds: 150, cherriesEaten: 12, applesEaten: 6, frogsEaten: 2, powerupsEaten: 4,
+    starsCollected: 200, mode: 'team',
+  }, null);
+
+  const [rec] = db.getMatchHistory(user.id, 1);
+  assert.equal(rec.assists, 3, 'assists persisted');
+  assert.equal(rec.highestCombo, 4, 'best streak persisted');
+  assert.equal(rec.foodCollected, 24, '12+6+2+4 collectibles');
+  assert.equal(rec.stars, 200);
+  assert.equal(rec.result, 'win');
+  assert.ok(rec.id && rec.at && rec.mode === 'team' && rec.durationSeconds === 150);
+  assert.equal(db.getProfile(user.id).stats.totalAssists, undefined, 'assists are per-match, credited live in team play');
 });
 
 test('Stats: server peak bounds a lying client (anti-cheat, §11)', () => {

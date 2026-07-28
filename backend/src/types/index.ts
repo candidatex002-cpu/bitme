@@ -102,6 +102,11 @@ export interface PlayerStats {
   // §milestone Best number of distinct landmarks reached in a single run. Explore progress was
   // only ever fed to missions; the journey timeline needs it as a durable stat too.
   areasExplored?: number;
+  totalAssists?: number;
+  // Generic lifetime tally, keyed by collectible type. The named fields above are the legacy
+  // shape the UI already reads; this map means a NEW power-up (magnet, fire, whatever comes
+  // next) starts persisting the day it is added to the spawn table, with no schema change.
+  collectibles?: Record<string, number>;
 }
 
 // §V7 Per-mode independent statistics. Keyed by stat-mode: 'free_roam' | 'explorer' |
@@ -147,6 +152,9 @@ export interface MatchRecord {
   score: number;
   kills: number;
   deaths: number;
+  assists: number;
+  highestCombo: number;    // best kill streak within this match
+  foodCollected: number;   // every collectible picked up this match
   stars: number;
   xp: number;
   evoXp: number;
@@ -195,6 +203,7 @@ export interface SnakeState {
   isAutoProtectAI: boolean;
   autoProtectTimer: number;
   kills: number;
+  assists?: number;      // §stats Team Battle only — credited near a teammate's kill
   // Active buffs / abilities (server-authoritative timers, in seconds)
   shieldTimer: number;       // invulnerability remaining
   speedBoostTimer: number;   // temporary speed buff remaining
@@ -344,9 +353,14 @@ export interface MatchInvite {
   deliveredAt?: number; // set when it has been pushed to a live socket
 }
 
+// Every trackable gameplay event. Collectible names here must match the food `type` the
+// simulation emits, so a NEW collectible only has to be added in one place to start counting
+// toward missions, achievements and lifetime stats.
 export type ProgressMetric =
   | 'cherry' | 'apple' | 'frog' | 'star' | 'egg' | 'kill' | 'treasure'
   | 'heal' | 'shield' | 'boost' | 'win'
+  | 'mushroom' | 'speed' | 'powerup' | 'magnet' | 'fire' | 'gift'
+  | 'assist' | 'death'
   | 'distance' | 'match' | 'survive' | 'score' | 'explore';
 
 export interface Achievement {

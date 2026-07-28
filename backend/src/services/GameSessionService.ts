@@ -708,15 +708,15 @@ export class GameSessionService {
     this.applyGrowth(snake, food.value);
 
     if (!snake.isBot) {
-      // Mission + achievement telemetry
+      // Mission + achievement + lifetime-stat telemetry, credited the instant it happens.
+      //
+      // The collectible's own `type` IS the metric, so a new power-up added to the spawn table
+      // starts counting with no change here — the previous if/else chain silently dropped
+      // anything it did not name (mushrooms and speed pickups were never recorded at all).
       const u = snake.userId;
-      if (food.type === 'cherry') db.incrementCollectible(u, 'cherry');
-      else if (food.type === 'apple') db.incrementCollectible(u, 'apple');
-      else if (food.type === 'frog') db.incrementCollectible(u, 'frog');
-      else if (food.type === 'star') db.incrementCollectible(u, 'star');
-      else if (food.type === 'egg') { db.incrementCollectible(u, 'egg'); db.incrementCollectible(u, 'treasure'); }
-      else if (food.type === 'coupon_box') db.incrementCollectible(u, 'treasure');
-      if (food.buff === 'shield') db.incrementCollectible(u, 'shield');
+      db.incrementCollectible(u, food.type as any);
+      if (food.type === 'egg' || food.type === 'coupon_box') db.incrementCollectible(u, 'treasure');
+      if (food.buff) db.incrementCollectible(u, 'powerup');
       if (food.hpRestore && wasHurt) db.incrementCollectible(u, 'heal');
 
       const updatedMissions = db.getMissions(u);
@@ -800,8 +800,29 @@ export class GameSessionService {
     this.applyGrowth(winner, 0);
     if (this.config.teamsEnabled && winner.team && this.state.teamScores) {
       this.state.teamScores[winner.team] += 1;
+      // §stats Assists only exist in Team Battle: elsewhere a kill is a 1v1 head clash with
+      // exactly one winner and nobody to assist. A teammate who was pressuring the same
+      // victim — close enough to have forced the engagement — is credited.
+      this.creditAssists(winner, loser);
     }
     if (!winner.isBot) db.incrementCollectible(winner.userId, 'kill');
+  }
+
+  // Teammates within this range of the victim at the moment of the kill share the credit.
+  private static readonly ASSIST_RADIUS = 420;
+
+  private creditAssists(winner: SnakeState, loser: SnakeState) {
+    const r2 = GameSessionService.ASSIST_RADIUS ** 2;
+    for (const id in this.state.snakes) {
+      const mate = this.state.snakes[id];
+      if (mate.id === winner.id || !mate.isAlive || mate.isBot) continue;
+      if (mate.team !== winner.team) continue;
+      const dx = this.wrapDelta(mate.head.x - loser.head.x);
+      const dy = this.wrapDelta(mate.head.y - loser.head.y);
+      if (dx * dx + dy * dy > r2) continue;
+      mate.assists = (mate.assists || 0) + 1;
+      db.incrementCollectible(mate.userId, 'assist');
+    }
   }
 
   private killSnake(snake: SnakeState, reason: string) {
